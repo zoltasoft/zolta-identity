@@ -1,0 +1,40 @@
+# Environment and credentials
+.env
+.env.*
+!.env.example
+/auth.json
+
+# Dependencies
+/node_modules
+/vendor
+
+# Laravel runtime and generated files
+/public/build
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+/storage/logs/*
+!/storage/logs/.gitignore
+*.log
+
+# Test and tool caches
+.phpactor.json
+.phpunit.result.cache
+/.phpunit.cache
+_ide_helper.php
+
+# Editors and local tooling
+/.codex
+/.cursor/
+/.idea
+/.nova
+/.vscode
+/.zed
+
+# Operating systems and legacy local tooling
+.DS_Store
+.fleet
+Homestead.json
+Homestead.yaml
+Thumbs.db
