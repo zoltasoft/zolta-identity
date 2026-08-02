@@ -15,8 +15,8 @@ The repository contains:
 - short-lived Sanctum access tokens and rotating refresh-token families
 - confidential-client token introspection for APIs
 - invitation-only or public onboarding per project
-- the complete migrated User Management service: credential and social login, registration, verification, password recovery, account sessions, profile/security settings, account export/deletion, temporary accounts, global users, roles, and permissions
-- an idempotent legacy-data importer
+- credential and social login, registration, verification, password recovery, account sessions, profile/security settings, account export/deletion, and temporary accounts
+- global and project-scoped user, role, and permission administration
 
 ## Architecture and security model
 
@@ -96,38 +96,8 @@ Copy both committed environment examples and keep the resulting `.env` files loc
 | `NUXT_VITE_ALLOWED_HOSTS` | Nuxt | Optional comma-separated development hosts accepted by Vite. |
 | `IDENTITY_CONSOLE_URL` | Laravel | Console origin used in identity flows. |
 | `IDENTITY_*_TTL_*` | Laravel | Access-token, refresh-token, invitation, verification, and password-reset lifetimes. |
-| `LEGACY_IDENTITY_DB_*` | Laravel | Read-only source connection used only by the legacy importer. |
 
 For production, set `APP_ENV=production`, `APP_DEBUG=false`, secure HTTPS URLs, persistent cache and queue backends, and a production database. Keep every client secret in the hosting platform's secret manager rather than a committed file.
-
-## Migrate the embedded Portfolio identity data
-
-Keep the current Portfolio database unchanged and point the standalone API at a separate, empty database. Configure the read-only legacy connection in `apps/identity-server/.env`:
-
-```dotenv
-LEGACY_IDENTITY_DB_CONNECTION=sqlite
-LEGACY_IDENTITY_DB_DATABASE=/absolute/path/to/portfolio/apps/interviewlike-server/database/database.sqlite
-```
-
-For MySQL, also set the legacy host, port, username, and password variables shown in the Laravel `.env.example`.
-
-Run the standalone migrations and importer before bootstrapping a new owner in the destination:
-
-```bash
-cd apps/identity-server
-php artisan migrate
-php artisan identity:migrate-legacy
-```
-
-The importer:
-
-- preserves user UUIDs, email/password hashes, verification/security state, global roles and permissions, social providers/accounts, projects, memberships, project roles/permissions, invitations, audit records, and client IDs
-- never imports legacy access or refresh sessions
-- rotates the secret of each newly imported confidential client and prints each new secret once
-- leaves already-imported users and rotated client secrets unchanged on later runs
-- configures `interviewlike-job-tracker` for public registration with its `member` role when that role exists
-
-Update each BFF/API environment with the newly printed client secret before cutover. If a secret was not stored, rotate it from the Identity Console.
 
 ## Connect a consumer application
 
@@ -140,16 +110,16 @@ The BFF calls `POST /api/v1/identity/auth/login` or `POST /api/v1/identity/auth/
 
 A successful introspection includes the global user ID, project, token-issuing client, roles, permissions, authorization version, email-verification state, session family, and expiration time. Consumer APIs must verify the required permission for every protected route.
 
-For the Portfolio Laravel API, use remote introspection:
+For a consumer Laravel API, configure remote introspection with its dedicated API client:
 
 ```dotenv
 IDENTITY_API_URL=http://127.0.0.1:8100
-IDENTITY_CLIENT_ID=<portfolio-api-client-id>
-IDENTITY_CLIENT_SECRET=<portfolio-api-client-secret>
+IDENTITY_CLIENT_ID=<application-api-client-id>
+IDENTITY_CLIENT_SECRET=<application-api-client-secret>
 IDENTITY_INTROSPECTION_LOCAL=false
 ```
 
-The Portfolio Nuxt BFF uses its separate BFF client variables. Do not put either client secret in public Nuxt runtime configuration.
+The application's Nuxt BFF must use a separate confidential client. Do not put either client secret in public Nuxt runtime configuration.
 
 ## Project onboarding
 
@@ -166,13 +136,13 @@ Removing a user from an application should delete that application's records and
 
 The identity API intentionally does not reach into consumer databases. Before globally deleting an account, connected applications must erase or transfer their own data through their application-specific offboarding workflow.
 
-## Compatibility API
+## API surface
 
-The original Zolta `UserManagementService` is available alongside the project-scoped API so existing applications can migrate without losing features:
+The identity server exposes account-level, installation-level, and project-scoped endpoints:
 
 - `/api/auth/*`: registration, credential/social login, logout, refresh, verification, password recovery/change, sessions, export, deletion, and temporary accounts
 - `/api/users/*`: account profile/security preferences and system-administrator user management
-- `/api/roles/*` and `/api/permissions/*`: installation-wide compatibility RBAC
+- `/api/roles/*` and `/api/permissions/*`: installation-wide RBAC
 - `/api/v1/identity/*`: confidential clients, project memberships, project RBAC, rotating sessions, introspection, and audit
 
 Installation-wide user, role, and permission routes enforce `is_system_admin` inside Laravel. Project administrators use project-scoped endpoints and cannot elevate themselves to installation administrators.
@@ -224,10 +194,10 @@ apps/identity-server/        Standalone Laravel identity API
 1. Provision separate production storage for the identity API; never point it at a consumer application's database.
 2. Configure HTTPS URLs, a strong Laravel application key, a strong Nuxt session password, database backups, mail delivery, and persistent cache/queue services.
 3. Run `composer --working-dir=apps/identity-server install --no-dev --classmap-authoritative` and `pnpm install --frozen-lockfile`, then build the Nuxt application.
-4. Run `php artisan migrate --force`, followed by the one-time bootstrap or legacy migration workflow as appropriate.
+4. Run `php artisan migrate --force`, then bootstrap the installation owner and Identity Console client.
 5. Store each printed client secret immediately, distribute it only to its intended service, and verify remote introspection before directing traffic.
 6. Run queue workers under a process supervisor when `QUEUE_CONNECTION` is asynchronous, and monitor authentication failures, token reuse, client rotation, and audit events.
-7. Keep the embedded identity service available for rollback during a migration observation window.
+7. Verify the `/up` health endpoint, authentication flows, token refresh and introspection, queue processing, mail delivery, and database backups before directing production traffic.
 
 ## Contributing and security
 
