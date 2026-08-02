@@ -2,21 +2,23 @@
 
 namespace App\Services\UserManagementService\API\Requests\Authentication;
 
-use Illuminate\Support\Facades\Auth;
+use App\Services\UserManagementService\API\Requests\Concerns\ResolvesAuthenticatedIdentity;
 use Zolta\Http\Request\BaseRequest;
 
 final class ListAccountSessionsRequest extends BaseRequest
 {
+    use ResolvesAuthenticatedIdentity;
+
     public function authorize(): bool
     {
-        return Auth::check();
+        return $this->hasAuthenticatedIdentity();
     }
 
     public function trustedData(): array
     {
         return [
-            'user_id' => (string) $this->user()?->getAuthIdentifier(),
-            'current_token_id' => $this->user()?->currentAccessToken()?->getKey(),
+            'user_id' => $this->authenticatedUserId(),
+            'current_token_id' => $this->currentAccessTokenId(),
         ];
     }
 

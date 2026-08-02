@@ -4,212 +4,116 @@ declare(strict_types=1);
 
 namespace App\Services\UserManagementService\API\Controllers\Identity;
 
-use App\Services\UserManagementService\Application\Contracts\IdentityAccessServiceInterface;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Routing\Controller;
-use Illuminate\Validation\Rule;
+use App\Services\UserManagementService\API\Requests\Identity\IdentityProjectOperationRequest;
+use App\Services\UserManagementService\Application\DTOs\Input\IdentityOperationDTO;
+use App\Services\UserManagementService\Application\Services\Identity\ExecuteIdentityProjectService;
+use App\Services\UserManagementService\Application\Services\Identity\ReadIdentityProjectService;
+use Zolta\Http\Controller\Controller;
+use Zolta\Http\Request\Attributes\Request;
+use Zolta\Http\Router\Attributes\Route;
+use Zolta\Http\Service\Attributes\Service;
 
 final class IdentityProjectController extends Controller
 {
-    public function __construct(private readonly IdentityAccessServiceInterface $identity) {}
+    private const MIDDLEWARE = ['api', 'auth:sanctum', 'identity.token'];
 
-    public function index(Request $request): JsonResponse
-    {
-        return response()->json(['data' => $this->identity->listProjects($this->userId($request))]);
-    }
+    #[Route('v1/identity/projects', methods: ['GET'], middleware: self::MIDDLEWARE, name: 'identity.projects.index')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ReadIdentityProjectService::class, 'Projects retrieved.')]
+    public function index(): void {}
 
-    public function store(Request $request): JsonResponse
-    {
-        $input = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'slug' => ['required', 'alpha_dash:ascii', 'max:100', Rule::unique('identity_projects', 'slug')],
-            'description' => ['nullable', 'string', 'max:2000'],
-        ]);
+    #[Route('v1/identity/projects', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.store')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Project created.', 201)]
+    public function store(): void {}
 
-        return response()->json(['data' => $this->identity->createProject($this->userId($request), $input)], 201);
-    }
+    #[Route('v1/identity/projects/{project}', methods: ['GET'], middleware: self::MIDDLEWARE, name: 'identity.projects.show')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ReadIdentityProjectService::class, 'Project retrieved.')]
+    public function show(): void {}
 
-    public function updateRegistration(Request $request, string $project): JsonResponse
-    {
-        $input = $request->validate([
-            'registration_mode' => ['required', Rule::in(['invite_only', 'public'])],
-            'registration_role_id' => ['nullable', 'uuid'],
-        ]);
-        $this->identity->updateProjectRegistration(
-            $this->userId($request),
-            $project,
-            $input['registration_mode'],
-            $input['registration_role_id'] ?? null,
-        );
+    #[Route('v1/identity/projects/{project}/registration', methods: ['PATCH'], middleware: self::MIDDLEWARE, name: 'identity.projects.registration.update')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Registration policy updated.')]
+    public function updateRegistration(): void {}
 
-        return response()->json(['data' => ['message' => 'Registration policy updated.']]);
-    }
+    #[Route('v1/identity/projects/{project}/environment', methods: ['PATCH'], middleware: self::MIDDLEWARE, name: 'identity.projects.environment.update')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Project environment updated.')]
+    public function updateEnvironment(): void {}
 
-    public function updateEnvironment(Request $request, string $project): JsonResponse
-    {
-        $input = $request->validate([
-            'mode' => ['required', Rule::in(['live', 'sandbox'])],
-            'sandbox_ttl_minutes' => ['required', 'integer', 'min:5', 'max:1440'],
-        ]);
-        $this->identity->updateProjectEnvironment(
-            $this->userId($request),
-            $project,
-            $input['mode'],
-            (int) $input['sandbox_ttl_minutes'],
-        );
+    #[Route('v1/identity/projects/{project}/webhooks', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.webhooks.store')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Webhook created.', 201)]
+    public function storeWebhook(): void {}
 
-        return response()->json(['data' => ['message' => 'Project environment updated.']]);
-    }
+    #[Route('v1/identity/projects/{project}/webhooks/{webhook}', methods: ['PUT'], middleware: self::MIDDLEWARE, name: 'identity.projects.webhooks.update')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Webhook updated.')]
+    public function updateWebhook(): void {}
 
-    public function storeWebhook(Request $request, string $project): JsonResponse
-    {
-        $input = $request->validate([
-            'url' => ['required', 'url:http,https', 'max:2048'],
-            'events' => ['required', 'array', 'min:1'],
-            'events.*' => ['required', Rule::in(['identity.user.expired', 'identity.user.deletion_requested'])],
-        ]);
+    #[Route('v1/identity/projects/{project}/webhooks/{webhook}/rotate-secret', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.webhooks.rotate')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Webhook secret rotated.')]
+    public function rotateWebhookSecret(): void {}
 
-        return response()->json(['data' => $this->identity->createWebhook(
-            $this->userId($request), $project, $input['url'], $input['events'],
-        )], 201);
-    }
+    #[Route('v1/identity/projects/{project}/webhooks/{webhook}', methods: ['DELETE'], middleware: self::MIDDLEWARE, name: 'identity.projects.webhooks.destroy')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Webhook removed.')]
+    public function destroyWebhook(): void {}
 
-    public function updateWebhook(Request $request, string $project, string $webhook): JsonResponse
-    {
-        $input = $request->validate([
-            'url' => ['required', 'url:http,https', 'max:2048'],
-            'events' => ['required', 'array', 'min:1'],
-            'events.*' => ['required', Rule::in(['identity.user.expired', 'identity.user.deletion_requested'])],
-            'status' => ['required', Rule::in(['active', 'disabled'])],
-        ]);
-        $this->identity->updateWebhook(
-            $this->userId($request), $project, $webhook, $input['url'], $input['events'], $input['status'],
-        );
+    #[Route('v1/identity/projects/{project}/clients', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.clients.store')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Client created.', 201)]
+    public function storeClient(): void {}
 
-        return response()->json(['data' => ['message' => 'Webhook updated.']]);
-    }
+    #[Route('v1/identity/projects/{project}/clients/{client}/rotate-secret', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.clients.rotate')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Client secret rotated.')]
+    public function rotateClient(): void {}
 
-    public function rotateWebhookSecret(Request $request, string $project, string $webhook): JsonResponse
-    {
-        return response()->json(['data' => $this->identity->rotateWebhookSecret($this->userId($request), $project, $webhook)]);
-    }
+    #[Route('v1/identity/projects/{project}/clients/{client}', methods: ['PATCH'], middleware: self::MIDDLEWARE, name: 'identity.projects.clients.status')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Client status updated.')]
+    public function setClientStatus(): void {}
 
-    public function destroyWebhook(Request $request, string $project, string $webhook): JsonResponse
-    {
-        $this->identity->removeWebhook($this->userId($request), $project, $webhook);
+    #[Route('v1/identity/projects/{project}/clients/{client}/permission-manifest', methods: ['PUT'], middleware: self::MIDDLEWARE, name: 'identity.projects.clients.manifest')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Permission manifest synchronized.')]
+    public function syncManifest(): void {}
 
-        return response()->json(['data' => ['message' => 'Webhook removed.']]);
-    }
+    #[Route('v1/identity/projects/{project}/roles', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.roles.store')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Role created.', 201)]
+    public function storeRole(): void {}
 
-    public function show(Request $request, string $project): JsonResponse
-    {
-        return response()->json(['data' => $this->identity->projectDetails($this->userId($request), $project)]);
-    }
+    #[Route('v1/identity/projects/{project}/permissions', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.permissions.store')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Permission created.', 201)]
+    public function storePermission(): void {}
 
-    public function storeClient(Request $request, string $project): JsonResponse
-    {
-        $input = $request->validate(['name' => ['required', 'string', 'max:255']]);
+    #[Route('v1/identity/projects/{project}/roles/{role}/permissions', methods: ['PUT'], middleware: self::MIDDLEWARE, name: 'identity.projects.roles.permissions')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Role permissions updated.')]
+    public function setRolePermissions(): void {}
 
-        return response()->json(['data' => $this->identity->createClient($this->userId($request), $project, $input['name'])], 201);
-    }
+    #[Route('v1/identity/projects/{project}/invitations', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.invitations.store')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Invitation created.', 201)]
+    public function invite(): void {}
 
-    public function rotateClient(Request $request, string $project, string $client): JsonResponse
-    {
-        return response()->json(['data' => $this->identity->rotateClientSecret($this->userId($request), $project, $client)]);
-    }
+    #[Route('v1/identity/projects/{project}/memberships/{membership}/access', methods: ['PUT'], middleware: self::MIDDLEWARE, name: 'identity.projects.memberships.access')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Membership access updated.')]
+    public function setMembershipAccess(): void {}
 
-    public function setClientStatus(Request $request, string $project, string $client): JsonResponse
-    {
-        $input = $request->validate(['status' => ['required', Rule::in(['active', 'disabled'])]]);
-        $this->identity->setClientStatus($this->userId($request), $project, $client, $input['status']);
+    #[Route('v1/identity/projects/{project}/memberships/{membership}', methods: ['DELETE'], middleware: self::MIDDLEWARE, name: 'identity.projects.memberships.destroy')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Membership removed.')]
+    public function destroyMembership(): void {}
 
-        return response()->json(['data' => ['message' => 'Client status updated.']]);
-    }
-
-    public function syncManifest(Request $request, string $project, string $client): JsonResponse
-    {
-        $input = $request->validate([
-            'permissions' => ['present', 'array', 'max:500'],
-            'permissions.*.key' => ['required', 'string', 'regex:/^[a-z0-9]+(?:[._:-][a-z0-9]+)*$/', 'max:160', 'distinct'],
-            'permissions.*.name' => ['nullable', 'string', 'max:255'],
-            'permissions.*.description' => ['nullable', 'string', 'max:2000'],
-        ]);
-
-        return response()->json(['data' => $this->identity->syncPermissionManifest($this->userId($request), $project, $client, $input['permissions'])]);
-    }
-
-    public function storeRole(Request $request, string $project): JsonResponse
-    {
-        $input = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'slug' => ['required', 'alpha_dash:ascii', 'max:100', Rule::unique('identity_project_roles', 'slug')->where('project_id', $project)],
-            'description' => ['nullable', 'string', 'max:2000'],
-        ]);
-
-        return response()->json(['data' => $this->identity->createRole($this->userId($request), $project, $input)], 201);
-    }
-
-    public function storePermission(Request $request, string $project): JsonResponse
-    {
-        $input = $request->validate([
-            'key' => ['required', 'string', 'regex:/^[a-z0-9]+(?:[._:-][a-z0-9]+)*$/', 'max:160', Rule::unique('identity_project_permissions', 'key')->where('project_id', $project)],
-            'name' => ['nullable', 'string', 'max:255'],
-            'description' => ['nullable', 'string', 'max:2000'],
-        ]);
-
-        return response()->json(['data' => $this->identity->createPermission($this->userId($request), $project, $input)], 201);
-    }
-
-    public function setRolePermissions(Request $request, string $project, string $role): JsonResponse
-    {
-        $input = $request->validate(['permission_ids' => ['present', 'array'], 'permission_ids.*' => ['uuid', 'distinct']]);
-        $this->identity->setRolePermissions($this->userId($request), $project, $role, $input['permission_ids']);
-
-        return response()->json(['data' => ['message' => 'Role permissions updated.']]);
-    }
-
-    public function invite(Request $request, string $project): JsonResponse
-    {
-        $input = $request->validate(['email' => ['required', 'email'], 'is_admin' => ['sometimes', 'boolean']]);
-
-        return response()->json(['data' => $this->identity->invite($this->userId($request), $project, $input['email'], (bool) ($input['is_admin'] ?? false))], 201);
-    }
-
-    public function setMembershipAccess(Request $request, string $project, string $membership): JsonResponse
-    {
-        $input = $request->validate([
-            'role_ids' => ['present', 'array'],
-            'role_ids.*' => ['uuid', 'distinct'],
-            'permission_ids' => ['present', 'array'],
-            'permission_ids.*' => ['uuid', 'distinct'],
-            'is_admin' => ['required', 'boolean'],
-            'status' => ['required', Rule::in(['active', 'suspended'])],
-        ]);
-        $this->identity->setMembershipAccess(
-            $this->userId($request), $project, $membership,
-            $input['role_ids'], $input['permission_ids'], $input['is_admin'], $input['status'],
-        );
-
-        return response()->json(['data' => ['message' => 'Membership access updated.']]);
-    }
-
-    public function destroyMembership(Request $request, string $project, string $membership): JsonResponse
-    {
-        $this->identity->removeMembership($this->userId($request), $project, $membership);
-
-        return response()->json(['data' => ['message' => 'Membership removed.']]);
-    }
-
-    public function audit(Request $request, string $project): JsonResponse
-    {
-        $input = $request->validate(['limit' => ['sometimes', 'integer', 'min:1', 'max:250']]);
-
-        return response()->json(['data' => $this->identity->listAuditEvents($this->userId($request), $project, (int) ($input['limit'] ?? 100))]);
-    }
-
-    private function userId(Request $request): string
-    {
-        return (string) $request->user()->getAuthIdentifier();
-    }
+    #[Route('v1/identity/projects/{project}/audit', methods: ['GET'], middleware: self::MIDDLEWARE, name: 'identity.projects.audit')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ReadIdentityProjectService::class, 'Audit events retrieved.')]
+    public function audit(): void {}
 }

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\UserManagementService\API\Middleware;
 
-use App\Services\UserManagementService\API\Exceptions\IdentityAuthenticationException;
-use App\Services\UserManagementService\Application\Contracts\IdentityAccessServiceInterface;
+use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\ReadIdentitySessions;
 use App\Services\UserManagementService\Application\DTOs\External\IntrospectedIdentity;
+use App\Services\UserManagementService\Application\Exceptions\IdentityAuthenticationException;
 use Closure;
 use Illuminate\Auth\GenericUser;
 use Illuminate\Http\Client\ConnectionException;
@@ -20,7 +20,7 @@ use Throwable;
 final class IdentityIntrospectionMiddleware
 {
     public function __construct(
-        private readonly IdentityAccessServiceInterface $identity,
+        private readonly ReadIdentitySessions $identity,
     ) {}
 
     public function handle(Request $request, Closure $next, ?string $requiredPermission = null): Response

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\UserManagementService\Domain\Aggregates;
 
-use App\Services\UserManagementService\Domain\Entities\Role as RoleEntity;
 use DateTimeImmutable;
 use Zolta\Domain\Aggregates\AggregateRoot;
 use Zolta\Domain\ValueObjects\Description;
@@ -236,14 +235,6 @@ final class Role extends AggregateRoot
     public function getUpdatedAt(): DateTimeImmutable
     {
         return $this->updatedAt;
-    }
-
-    /**
-     * Create the lightweight Role entity representation for embedding.
-     */
-    public function toEntity(): RoleEntity
-    {
-        return new RoleEntity($this->roleId, $this->roleName, $this->description, $this->permissions);
     }
 
     /**

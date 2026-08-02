@@ -2,19 +2,21 @@
 
 namespace App\Services\UserManagementService\API\Requests\Authentication;
 
-use Illuminate\Support\Facades\Auth;
+use App\Services\UserManagementService\API\Requests\Concerns\ResolvesAuthenticatedIdentity;
 use Zolta\Http\Request\BaseRequest;
 
 final class VerifyEmailRequest extends BaseRequest
 {
+    use ResolvesAuthenticatedIdentity;
+
     public function authorize(): bool
     {
-        return Auth::check();
+        return $this->hasAuthenticatedIdentity();
     }
 
     public function trustedData(): array
     {
-        return ['user_id' => (string) $this->user()?->getAuthIdentifier()];
+        return ['user_id' => $this->authenticatedUserId()];
     }
 
     public function rules(): array

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\UserManagementService\Infrastructure\Repositories;
 
+use App\Services\UserManagementService\Application\Exceptions\IdentityResourceNotFoundException;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
 use Zolta\Cqrs\Repositories\BaseRepository;
 use Zolta\Cqrs\Repositories\Query\RepositoryConstraint;
@@ -62,7 +62,7 @@ abstract class EloquentProjectScopedRepository extends BaseRepository
     {
         $model = $this->findForProject($projectId, $modelId, $includes);
         if ($model === null) {
-            throw (new ModelNotFoundException)->setModel($this->modelClass(), [$modelId]);
+            throw new IdentityResourceNotFoundException(class_basename($this->modelClass()));
         }
 
         return $model;

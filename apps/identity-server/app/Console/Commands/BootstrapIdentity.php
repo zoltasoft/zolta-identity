@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Services\UserManagementService\Domain\Aggregates\IdentityMembership as DomainIdentityMembership;
+use App\Services\UserManagementService\Domain\Repositories\IdentityMembershipRepository;
+use App\Services\UserManagementService\Domain\ValueObjects\IdentityProjectId;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
-use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectMembership;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\Role;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
-use App\Services\UserManagementService\Infrastructure\Services\EloquentIdentityAccessService;
+use App\Services\UserManagementService\Infrastructure\Services\Identity\IdentityClientProvisioner;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Zolta\Domain\ValueObjects\UserId;
 
 final class BootstrapIdentity extends Command
 {
@@ -24,8 +27,10 @@ final class BootstrapIdentity extends Command
 
     protected $description = 'Create the first identity installation owner, project, and confidential console client';
 
-    public function handle(EloquentIdentityAccessService $identity): int
-    {
+    public function handle(
+        IdentityClientProvisioner $clients,
+        IdentityMembershipRepository $memberships,
+    ): int {
         if (User::query()->where('is_system_admin', true)->exists()) {
             $this->error('This identity installation has already been bootstrapped.');
 
@@ -41,7 +46,7 @@ final class BootstrapIdentity extends Command
             return self::FAILURE;
         }
 
-        [$user, $project, $client, $secret] = DB::transaction(function () use ($identity, $email, $name, $password): array {
+        [$user, $project, $client, $secret] = DB::transaction(function () use ($clients, $memberships, $email, $name, $password): array {
             $defaultRole = Role::query()->firstOrCreate(
                 ['role' => 'User'],
                 ['description' => 'Default global identity role'],
@@ -62,11 +67,13 @@ final class BootstrapIdentity extends Command
                 ['slug' => Str::slug($projectName)],
                 ['name' => $projectName, 'status' => 'active'],
             );
-            IdentityProjectMembership::query()->updateOrCreate(
-                ['project_id' => $project->id, 'user_id' => $user->id],
-                ['status' => 'active', 'is_admin' => true],
-            );
-            [$client, $secret] = $identity->newClient($project->id, (string) $this->option('client'));
+            $projectId = IdentityProjectId::fromString($project->id);
+            $userId = new UserId((string) $user->id);
+            $membership = $memberships->findForProjectUser($projectId, $userId)
+                ?? DomainIdentityMembership::create($projectId, $userId, true);
+            $membership->acceptInvitation(true);
+            $memberships->save($membership);
+            [$client, $secret] = $clients->create($project->id, (string) $this->option('client'));
 
             return [$user, $project, $client, $secret];
         });

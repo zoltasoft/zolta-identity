@@ -1,0 +1,89 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\UserManagementService\API\Requests\Identity;
+
+final class IdentityAuthenticationOperationRequest extends IdentityOperationRequest
+{
+    private const AUTHENTICATED_OPERATIONS = [
+        'auth.me',
+        'auth.sessions.index',
+        'auth.sessions.revoke',
+        'auth.logout',
+        'auth.verification.resend',
+        'auth.verification.verify',
+    ];
+
+    public function authorize(): bool
+    {
+        return ! in_array($this->operation(), self::AUTHENTICATED_OPERATIONS, true)
+            || $this->hasAuthenticatedIdentity();
+    }
+
+    /** @return array<string, mixed> */
+    public function routeParams(): array
+    {
+        return $this->operation() === 'auth.sessions.revoke'
+            ? ['session' => ['type' => 'string', 'required' => true]]
+            : [];
+    }
+
+    /** @return array<string, mixed> */
+    public function rules(): array
+    {
+        return match ($this->operation()) {
+            'auth.context' => $this->clientRules(['project' => ['nullable', 'string', 'max:255']]),
+            'auth.login' => $this->clientRules([
+                'project' => ['nullable', 'string', 'max:255'],
+                'email' => ['required', 'email'],
+                'password' => ['required', 'string'],
+            ]),
+            'auth.register' => $this->clientRules([
+                'project' => ['nullable', 'string', 'max:255'],
+                'username' => ['required', 'string', 'min:2', 'max:100'],
+                'email' => ['required', 'email', 'max:255'],
+                'password' => ['required', 'string', 'min:12', 'confirmed'],
+            ]),
+            'auth.sandbox-session' => $this->clientRules(),
+            'auth.refresh' => $this->clientRules(['refresh_token' => ['required', 'string', 'min:64']]),
+            'auth.password.forgot' => $this->clientRules(['email' => ['required', 'email']]),
+            'auth.password.reset' => $this->clientRules([
+                'email' => ['required', 'email'],
+                'token' => ['required', 'string', 'min:64'],
+                'password' => ['required', 'string', 'min:12', 'confirmed'],
+            ]),
+            'auth.introspect' => $this->clientRules(['token' => ['required', 'string']]),
+            'auth.manifest.sync' => $this->clientRules($this->manifestRules()),
+            'auth.invitation.accept' => [
+                'invitation_token' => ['required', 'string', 'min:64'],
+                'username' => ['required', 'string', 'max:255'],
+                'password' => ['required', 'string', 'min:12'],
+            ],
+            'auth.verification.verify' => ['code' => ['required', 'digits:6']],
+            'auth.sessions.revoke' => ['session' => ['required', 'string', 'max:255']],
+            default => [],
+        };
+    }
+
+    /** @param array<string, mixed> $rules @return array<string, mixed> */
+    private function clientRules(array $rules = []): array
+    {
+        return [
+            'client_id' => ['required', 'uuid'],
+            'client_secret' => ['required', 'string', 'min:32'],
+            ...$rules,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function manifestRules(): array
+    {
+        return [
+            'permissions' => ['present', 'array', 'max:500'],
+            'permissions.*.key' => ['required', 'string', 'regex:/^[a-z0-9]+(?:[._:-][a-z0-9]+)*$/', 'max:160', 'distinct'],
+            'permissions.*.name' => ['nullable', 'string', 'max:255'],
+            'permissions.*.description' => ['nullable', 'string', 'max:2000'],
+        ];
+    }
+}

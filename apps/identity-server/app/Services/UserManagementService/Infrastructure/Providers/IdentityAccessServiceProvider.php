@@ -6,9 +6,26 @@ namespace App\Services\UserManagementService\Infrastructure\Providers;
 
 use App\Services\UserManagementService\API\Middleware\IdentityIntrospectionMiddleware;
 use App\Services\UserManagementService\API\Middleware\RequireIdentityAccessToken;
-use App\Services\UserManagementService\Application\Contracts\IdentityAccessServiceInterface;
+use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\AcceptIdentityInvitation;
+use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\IssueIdentityAccess;
+use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\ManageIdentitySessions;
+use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\ReadIdentityAccessContext;
+use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\ReadIdentitySessions;
+use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\RecoverIdentityPassword;
+use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\SyncIdentityClientManifest;
+use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\VerifyIdentityEmail;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ConfigureIdentityProjectEnvironment;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ConfigureIdentityProjectRegistration;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\CreateIdentityProject;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityClients;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityProjectAccess;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityWebhooks;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ReadIdentityProjects;
+use App\Services\UserManagementService\Application\Contracts\IdentityInstallationServiceInterface;
 use App\Services\UserManagementService\Application\Contracts\IdentityLifecyclePublisherInterface;
-use App\Services\UserManagementService\Infrastructure\Services\EloquentIdentityAccessService;
+use App\Services\UserManagementService\Infrastructure\Services\EloquentIdentityAuthenticationService;
+use App\Services\UserManagementService\Infrastructure\Services\EloquentIdentityInstallationService;
+use App\Services\UserManagementService\Infrastructure\Services\EloquentIdentityProjectService;
 use App\Services\UserManagementService\Infrastructure\Webhooks\IdentityWebhookPublisher;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
@@ -17,14 +34,28 @@ final class IdentityAccessServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->bind(IdentityAccessServiceInterface::class, EloquentIdentityAccessService::class);
+        $this->app->bind(IssueIdentityAccess::class, EloquentIdentityAuthenticationService::class);
+        $this->app->bind(ReadIdentityAccessContext::class, EloquentIdentityAuthenticationService::class);
+        $this->app->bind(VerifyIdentityEmail::class, EloquentIdentityAuthenticationService::class);
+        $this->app->bind(RecoverIdentityPassword::class, EloquentIdentityAuthenticationService::class);
+        $this->app->bind(ManageIdentitySessions::class, EloquentIdentityAuthenticationService::class);
+        $this->app->bind(ReadIdentitySessions::class, EloquentIdentityAuthenticationService::class);
+        $this->app->bind(AcceptIdentityInvitation::class, EloquentIdentityAuthenticationService::class);
+        $this->app->bind(SyncIdentityClientManifest::class, EloquentIdentityAuthenticationService::class);
+        $this->app->bind(IdentityInstallationServiceInterface::class, EloquentIdentityInstallationService::class);
+        $this->app->bind(CreateIdentityProject::class, EloquentIdentityProjectService::class);
+        $this->app->bind(ConfigureIdentityProjectRegistration::class, EloquentIdentityProjectService::class);
+        $this->app->bind(ConfigureIdentityProjectEnvironment::class, EloquentIdentityProjectService::class);
+        $this->app->bind(ManageIdentityWebhooks::class, EloquentIdentityProjectService::class);
+        $this->app->bind(ManageIdentityClients::class, EloquentIdentityProjectService::class);
+        $this->app->bind(ManageIdentityProjectAccess::class, EloquentIdentityProjectService::class);
+        $this->app->bind(ReadIdentityProjects::class, EloquentIdentityProjectService::class);
         $this->app->bind(IdentityLifecyclePublisherInterface::class, IdentityWebhookPublisher::class);
         $this->mergeConfigFrom(config_path('identity.php'), 'identity');
     }
 
     public function boot(): void
     {
-        $this->loadRoutesFrom(__DIR__.'/../Routes/identity.php');
         $this->app->make(Router::class)->aliasMiddleware('identity.introspect', IdentityIntrospectionMiddleware::class);
         $this->app->make(Router::class)->aliasMiddleware('identity.token', RequireIdentityAccessToken::class);
     }

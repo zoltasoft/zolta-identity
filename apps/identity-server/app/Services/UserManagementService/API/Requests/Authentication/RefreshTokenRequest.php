@@ -2,20 +2,21 @@
 
 namespace App\Services\UserManagementService\API\Requests\Authentication;
 
+use App\Services\UserManagementService\API\Requests\Concerns\ResolvesAuthenticatedIdentity;
 use Zolta\Http\Request\BaseRequest;
 
 final class RefreshTokenRequest extends BaseRequest
 {
+    use ResolvesAuthenticatedIdentity;
+
     public function authorize(): bool
     {
-        return $this->user() ? true : false;
+        return $this->hasAuthenticatedIdentity();
     }
 
-    protected function prepareForValidation(): void
+    public function trustedData(): array
     {
-        $this->merge([
-            'user_id' => (string) $this->user()?->getAuthIdentifier(),
-        ]);
+        return ['user_id' => $this->authenticatedUserId()];
     }
 
     public function rules(): array

@@ -34,11 +34,4 @@ final class EloquentIdentityProjectMembershipRepository extends EloquentProjectS
 
         return $membership instanceof IdentityProjectMembership ? $membership : null;
     }
-
-    public function touchAuthorizationForProject(string $projectId): void
-    {
-        IdentityProjectMembership::query()
-            ->where('project_id', $projectId)
-            ->increment('authorization_version');
-    }
 }

@@ -4,191 +4,100 @@ declare(strict_types=1);
 
 namespace App\Services\UserManagementService\API\Controllers\Identity;
 
-use App\Services\UserManagementService\Application\Contracts\IdentityAccessServiceInterface;
+use App\Services\UserManagementService\API\Requests\Identity\IdentityAuthenticationOperationRequest;
+use App\Services\UserManagementService\Application\DTOs\Input\IdentityOperationDTO;
+use App\Services\UserManagementService\Application\Services\Identity\ExecuteIdentityAuthenticationService;
+use App\Services\UserManagementService\Application\Services\Identity\ReadIdentityAuthenticationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Controller;
+use Zolta\Http\Controller\Controller;
+use Zolta\Http\Request\Attributes\Request as RequestAttribute;
+use Zolta\Http\Router\Attributes\Route;
+use Zolta\Http\Service\Attributes\Service;
 
 final class IdentityAuthenticationController extends Controller
 {
-    public function __construct(private readonly IdentityAccessServiceInterface $identity) {}
+    public function __construct(private readonly ReadIdentityAuthenticationService $readIdentity) {}
 
-    public function login(Request $request): JsonResponse
+    #[Route('v1/identity/auth/context', methods: ['POST'], middleware: ['api', 'throttle:120,1'], name: 'identity.auth.context')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ReadIdentityAuthenticationService::class, 'Authentication context resolved.')]
+    public function context(): void {}
+
+    #[Route('v1/identity/auth/login', methods: ['POST'], middleware: ['api', 'throttle:20,1'], name: 'identity.auth.login')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Login successful.')]
+    public function login(): void {}
+
+    #[Route('v1/identity/auth/register', methods: ['POST'], middleware: ['api', 'throttle:10,1'], name: 'identity.auth.register')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Registration successful.', 201)]
+    public function register(): void {}
+
+    #[Route('v1/identity/auth/sandbox-session', methods: ['POST'], middleware: ['api', 'throttle:20,1'], name: 'identity.auth.sandbox-session')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Sandbox session created.', 201)]
+    public function sandboxSession(): void {}
+
+    #[Route('v1/identity/auth/refresh', methods: ['POST'], middleware: ['api', 'throttle:60,1'], name: 'identity.auth.refresh')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Session refreshed.')]
+    public function refresh(): void {}
+
+    #[Route('v1/identity/auth/password/forgot', methods: ['POST'], middleware: ['api', 'throttle:5,1'], name: 'identity.auth.password.forgot')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Password reset requested.')]
+    public function forgotPassword(): void {}
+
+    #[Route('v1/identity/auth/password/reset', methods: ['POST'], middleware: ['api', 'throttle:10,1'], name: 'identity.auth.password.reset')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Password reset completed.')]
+    public function resetPassword(): void {}
+
+    #[Route('v1/identity/auth/introspect', methods: ['POST'], middleware: ['api', 'throttle:300,1'], name: 'identity.auth.introspect')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    public function introspect(Request $request, IdentityOperationDTO $dto): JsonResponse
     {
-        $input = $request->validate([
-            'project' => ['nullable', 'string', 'max:255'],
-            'client_id' => ['required', 'uuid'],
-            'client_secret' => ['required', 'string', 'min:32'],
-            'email' => ['required', 'email'],
-            'password' => ['required', 'string'],
-        ]);
-
-        return response()->json(['data' => $this->identity->login($input, $request->ip(), $request->userAgent())]);
+        return response()->json(($this->readIdentity)($dto));
     }
 
-    public function context(Request $request): JsonResponse
-    {
-        $input = $request->validate([
-            'project' => ['nullable', 'string', 'max:255'],
-            'client_id' => ['required', 'uuid'],
-            'client_secret' => ['required', 'string', 'min:32'],
-        ]);
+    #[Route('v1/identity/clients/permission-manifest', methods: ['PUT'], middleware: ['api', 'throttle:60,1'], name: 'identity.auth.manifest.sync')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Permission manifest synchronized.')]
+    public function syncPermissionManifest(): void {}
 
-        return response()->json(['data' => $this->identity->authenticationContext(
-            $input['client_id'],
-            $input['client_secret'],
-            $input['project'] ?? null,
-        )]);
-    }
+    #[Route('v1/identity/invitations/accept', methods: ['POST'], middleware: ['api', 'throttle:20,1'], name: 'identity.auth.invitation.accept')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Invitation accepted.', 201)]
+    public function acceptInvitation(): void {}
 
-    public function register(Request $request): JsonResponse
-    {
-        $input = $request->validate([
-            'project' => ['nullable', 'string', 'max:255'],
-            'client_id' => ['required', 'uuid'],
-            'client_secret' => ['required', 'string', 'min:32'],
-            'username' => ['required', 'string', 'min:2', 'max:100'],
-            'email' => ['required', 'email', 'max:255'],
-            'password' => ['required', 'string', 'min:12', 'confirmed'],
-        ]);
+    #[Route('v1/identity/auth/me', methods: ['GET'], middleware: ['api', 'auth:sanctum', 'identity.token'], name: 'identity.auth.me')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ReadIdentityAuthenticationService::class, 'Current identity retrieved.')]
+    public function me(): void {}
 
-        return response()->json([
-            'data' => $this->identity->register($input, $request->ip(), $request->userAgent()),
-        ], 201);
-    }
+    #[Route('v1/identity/auth/sessions', methods: ['GET'], middleware: ['api', 'auth:sanctum', 'identity.token'], name: 'identity.auth.sessions.index')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ReadIdentityAuthenticationService::class, 'Sessions retrieved.')]
+    public function sessions(): void {}
 
-    public function sandboxSession(Request $request): JsonResponse
-    {
-        $input = $request->validate([
-            'client_id' => ['required', 'uuid'],
-            'client_secret' => ['required', 'string', 'min:32'],
-        ]);
+    #[Route('v1/identity/auth/sessions/{session}', methods: ['DELETE'], middleware: ['api', 'auth:sanctum', 'identity.token'], name: 'identity.auth.sessions.revoke')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Session revoked.')]
+    public function revokeSession(): void {}
 
-        return response()->json([
-            'data' => $this->identity->createSandboxSession(
-                $input['client_id'],
-                $input['client_secret'],
-                $request->ip(),
-                $request->userAgent(),
-            ),
-        ], 201);
-    }
+    #[Route('v1/identity/auth/logout', methods: ['POST'], middleware: ['api', 'auth:sanctum', 'identity.token'], name: 'identity.auth.logout')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Session revoked.')]
+    public function logout(): void {}
 
-    public function refresh(Request $request): JsonResponse
-    {
-        $input = $request->validate([
-            'client_id' => ['required', 'uuid'],
-            'client_secret' => ['required', 'string', 'min:32'],
-            'refresh_token' => ['required', 'string', 'min:64'],
-        ]);
+    #[Route('v1/identity/auth/email/verification/resend', methods: ['POST'], middleware: ['api', 'auth:sanctum', 'identity.token', 'throttle:5,1'], name: 'identity.auth.verification.resend')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Verification code sent.')]
+    public function resendEmailVerification(): void {}
 
-        return response()->json(['data' => $this->identity->refresh($input, $request->ip(), $request->userAgent())]);
-    }
-
-    public function resendEmailVerification(Request $request): JsonResponse
-    {
-        return response()->json(['data' => $this->identity->resendEmailVerification(
-            (string) $request->user()->getAuthIdentifier(),
-        )]);
-    }
-
-    public function verifyEmail(Request $request): JsonResponse
-    {
-        $input = $request->validate(['code' => ['required', 'digits:6']]);
-        $this->identity->verifyEmail((string) $request->user()->getAuthIdentifier(), $input['code']);
-
-        return response()->json(['data' => ['message' => 'Email address verified.']]);
-    }
-
-    public function forgotPassword(Request $request): JsonResponse
-    {
-        $input = $request->validate([
-            'client_id' => ['required', 'uuid'],
-            'client_secret' => ['required', 'string', 'min:32'],
-            'email' => ['required', 'email'],
-        ]);
-
-        return response()->json(['data' => $this->identity->requestPasswordReset(
-            $input['client_id'], $input['client_secret'], $input['email'],
-        )]);
-    }
-
-    public function resetPassword(Request $request): JsonResponse
-    {
-        $input = $request->validate([
-            'client_id' => ['required', 'uuid'],
-            'client_secret' => ['required', 'string', 'min:32'],
-            'email' => ['required', 'email'],
-            'token' => ['required', 'string', 'min:64'],
-            'password' => ['required', 'string', 'min:12', 'confirmed'],
-        ]);
-        $this->identity->resetPassword(
-            $input['client_id'], $input['client_secret'], $input['email'], $input['token'], $input['password'],
-        );
-
-        return response()->json(['data' => ['message' => 'Password reset completed.']]);
-    }
-
-    public function introspect(Request $request): JsonResponse
-    {
-        $input = $request->validate([
-            'client_id' => ['required', 'uuid'],
-            'client_secret' => ['required', 'string', 'min:32'],
-            'token' => ['required', 'string'],
-        ]);
-
-        return response()->json($this->identity->introspect($input['client_id'], $input['client_secret'], $input['token']));
-    }
-
-    public function logout(Request $request): JsonResponse
-    {
-        $token = $request->bearerToken();
-        if ($token !== null) {
-            $this->identity->logout($token);
-        }
-
-        return response()->json(['data' => ['message' => 'Session revoked.']]);
-    }
-
-    public function me(Request $request): JsonResponse
-    {
-        return response()->json(['data' => $this->identity->currentIdentity((string) $request->user()->getAuthIdentifier(), (string) $request->bearerToken())]);
-    }
-
-    public function sessions(Request $request): JsonResponse
-    {
-        return response()->json(['data' => $this->identity->listSessions((string) $request->user()->getAuthIdentifier(), (string) $request->bearerToken())]);
-    }
-
-    public function revokeSession(Request $request, string $session): JsonResponse
-    {
-        $this->identity->revokeSession((string) $request->user()->getAuthIdentifier(), $session);
-
-        return response()->json(['data' => ['message' => 'Session revoked.']]);
-    }
-
-    public function acceptInvitation(Request $request): JsonResponse
-    {
-        $input = $request->validate([
-            'invitation_token' => ['required', 'string', 'min:64'],
-            'username' => ['required', 'string', 'max:255'],
-            'password' => ['required', 'string', 'min:12'],
-        ]);
-
-        return response()->json(['data' => $this->identity->acceptInvitation($input)], 201);
-    }
-
-    public function syncPermissionManifest(Request $request): JsonResponse
-    {
-        $input = $request->validate([
-            'client_id' => ['required', 'uuid'],
-            'client_secret' => ['required', 'string', 'min:32'],
-            'permissions' => ['present', 'array', 'max:500'],
-            'permissions.*.key' => ['required', 'string', 'regex:/^[a-z0-9]+(?:[._:-][a-z0-9]+)*$/', 'max:160', 'distinct'],
-            'permissions.*.name' => ['nullable', 'string', 'max:255'],
-            'permissions.*.description' => ['nullable', 'string', 'max:2000'],
-        ]);
-
-        return response()->json(['data' => $this->identity->syncOwnPermissionManifest($input['client_id'], $input['client_secret'], $input['permissions'])]);
-    }
+    #[Route('v1/identity/auth/email/verification', methods: ['POST'], middleware: ['api', 'auth:sanctum', 'identity.token', 'throttle:10,1'], name: 'identity.auth.verification.verify')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Email address verified.')]
+    public function verifyEmail(): void {}
 }

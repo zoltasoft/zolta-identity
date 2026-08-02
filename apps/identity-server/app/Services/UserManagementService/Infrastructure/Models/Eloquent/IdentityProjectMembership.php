@@ -60,9 +60,4 @@ final class IdentityProjectMembership extends Model
     {
         return $this->roles()->pluck('slug')->unique()->sort()->values()->all();
     }
-
-    public function touchAuthorization(): void
-    {
-        $this->increment('authorization_version');
-    }
 }
