@@ -22,8 +22,8 @@ Requirements are PHP 8.3+, Composer 2, and SQLite, MySQL, or PostgreSQL. For a r
 
 - `/api/auth/*`: authentication and account-lifecycle endpoints
 - `/api/users/*`, `/api/roles/*`, `/api/permissions/*`: installation-level administration protected by Laravel system-administrator enforcement
-- `/api/v1/identity/auth/*`: register, login, refresh, introspect, current identity, sessions, and logout
-- `/api/v1/identity/projects/*`: projects, clients, permission manifests, roles, permissions, invitations, memberships, and audit events
+- `/api/v1/identity/auth/*`: register, login, credentialless sandbox sessions, refresh, introspect, current identity, sessions, and logout
+- `/api/v1/identity/projects/*`: projects, live/sandbox settings, clients, permission manifests, roles, permissions, invitations, memberships, cleanup webhooks, and audit events
 - `/api/v1/identity/users/*`: installation-level user administration
 - `/api/v1/identity/invitations/accept`: invitation acceptance
 
@@ -48,3 +48,5 @@ php artisan route:list --path=api/v1/identity
 ```
 
 Give the identity server its own database and deployment lifecycle. Consumer applications should store only their domain data and the global identity IDs needed to associate it with users.
+
+Production webhook delivery requires an asynchronous queue worker. Webhook requests include `X-Identity-Event-Id`, `X-Identity-Event`, `X-Identity-Timestamp`, and `X-Identity-Signature`; the signature is `v1=` followed by HMAC-SHA256 of `<timestamp>.<raw-body>`. HTTPS is required in production and private destinations are rejected.

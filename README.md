@@ -15,6 +15,8 @@ The repository contains:
 - short-lived Sanctum access tokens and rotating refresh-token families
 - confidential-client token introspection for APIs
 - invitation-only or public onboarding per project
+- live and sandbox projects with credentialless, time-limited identities
+- project-managed HMAC cleanup webhooks with persisted delivery retries
 - credential and social login, registration, verification, password recovery, account sessions, profile/security settings, account export/deletion, and temporary accounts
 - global and project-scoped user, role, and permission administration
 
@@ -27,6 +29,13 @@ Create a different confidential client for every BFF, API, worker, environment, 
 Identity owns global account fields: email, password hash, username, avatar, verification state, lock state, and system-administrator state. Consumer applications own their domain records and preferences such as locale, theme, notification settings, jobs, and documents.
 
 The Nuxt application follows a layered BFF architecture: browser code calls Nuxt server routes, and those routes call the identity API. The Laravel application keeps its HTTP, application, domain, and infrastructure concerns separated inside `UserManagementService` and uses Zolta CQRS and HTTP packages for dispatch and routing.
+
+The Nuxt package includes project-aware default authentication pages. Live
+projects receive the permanent-account login, registration, verification, and
+recovery experience. Sandbox projects receive an automatically provisioned,
+pre-verified temporary account with its generated identity and expiry displayed
+before continuing. Extend `@zoltasoft/identity-nuxt/default-pages` to use these
+pages or the headless `@zoltasoft/identity-nuxt` entry to keep custom pages.
 
 ## Requirements
 
@@ -116,10 +125,52 @@ For a consumer Laravel API, configure remote introspection with its dedicated AP
 IDENTITY_API_URL=http://127.0.0.1:8100
 IDENTITY_CLIENT_ID=<application-api-client-id>
 IDENTITY_CLIENT_SECRET=<application-api-client-secret>
-IDENTITY_INTROSPECTION_LOCAL=false
+IDENTITY_PROJECT=<application-project>
 ```
 
 The application's Nuxt BFF must use a separate confidential client. Do not put either client secret in public Nuxt runtime configuration.
+
+### Reusable Nuxt authentication layer
+
+The `@zoltasoft/identity-nuxt` workspace package is the supported Nuxt BFF
+integration. It owns the encrypted identity session, CSRF-protected
+`/api/auth/*` routes, token rotation, a route middleware, and
+`useIdentityAuth()`. It has two entries:
+
+- `@zoltasoft/identity-nuxt` is headless and lets an application keep fully
+  custom login, signup, recovery, reset, and verification pages.
+- `@zoltasoft/identity-nuxt/default-pages` adds a ready-to-use authentication
+  interface at `/auth/login`, `/auth/register`,
+  `/auth/forgot-password`, `/auth/reset-password`,
+  `/auth/verify-email`, and `/auth/logout`.
+
+Extend one entry from the consumer's `nuxt.config.ts`:
+
+```ts
+export default defineNuxtConfig({
+  extends: ['@zoltasoft/identity-nuxt/default-pages']
+})
+```
+
+For custom pages, extend `@zoltasoft/identity-nuxt` instead and call
+`useIdentityAuth()`. Browser code always calls the consumer's local
+`/api/auth/*` BFF routes; it never sends the confidential client secret or
+bearer tokens to the browser.
+
+Configure the consumer Nuxt server with its own BFF client:
+
+```dotenv
+NUXT_SESSION_PASSWORD=<at-least-32-random-characters>
+IDENTITY_API_URL=http://127.0.0.1:8100
+IDENTITY_PROJECT=<consumer-project>
+IDENTITY_CLIENT_ID=<consumer-nuxt-bff-client-id>
+IDENTITY_CLIENT_SECRET=<consumer-nuxt-bff-client-secret>
+```
+
+Cookie names and default-page product labels and redirects are optional. See
+[`docs/nuxt-auth-consumer-layer.md`](docs/nuxt-auth-consumer-layer.md) and
+[`layers/auth/README.md`](layers/auth/README.md) for the complete contract and
+custom-page example.
 
 ## Project onboarding
 
@@ -134,7 +185,7 @@ A public project may designate one project role as the default role for newly re
 
 Removing a user from an application should delete that application's records and remove its project membership. It must not delete the global identity account. Global account deletion is an identity-level action because it affects every connected project.
 
-The identity API intentionally does not reach into consumer databases. Before globally deleting an account, connected applications must erase or transfer their own data through their application-specific offboarding workflow.
+The identity API does not reach into consumer databases. Configure a signed cleanup webhook per project. Identity emits `identity.user.expired` for sandbox expiry and `identity.user.deletion_requested` for explicit global deletion. Explicit deletion remains pending until subscribed consumers acknowledge cleanup.
 
 ## API surface
 
@@ -183,9 +234,10 @@ GitHub Actions runs Composer validation, Laravel formatting/tests, Nuxt linting/
 ```text
 app/                         Nuxt shell and shared BFF composables
 layers/admin/                Identity Console pages and identity BFF routes
-layers/auth/                 Encrypted session and CSRF configuration
+layers/auth/                 Publishable Nuxt BFF auth package and optional default pages
 packages/ui/                 Nuxt UI foundation
 packages/i18n/               Internationalization layer
+packages/laravel-consumer/   Publishable remote-introspection and webhook-verification package
 apps/identity-server/        Standalone Laravel identity API
 ```
 
