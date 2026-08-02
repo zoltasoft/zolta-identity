@@ -14,6 +14,18 @@
         "zolta"
     ],
     "license": "MIT",
+    "homepage": "https://github.com/zoltasoft/zolta-identity",
+    "authors": [
+        {
+            "name": "ZoltaSoft",
+            "homepage": "https://github.com/zoltasoft",
+            "role": "Maintainer"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/zoltasoft/zolta-identity/issues",
+        "source": "https://github.com/zoltasoft/zolta-identity"
+    },
     "require": {
         "php": "^8.3",
         "laravel/framework": "^13.0",

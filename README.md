@@ -1,6 +1,9 @@
 # Laravel Zolta Identity
 
-Laravel Zolta Identity is an open-source, standalone identity provider and administration console extracted from the InterviewLike Portfolio. It gives multiple applications a shared account system while keeping each application's business data and preferences independent.
+[![CI](https://github.com/zoltasoft/zolta-identity/actions/workflows/ci.yml/badge.svg)](https://github.com/zoltasoft/zolta-identity/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+Laravel Zolta Identity is an open-source, standalone identity provider and administration console maintained by [ZoltaSoft](https://github.com/zoltasoft). It gives multiple applications a shared account system while keeping each application's business data and preferences independent.
 
 ## Features
 
@@ -36,6 +39,11 @@ The Nuxt application follows a layered BFF architecture: browser code calls Nuxt
 ## Quick start
 
 Clone the repository, then set up the Laravel API:
+
+```bash
+git clone git@github.com:zoltasoft/zolta-identity.git
+cd zolta-identity
+```
 
 ```bash
 cd apps/identity-server
@@ -223,7 +231,7 @@ apps/identity-server/        Standalone Laravel identity API
 
 ## Contributing and security
 
-Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), never through a public issue.
+Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), never through a public issue. Source, issues, and releases are hosted in the [ZoltaSoft repository](https://github.com/zoltasoft/zolta-identity).
 
 ## License
 

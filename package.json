@@ -1,10 +1,22 @@
 {
   "$schema": "https://www.schemastore.org/package.json",
-  "name": "laravel-zolta-identity",
+  "name": "@zoltasoft/identity",
   "description": "Standalone multi-project identity provider and administration console built with Nuxt and Laravel.",
   "type": "module",
   "private": true,
   "license": "MIT",
+  "author": {
+    "name": "ZoltaSoft",
+    "url": "https://github.com/zoltasoft"
+  },
+  "homepage": "https://github.com/zoltasoft/zolta-identity#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zoltasoft/zolta-identity.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zoltasoft/zolta-identity/issues"
+  },
   "keywords": [
     "identity-provider",
     "laravel",

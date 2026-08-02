@@ -1,6 +1,6 @@
 # Identity API
 
-This Laravel 13 application is the independently deployable API for Laravel Zolta Identity. Its only application slice is the complete migrated `UserManagementService`: authentication and account lifecycle, global user/role/permission administration, social accounts, project access management, confidential clients, rotating sessions, audit, and consumer introspection.
+This Laravel 13 application is the independently deployable API for [ZoltaSoft's Laravel Zolta Identity](https://github.com/zoltasoft/zolta-identity). Its only application slice is the complete migrated `UserManagementService`: authentication and account lifecycle, global user/role/permission administration, social accounts, project access management, confidential clients, rotating sessions, audit, and consumer introspection.
 
 ## Local setup
 
