@@ -1,0 +1,66 @@
+{
+  "$schema": "https://www.schemastore.org/package.json",
+  "name": "laravel-zolta-identity",
+  "description": "Standalone multi-project identity provider and administration console built with Nuxt and Laravel.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "keywords": [
+    "identity-provider",
+    "laravel",
+    "nuxt",
+    "rbac",
+    "sanctum",
+    "zolta"
+  ],
+  "engines": {
+    "node": "^22.12.0 || ^24.11.0 || >=26.0.0",
+    "pnpm": "^10.30.0"
+  },
+  "packageManager": "pnpm@10.30.3",
+  "scripts": {
+    "build": "node --max-old-space-size=4096 ./node_modules/nuxt/bin/nuxt.mjs build",
+    "dev": "nuxt dev --port 3100",
+    "dev:api": "composer --working-dir=apps/identity-server dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview --port 3100",
+    "postinstall": "nuxt prepare",
+    "lint": "pnpm run lint:js && pnpm run lint:types",
+    "lint:js": "eslint --max-warnings=0 --report-unused-disable-directives \"{app,layers,packages,shared}/**/*.{js,ts,vue}\"",
+    "lint:php": "composer --working-dir=apps/identity-server lint",
+    "lint:types": "nuxt typecheck",
+    "format": "eslint --fix --max-warnings=0 --report-unused-disable-directives \"{app,layers,packages,shared}/**/*.{js,ts,vue}\" \"*.{ts,mjs}\"",
+    "format:php": "composer --working-dir=apps/identity-server format",
+    "test": "pnpm run test:frontend && pnpm run test:backend",
+    "test:frontend": "pnpm run lint",
+    "test:backend": "composer --working-dir=apps/identity-server test",
+    "check": "pnpm run lint && pnpm run lint:php && pnpm run test:backend",
+    "security:audit": "pnpm run security:audit:js && pnpm run security:audit:php",
+    "security:audit:js": "pnpm audit --prod",
+    "security:audit:php": "composer --working-dir=apps/identity-server audit",
+    "outdated": "pnpm outdated --long"
+  },
+  "dependencies": {
+    "@iconify-json/lucide": "^1.2.115",
+    "@nuxt/kit": "4.4.8",
+    "@nuxt/schema": "4.4.8",
+    "@vueuse/core": "^14.3.0",
+    "@vueuse/nuxt": "^14.3.0",
+    "h3": "^1.15.4",
+    "nuxt": "^4.4.8",
+    "nuxt-auth-utils": "^0.5.28",
+    "nuxt-csurf": "^1.6.5",
+    "ohash": "^2.0.11",
+    "tailwindcss": "^4.3.2",
+    "vue": "^3.5.39",
+    "vue-router": "^5.1.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1.16.0",
+    "@nuxt/ui": "^4.9.0",
+    "eslint": "^9.39.4",
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.3.6"
+  }
+}

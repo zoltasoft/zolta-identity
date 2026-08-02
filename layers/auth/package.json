@@ -1,0 +1,11 @@
+{
+	"name": "@layer/auth",
+	"private": true,
+	"type": "module",
+	"scripts": {},
+	"dependencies": {
+		"nuxt-auth-utils": "0.5.29",
+		"nuxt-csurf": "^1.6.5"
+	},
+	"packageManager": "pnpm@10.30.3"
+}

@@ -1,0 +1,12 @@
+packages:
+  - layers/auth
+  - layers/admin
+  - packages/i18n
+  - packages/ui
+
+ignoredBuiltDependencies:
+  - "@parcel/watcher"
+  - "@tailwindcss/oxide"
+  - esbuild
+  - unrs-resolver
+  - vue-demi

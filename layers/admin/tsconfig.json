@@ -1,0 +1,16 @@
+{
+	"extends": "../../.nuxt/tsconfig.json",
+	"compilerOptions": {
+		"module": "ESNext"
+	},
+	"include": [
+		"../../.nuxt/nuxt.d.ts",
+		"./**/*.ts",
+		"./**/*.tsx",
+		"./**/*.mts",
+		"./**/*.cts",
+		"./**/*.d.ts",
+		"./**/*.vue"
+	],
+	"exclude": ["dist", "node_modules", "./nuxt.config.ts"]
+}

@@ -1,0 +1,30 @@
+{
+	// https://nuxt.com/docs/guide/concepts/typescript
+	"compilerOptions": {
+		"baseUrl": ".",
+		"forceConsistentCasingInFileNames": true,
+		"strict": true,
+		"paths": {
+			"~~/*": ["*", "./*"],
+			"@package/ui/*": ["packages/ui/*"],
+			"@package/i18n/*": ["packages/i18n/*"],
+			"#shared": ["shared"],
+			"#shared/*": ["shared/*"]
+		}
+	},
+	"files": [],
+	"references": [
+		{
+			"path": "./.nuxt/tsconfig.app.json"
+		},
+		{
+			"path": "./.nuxt/tsconfig.server.json"
+		},
+		{
+			"path": "./.nuxt/tsconfig.shared.json"
+		},
+		{
+			"path": "./.nuxt/tsconfig.node.json"
+		}
+	]
+}
