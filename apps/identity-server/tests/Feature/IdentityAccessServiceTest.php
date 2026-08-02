@@ -355,6 +355,258 @@ final class IdentityAccessServiceTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_project_lifecycle_writes_use_the_explicit_project_domain_commands(): void
+    {
+        [$administrator, $project, $client, $secret] = $this->identityFixture(true);
+        $administrator->forceFill(['is_system_admin' => true])->save();
+        $accessToken = $this->login($administrator, $project, $client, $secret)['access_token'];
+
+        $createdProjectId = $this->withToken($accessToken)
+            ->postJson('/api/v1/identity/projects', [
+                'name' => 'New Identity Project',
+                'slug' => 'new-identity-project',
+                'description' => 'Created through the project aggregate.',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.mode', 'live')
+            ->assertJsonPath('data.registration_mode', 'invite_only')
+            ->json('data.id');
+
+        $this->withToken($accessToken)
+            ->patchJson("/api/v1/identity/projects/{$createdProjectId}/registration", [
+                'registration_mode' => 'public',
+                'registration_role_id' => null,
+            ])
+            ->assertOk();
+
+        $this->withToken($accessToken)
+            ->patchJson("/api/v1/identity/projects/{$createdProjectId}/environment", [
+                'mode' => 'sandbox',
+                'sandbox_ttl_minutes' => 120,
+            ])
+            ->assertOk();
+
+        $created = IdentityProject::query()->findOrFail($createdProjectId);
+        $this->assertSame('public', $created->registration_mode);
+        $this->assertSame('sandbox', $created->mode);
+        $this->assertSame(120, $created->sandbox_ttl_minutes);
+        $this->assertDatabaseHas('identity_project_memberships', [
+            'project_id' => $createdProjectId,
+            'user_id' => $administrator->id,
+            'is_admin' => true,
+        ]);
+    }
+
+    public function test_client_and_webhook_lifecycle_writes_preserve_the_public_api_contract(): void
+    {
+        [$administrator, $project, $client, $secret] = $this->identityFixture(true);
+        $accessToken = $this->login($administrator, $project, $client, $secret)['access_token'];
+
+        $createdClient = $this->withToken($accessToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/clients", [
+                'name' => 'Job Tracker API',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.status', 'active')
+            ->json('data');
+        $this->assertNotEmpty($createdClient['client_secret']);
+        $this->assertSame(
+            substr($createdClient['client_secret'], 0, 8),
+            $createdClient['secret_prefix'],
+        );
+
+        $rotatedClientSecret = $this->withToken($accessToken)
+            ->postJson(
+                "/api/v1/identity/projects/{$project->id}/clients/{$createdClient['id']}/rotate-secret",
+            )
+            ->assertOk()
+            ->json('data.client_secret');
+        $this->assertNotSame($createdClient['client_secret'], $rotatedClientSecret);
+
+        $this->withToken($accessToken)
+            ->patchJson(
+                "/api/v1/identity/projects/{$project->id}/clients/{$createdClient['id']}",
+                ['status' => 'disabled'],
+            )
+            ->assertOk();
+        $this->assertDatabaseHas('identity_project_clients', [
+            'id' => $createdClient['id'],
+            'project_id' => $project->id,
+            'status' => 'disabled',
+        ]);
+
+        $createdWebhook = $this->withToken($accessToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/webhooks", [
+                'url' => 'https://job-tracker.example.com/webhooks/identity',
+                'events' => ['identity.user.expired'],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.status', 'active')
+            ->json('data');
+        $this->assertNotEmpty($createdWebhook['secret']);
+        $this->assertSame(
+            substr($createdWebhook['secret'], 0, 8),
+            $createdWebhook['secret_prefix'],
+        );
+
+        $this->withToken($accessToken)
+            ->putJson(
+                "/api/v1/identity/projects/{$project->id}/webhooks/{$createdWebhook['id']}",
+                [
+                    'url' => 'https://job-tracker.example.com/webhooks/accounts',
+                    'events' => ['identity.user.deletion_requested'],
+                    'status' => 'disabled',
+                ],
+            )
+            ->assertOk();
+
+        $rotatedWebhookSecret = $this->withToken($accessToken)
+            ->postJson(
+                "/api/v1/identity/projects/{$project->id}/webhooks/{$createdWebhook['id']}/rotate-secret",
+            )
+            ->assertOk()
+            ->json('data.secret');
+        $this->assertNotSame($createdWebhook['secret'], $rotatedWebhookSecret);
+        $this->assertDatabaseHas('identity_webhook_endpoints', [
+            'id' => $createdWebhook['id'],
+            'project_id' => $project->id,
+            'url' => 'https://job-tracker.example.com/webhooks/accounts',
+            'status' => 'disabled',
+        ]);
+
+        $this->withToken($accessToken)
+            ->deleteJson(
+                "/api/v1/identity/projects/{$project->id}/webhooks/{$createdWebhook['id']}",
+            )
+            ->assertOk();
+        $this->assertDatabaseMissing('identity_webhook_endpoints', [
+            'id' => $createdWebhook['id'],
+        ]);
+    }
+
+    public function test_role_permission_and_membership_writes_preserve_the_public_api_contract(): void
+    {
+        [$administrator, $project, $client, $secret] = $this->identityFixture(true);
+        $accessToken = $this->login($administrator, $project, $client, $secret)['access_token'];
+
+        $role = $this->withToken($accessToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/roles", [
+                'name' => 'Document editor',
+                'slug' => 'document-editor',
+                'description' => 'Creates and edits project documents.',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.permission_ids', [])
+            ->json('data');
+
+        $permission = $this->withToken($accessToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/permissions", [
+                'key' => 'documents.write',
+                'name' => 'Write documents',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.source', 'manual')
+            ->assertJsonPath('data.status', 'active')
+            ->json('data');
+
+        $this->withToken($accessToken)
+            ->putJson(
+                "/api/v1/identity/projects/{$project->id}/roles/{$role['id']}/permissions",
+                ['permission_ids' => [$permission['id']]],
+            )
+            ->assertOk();
+        $this->assertDatabaseHas('identity_project_role_permission', [
+            'role_id' => $role['id'],
+            'permission_id' => $permission['id'],
+        ]);
+
+        $member = User::query()->create([
+            'username' => 'project-member',
+            'email' => Str::uuid().'@example.com',
+            'password' => 'correct-password',
+            'email_verified_at' => now(),
+        ]);
+        $membership = IdentityProjectMembership::query()->create([
+            'project_id' => $project->id,
+            'user_id' => $member->id,
+            'status' => 'active',
+            'is_admin' => false,
+        ]);
+
+        $this->withToken($accessToken)
+            ->putJson(
+                "/api/v1/identity/projects/{$project->id}/memberships/{$membership->id}/access",
+                [
+                    'role_ids' => [$role['id']],
+                    'permission_ids' => [$permission['id']],
+                    'is_admin' => false,
+                    'status' => 'active',
+                ],
+            )
+            ->assertOk();
+        $this->assertDatabaseHas('identity_project_memberships', [
+            'id' => $membership->id,
+            'authorization_version' => 2,
+        ]);
+        $this->assertDatabaseHas('identity_membership_role', [
+            'membership_id' => $membership->id,
+            'role_id' => $role['id'],
+        ]);
+        $this->assertDatabaseHas('identity_membership_permission', [
+            'membership_id' => $membership->id,
+            'permission_id' => $permission['id'],
+        ]);
+
+        $this->withToken($accessToken)
+            ->deleteJson(
+                "/api/v1/identity/projects/{$project->id}/memberships/{$membership->id}",
+            )
+            ->assertOk();
+        $this->assertDatabaseMissing('identity_project_memberships', [
+            'id' => $membership->id,
+        ]);
+    }
+
+    public function test_permission_manifest_sync_reactivates_current_and_stales_removed_permissions(): void
+    {
+        [, $project, $client, $secret, $membership] = $this->identityFixture();
+
+        $this->putJson('/api/v1/identity/clients/permission-manifest', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'permissions' => [
+                ['key' => 'documents.read', 'name' => 'Read documents'],
+                ['key' => 'documents.write', 'name' => 'Write documents'],
+            ],
+        ])->assertOk()
+            ->assertJsonCount(2, 'data');
+
+        $this->putJson('/api/v1/identity/clients/permission-manifest', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'permissions' => [
+                ['key' => 'documents.read', 'name' => 'Read project documents'],
+            ],
+        ])->assertOk()
+            ->assertJsonCount(2, 'data');
+
+        $this->assertDatabaseHas('identity_project_permissions', [
+            'project_id' => $project->id,
+            'source_client_id' => $client->id,
+            'key' => 'documents.read',
+            'name' => 'Read project documents',
+            'source' => 'manifest',
+            'status' => 'active',
+        ]);
+        $this->assertDatabaseHas('identity_project_permissions', [
+            'project_id' => $project->id,
+            'source_client_id' => $client->id,
+            'key' => 'documents.write',
+            'status' => 'stale',
+        ]);
+        $this->assertSame(3, $membership->fresh()->authorization_version);
+    }
+
     public function test_project_administrator_cannot_mutate_resources_from_another_project(): void
     {
         [$administrator, $project, $client, $secret, $membership] = $this->identityFixture(true);
