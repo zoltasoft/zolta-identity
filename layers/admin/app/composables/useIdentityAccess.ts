@@ -8,7 +8,8 @@ import type {
   IdentityGlobalRole,
   IdentityProject,
   IdentityProjectDetails,
-  IdentityRole
+  IdentityRole,
+  IdentityWebhook
 } from '../../types/identity-access'
 
 export function useIdentityAccess() {
@@ -21,12 +22,12 @@ export function useIdentityAccess() {
     })
 
   return {
-    session: () => useFetch<IdentityBrowserSession>('/api/identity/auth/session'),
+    session: () => useFetch<IdentityBrowserSession>('/api/auth/session'),
     projects: () => useFetch<IdentityProject[]>('/api/identity/projects'),
     users: () => useFetch<IdentityInstallationUser[]>('/api/identity/users'),
     globalRoles: () => useFetch<IdentityGlobalRole[]>('/api/identity/global/roles'),
     globalPermissions: () => useFetch<IdentityGlobalPermission[]>('/api/identity/global/permissions'),
-    accountSessions: () => useFetch<IdentityAccountSession[]>('/api/identity/auth/sessions'),
+    accountSessions: () => useFetch<IdentityAccountSession[]>('/api/auth/sessions'),
     project: (id: MaybeRefOrGetter<string>) => useFetch<IdentityProjectDetails>(() => `/api/identity/projects/${toValue(id)}`),
     audit: (id: MaybeRefOrGetter<string>) => useFetch<IdentityAuditEvent[]>(() => `/api/identity/projects/${toValue(id)}/audit`),
     createProject: (body: { name: string, slug: string, description?: string | null }) =>
@@ -35,6 +36,18 @@ export function useIdentityAccess() {
       projectId: string,
       body: { registration_mode: 'invite_only' | 'public', registration_role_id: string | null }
     ) => mutation(`/api/identity/projects/${projectId}/registration`, { method: 'PATCH', body }),
+    updateProjectEnvironment: (
+      projectId: string,
+      body: { mode: 'live' | 'sandbox', sandbox_ttl_minutes: number }
+    ) => mutation(`/api/identity/projects/${projectId}/environment`, { method: 'PATCH', body }),
+    createWebhook: (projectId: string, body: { url: string, events: string[] }) =>
+      mutation<IdentityWebhook>(`/api/identity/projects/${projectId}/webhooks`, { method: 'POST', body }),
+    updateWebhook: (projectId: string, webhookId: string, body: { url: string, events: string[], status: 'active' | 'disabled' }) =>
+      mutation(`/api/identity/projects/${projectId}/webhooks/${webhookId}`, { method: 'PUT', body }),
+    rotateWebhookSecret: (projectId: string, webhookId: string) =>
+      mutation<IdentityWebhook>(`/api/identity/projects/${projectId}/webhooks/${webhookId}/rotate-secret`, { method: 'POST' }),
+    removeWebhook: (projectId: string, webhookId: string) =>
+      mutation(`/api/identity/projects/${projectId}/webhooks/${webhookId}`, { method: 'DELETE' }),
     updateUser: (userId: string, body: { is_system_admin: boolean, locked: boolean }) =>
       mutation(`/api/identity/users/${userId}`, { method: 'PATCH', body }),
     createGlobalRole: (body: { name: string, description?: string | null, permission_ids: string[] }) =>
@@ -52,7 +65,7 @@ export function useIdentityAccess() {
     changePassword: (body: { current_password: string, password: string, password_confirmation: string }) =>
       mutation<{ message: string }>('/api/identity/account/password', { method: 'PATCH', body }),
     revokeAccountSession: (sessionId: string) =>
-      mutation(`/api/identity/auth/sessions/${sessionId}`, { method: 'DELETE' }),
+      mutation(`/api/auth/sessions/${sessionId}`, { method: 'DELETE' }),
     createClient: (projectId: string, name: string) =>
       mutation<IdentityClient>(`/api/identity/projects/${projectId}/clients`, { method: 'POST', body: { name } }),
     rotateClientSecret: (projectId: string, clientId: string) =>
@@ -85,6 +98,6 @@ export function useIdentityAccess() {
       mutation(`/api/identity/projects/${projectId}/memberships/${membershipId}`, { method: 'DELETE' }),
     invite: (projectId: string, body: { email: string, is_admin: boolean }) =>
       mutation<Record<string, unknown>>(`/api/identity/projects/${projectId}/invitations`, { method: 'POST', body }),
-    logout: () => mutation<{ success: boolean }>('/api/identity/auth/logout', { method: 'POST' })
+    logout: () => mutation<{ success: boolean }>('/api/auth/logout', { method: 'POST' })
   }
 }

@@ -8,6 +8,11 @@ const {
   audit: fetchAudit,
   createClient,
   updateProjectRegistration,
+  updateProjectEnvironment,
+  createWebhook,
+  updateWebhook,
+  rotateWebhookSecret,
+  removeWebhook,
   rotateClientSecret,
   setClientStatus,
   createRole,
@@ -28,6 +33,15 @@ const registration = reactive<{
   mode: 'invite_only' | 'public'
   roleId: string | null
 }>({ mode: 'invite_only', roleId: null })
+const environment = reactive<{
+  mode: 'live' | 'sandbox'
+  ttlMinutes: number
+}>({ mode: 'live', ttlMinutes: 60 })
+const webhookForm = reactive({
+  url: '',
+  events: ['identity.user.expired'] as Array<'identity.user.expired' | 'identity.user.deletion_requested'>
+})
+const revealedWebhookSecret = ref<{ id: string, secret: string } | null>(null)
 const revealedSecret = ref<{ clientId: string, secret: string } | null>(null)
 const selectedRole = ref<{ id: string, name: string, permissionIds: string[] } | null>(null)
 const selectedMembership = ref<{
@@ -51,6 +65,8 @@ watch(project, (value) => {
   if (!value) return
   registration.mode = value.registration_mode
   registration.roleId = value.registration_role_id
+  environment.mode = value.mode
+  environment.ttlMinutes = value.sandbox_ttl_minutes
 }, { immediate: true })
 
 async function addClient() {
@@ -100,6 +116,43 @@ async function saveRegistrationPolicy() {
     registration_role_id: registration.mode === 'public' ? registration.roleId : null
   })
   toast.add({ title: 'Registration policy saved' })
+  await Promise.all([refresh(), refreshAudit()])
+}
+
+async function saveEnvironment() {
+  await updateProjectEnvironment(projectId.value, {
+    mode: environment.mode,
+    sandbox_ttl_minutes: environment.ttlMinutes
+  })
+  toast.add({ title: 'Project environment saved' })
+  await Promise.all([refresh(), refreshAudit()])
+}
+
+async function addWebhook() {
+  const webhook = await createWebhook(projectId.value, webhookForm)
+  revealedWebhookSecret.value = { id: webhook.id, secret: webhook.secret ?? '' }
+  webhookForm.url = ''
+  webhookForm.events = ['identity.user.expired']
+  await refresh()
+}
+
+async function toggleWebhook(webhook: NonNullable<typeof project.value>['webhooks'][number]) {
+  await updateWebhook(projectId.value, webhook.id, {
+    url: webhook.url,
+    events: webhook.events,
+    status: webhook.status === 'active' ? 'disabled' : 'active'
+  })
+  await Promise.all([refresh(), refreshAudit()])
+}
+
+async function rotateWebhook(webhookId: string) {
+  const webhook = await rotateWebhookSecret(projectId.value, webhookId)
+  revealedWebhookSecret.value = { id: webhook.id, secret: webhook.secret ?? '' }
+  await Promise.all([refresh(), refreshAudit()])
+}
+
+async function deleteWebhook(webhookId: string) {
+  await removeWebhook(projectId.value, webhookId)
   await Promise.all([refresh(), refreshAudit()])
 }
 
@@ -178,8 +231,127 @@ function selectMembership(membership: NonNullable<typeof project.value>['members
         close
         @update:open="revealedSecret = null"
       />
+      <UAlert
+        v-if="revealedWebhookSecret"
+        color="warning"
+        variant="soft"
+        title="Store this webhook signing secret now"
+        :description="`${revealedWebhookSecret.id}: ${revealedWebhookSecret.secret}`"
+        icon="i-lucide-webhook"
+        close
+        @update:open="revealedWebhookSecret = null"
+      />
 
       <div class="grid gap-6 xl:grid-cols-2">
+        <UPageCard
+          title="Project environment"
+          description="Sandbox projects issue temporary, credentialless identities for demos and automated tests."
+          variant="subtle"
+        >
+          <form
+            class="space-y-4"
+            @submit.prevent="saveEnvironment"
+          >
+            <UFormField label="Mode">
+              <USelect
+                v-model="environment.mode"
+                :items="[
+                  { label: 'Live', value: 'live' },
+                  { label: 'Sandbox', value: 'sandbox' }
+                ]"
+                class="w-full"
+              />
+            </UFormField>
+            <UFormField
+              v-if="environment.mode === 'sandbox'"
+              label="Temporary account lifetime"
+              description="Minutes before Identity expires and removes each sandbox identity."
+            >
+              <UInput
+                v-model.number="environment.ttlMinutes"
+                type="number"
+                :min="5"
+                :max="1440"
+                class="w-full"
+              />
+            </UFormField>
+            <UButton
+              type="submit"
+              label="Save environment"
+              icon="i-lucide-save"
+            />
+          </form>
+        </UPageCard>
+
+        <UPageCard
+          title="Cleanup webhooks"
+          description="Identity signs user-expiration and deletion events so this project can erase user-owned data."
+          variant="subtle"
+        >
+          <form
+            class="space-y-4"
+            @submit.prevent="addWebhook"
+          >
+            <UFormField label="Endpoint URL">
+              <UInput
+                v-model="webhookForm.url"
+                type="url"
+                required
+                placeholder="https://api.example.com/api/webhooks/identity"
+                class="w-full"
+              />
+            </UFormField>
+            <UFormField label="Events">
+              <UCheckboxGroup
+                v-model="webhookForm.events"
+                :items="[
+                  { label: 'Temporary user expired', value: 'identity.user.expired' },
+                  { label: 'User deletion requested', value: 'identity.user.deletion_requested' }
+                ]"
+              />
+            </UFormField>
+            <UButton
+              type="submit"
+              label="Add webhook"
+              icon="i-lucide-plus"
+            />
+          </form>
+          <div class="mt-5 space-y-3">
+            <div
+              v-for="webhook in project.webhooks"
+              :key="webhook.id"
+              class="rounded-xl border border-default p-3"
+            >
+              <p class="break-all text-sm font-medium">
+                {{ webhook.url }}
+              </p>
+              <p class="mt-1 text-xs text-muted">
+                {{ webhook.status }} · secret {{ webhook.secret_prefix }}… · {{ webhook.events.join(', ') }}
+              </p>
+              <div class="mt-3 flex flex-wrap gap-2">
+                <UButton
+                  :label="webhook.status === 'active' ? 'Disable' : 'Enable'"
+                  color="neutral"
+                  variant="ghost"
+                  @click="toggleWebhook(webhook)"
+                />
+                <UButton
+                  label="Rotate secret"
+                  color="neutral"
+                  variant="outline"
+                  @click="rotateWebhook(webhook.id)"
+                />
+                <UButton
+                  label="Remove"
+                  color="error"
+                  variant="ghost"
+                  @click="deleteWebhook(webhook.id)"
+                />
+              </div>
+            </div>
+          </div>
+        </UPageCard>
+
         <UPageCard
           title="Confidential clients"
           description="Create one client per BFF, API, worker, or environment."
