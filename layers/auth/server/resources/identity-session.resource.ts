@@ -1,7 +1,7 @@
 import type {
   IdentityBrowserSession,
   IdentityLoginData
-} from '../../types/identity-access'
+} from '../../shared/types/identity-auth'
 
 export function toIdentityBrowserSession(data: IdentityLoginData): IdentityBrowserSession {
   return {
@@ -15,6 +15,8 @@ export function toIdentityBrowserSession(data: IdentityLoginData): IdentityBrows
     roles: data.identity.membership.roles,
     permissions: data.identity.membership.permissions,
     authorizationVersion: data.identity.membership.authorization_version,
-    accessTokenExpiresAt: data.access_token_expires_at
+    accessTokenExpiresAt: data.access_token_expires_at,
+    isTemporary: data.identity.user.is_temporary,
+    temporaryExpiresAt: data.identity.user.temporary_expires_at
   }
 }

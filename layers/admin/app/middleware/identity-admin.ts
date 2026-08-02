@@ -9,7 +9,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
     session = await requestFetch<{
       isProjectAdmin: boolean
       isSystemAdmin: boolean
-    }>('/api/identity/auth/session')
+    }>('/api/auth/session')
   } catch {
     const localePath = useLocalePath()
     return navigateTo({

@@ -4,6 +4,8 @@ export type IdentityProject = {
   slug: string
   description: string | null
   status: 'active' | 'suspended'
+  mode: 'live' | 'sandbox'
+  sandbox_ttl_minutes: number
   registration_mode: 'invite_only' | 'public'
   registration_role_id: string | null
 }
@@ -38,6 +40,17 @@ export type IdentityRole = {
   permission_ids: string[]
 }
 
+export type IdentityWebhook = {
+  id: string
+  project_id: string
+  url: string
+  events: Array<'identity.user.expired' | 'identity.user.deletion_requested'>
+  secret_prefix: string
+  status: 'active' | 'disabled'
+  last_delivered_at: string | null
+  secret?: string
+}
+
 export type IdentityMembership = {
   id: string
   project_id: string
@@ -56,12 +69,13 @@ export type IdentityProjectDetails = IdentityProject & {
   memberships: IdentityMembership[]
   roles: IdentityRole[]
   permissions: IdentityPermission[]
+  webhooks: IdentityWebhook[]
 }
 
 export type {
   IdentityBrowserSession,
   IdentityLoginData
-} from '../../../shared/types/identity-access'
+} from '../../auth/shared/types/identity-auth'
 
 export type IdentityAccountSession = {
   id: string

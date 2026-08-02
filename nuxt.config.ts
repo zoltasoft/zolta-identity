@@ -9,7 +9,7 @@ const viteAllowedHosts = [
 
 export default defineNuxtConfig({
   extends: [
-    './layers/auth',
+    './layers/auth/default-pages',
     './layers/admin',
     './packages/i18n',
     './packages/ui'

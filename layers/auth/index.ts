@@ -4,13 +4,34 @@ export function createAuthRuntimeConfig(
   return {
     session: {
       password: env.NUXT_SESSION_PASSWORD,
-      name: 'identity-console-session',
+      name: env.IDENTITY_SESSION_COOKIE_NAME ?? 'identity-session',
       cookie: {
         httpOnly: true,
         sameSite: 'lax',
         secure: env.NODE_ENV === 'production',
         path: '/',
         maxAge: 60 * 60 * 24 * 7
+      }
+    },
+    identity: {
+      apiUrl: env.IDENTITY_API_URL ?? env.LARAVEL_API_URL ?? 'http://localhost:8000',
+      project: env.IDENTITY_PROJECT ?? '',
+      clientId: env.IDENTITY_CLIENT_ID ?? '',
+      clientSecret: env.IDENTITY_CLIENT_SECRET ?? '',
+      sandbox: {
+        apiUrl: env.IDENTITY_SANDBOX_API_URL ?? env.IDENTITY_API_URL ?? env.LARAVEL_API_URL ?? 'http://localhost:8000',
+        project: env.IDENTITY_SANDBOX_PROJECT ?? '',
+        clientId: env.IDENTITY_SANDBOX_CLIENT_ID ?? '',
+        clientSecret: env.IDENTITY_SANDBOX_CLIENT_SECRET ?? ''
+      }
+    },
+    public: {
+      identityAuth: {
+        productName: env.NUXT_PUBLIC_IDENTITY_AUTH_PRODUCT_NAME ?? 'Identity',
+        loginRedirect: env.NUXT_PUBLIC_IDENTITY_AUTH_LOGIN_REDIRECT ?? '/',
+        logoutRedirect: env.NUXT_PUBLIC_IDENTITY_AUTH_LOGOUT_REDIRECT ?? '/auth/login',
+        registerRedirect: env.NUXT_PUBLIC_IDENTITY_AUTH_REGISTER_REDIRECT ?? '/auth/verify-email',
+        sandboxEnabled: env.NUXT_PUBLIC_IDENTITY_SANDBOX_ENABLED === 'true'
       }
     }
   }
@@ -21,7 +42,7 @@ export function createAuthCsurfConfig(
 ) {
   return {
     headerName: 'csrf-token',
-    cookieKey: 'identity-console-csrf',
+    cookieKey: env.IDENTITY_CSRF_COOKIE_NAME ?? 'identity-csrf',
     cookie: {
       path: '/',
       httpOnly: true,

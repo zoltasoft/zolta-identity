@@ -3,8 +3,7 @@ definePageMeta({ layout: false })
 
 const route = useRoute()
 const localePath = useLocalePath()
-const userSession = useUserSession()
-const { csrf, headerName } = useCsrf()
+const { login } = useIdentityAuth()
 const form = reactive({ email: '', password: '' })
 const pending = ref(false)
 const errorMessage = ref('')
@@ -13,12 +12,7 @@ async function submit() {
   pending.value = true
   errorMessage.value = ''
   try {
-    await $fetch('/api/identity/auth/login', {
-      method: 'POST',
-      headers: { [headerName]: csrf },
-      body: form
-    })
-    await userSession.fetch()
+    await login(form)
     const projectsPath = localePath('/admin/projects')
     const installationUsersPath = localePath('/admin/identity-users')
     const requestedRedirect = typeof route.query.redirect === 'string'

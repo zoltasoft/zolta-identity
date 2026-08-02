@@ -1,11 +1,34 @@
 {
-	"name": "@layer/auth",
-	"private": true,
+	"name": "@zoltasoft/identity-nuxt",
+	"version": "0.1.0",
+	"description": "Nuxt BFF authentication integration for Zolta Identity",
 	"type": "module",
-	"scripts": {},
+	"license": "MIT",
+  "exports": {
+    ".": "./nuxt.config.ts",
+    "./default-pages": "./default-pages/nuxt.config.ts",
+    "./types": "./shared/types/identity-auth.ts"
+  },
+	"files": [
+		"app",
+		"default-pages",
+		"server",
+		"shared",
+		"index.ts",
+		"nuxt.config.ts",
+		"nuxt.schema.d.ts"
+	],
+	"peerDependencies": {
+		"nuxt": "^4.4.8",
+		"vue": "^3.5.39"
+	},
 	"dependencies": {
+		"h3": "^1.15.4",
 		"nuxt-auth-utils": "0.5.29",
-		"nuxt-csurf": "^1.6.5"
+		"nuxt-csurf": "^1.6.5",
+		"ofetch": "^1.5.1",
+		"ohash": "^2.0.11",
+		"zod": "^4.4.3"
 	},
 	"packageManager": "pnpm@10.30.3"
 }
