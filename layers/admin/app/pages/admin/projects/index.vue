@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { TableColumn } from '@nuxt/ui'
+import type { IdentityProject } from '#admin/types/identity-access'
+
 definePageMeta({ layout: 'identity-admin', middleware: ['identity-admin'] })
 
 const localePath = useLocalePath()
@@ -6,10 +9,33 @@ const { projects: fetchProjects, createProject } = useIdentityAccess()
 const { data: projects, status, error, refresh } = await fetchProjects()
 const open = ref(false)
 const saving = ref(false)
+const mode = ref<'all' | 'live' | 'sandbox'>('all')
 const form = reactive({ name: '', slug: '', description: '' })
+
+const scopedProjects = computed(() => (projects.value ?? []).filter(project => (
+  mode.value === 'all' || project.mode === mode.value
+)))
+const collection = useIdentityCollection(scopedProjects, project => (
+  `${project.name} ${project.slug} ${project.description ?? ''} ${project.status} ${project.mode}`
+))
+const liveCount = computed(() => projects.value?.filter(project => project.mode === 'live').length ?? 0)
+const sandboxCount = computed(() => projects.value?.filter(project => project.mode === 'sandbox').length ?? 0)
+const publicCount = computed(() => projects.value?.filter(project => project.registration_mode === 'public').length ?? 0)
+
+const columns: TableColumn<IdentityProject>[] = [
+  { accessorKey: 'name', header: 'Project' },
+  { accessorKey: 'mode', header: 'Environment' },
+  { accessorKey: 'registration_mode', header: 'Registration' },
+  { accessorKey: 'status', header: 'Status' },
+  { id: 'actions', header: '' }
+]
 
 watch(() => form.name, (name) => {
   if (!form.slug) form.slug = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+})
+
+watch(mode, () => {
+  collection.page.value = 1
 })
 
 async function submit() {
@@ -23,27 +49,20 @@ async function submit() {
     saving.value = false
   }
 }
-
-function openProjectForm() {
-  open.value = true
-}
-
-function closeProjectForm() {
-  open.value = false
-}
 </script>
 
 <template>
   <IdentityPanel
     panel-id="identity-projects"
     title="Projects"
-    description="Manage the applications that trust this identity installation."
+    icon="i-lucide-layout-dashboard"
+    description="Manage the applications, environments, and access boundaries that trust this identity installation."
   >
     <template #actions>
       <UButton
         label="New project"
         icon="i-lucide-folder-plus"
-        @click="openProjectForm"
+        @click="() => { open = true }"
       />
     </template>
 
@@ -59,39 +78,139 @@ function closeProjectForm() {
       :description="error.statusMessage || 'The identity service did not return the project list.'"
       @retry="refresh()"
     />
-    <IdentityShellState
-      v-else-if="!projects?.length"
-      state="empty"
-      title="No projects yet"
-      description="Create the first project to issue client credentials and manage access."
-    />
 
-    <div
-      v-else
-      class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
-    >
-      <UPageCard
-        v-for="project in projects"
-        :key="project.id"
-        :title="project.name"
-        :description="project.description || `Project slug: ${project.slug}`"
-        :to="localePath(`/admin/projects/${project.id}`)"
-        variant="subtle"
+    <template v-else>
+      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <IdentityMetricCard
+          label="Total projects"
+          :value="projects?.length ?? 0"
+          icon="i-lucide-folder-key"
+          description="Application boundaries"
+        />
+        <IdentityMetricCard
+          label="Live"
+          :value="liveCount"
+          icon="i-lucide-radio-tower"
+          color="success"
+          description="Production environments"
+        />
+        <IdentityMetricCard
+          label="Sandbox"
+          :value="sandboxCount"
+          icon="i-lucide-flask-conical"
+          color="warning"
+          description="Temporary identities"
+        />
+        <IdentityMetricCard
+          label="Public registration"
+          :value="publicCount"
+          icon="i-lucide-user-plus"
+          color="info"
+          description="Open enrollment"
+        />
+      </div>
+
+      <IdentityCollectionToolbar
+        v-model="collection.search.value"
+        placeholder="Search projects"
+        :result-count="collection.total.value"
       >
-        <div class="flex items-center justify-between">
-          <UBadge
-            :color="project.status === 'active' ? 'success' : 'warning'"
-            variant="soft"
-          >
-            {{ project.status }}
-          </UBadge>
-          <UIcon
-            name="i-lucide-arrow-up-right"
-            class="size-4 text-muted"
+        <template #filters>
+          <USelect
+            v-model="mode"
+            :items="[
+              { label: 'All environments', value: 'all' },
+              { label: 'Live', value: 'live' },
+              { label: 'Sandbox', value: 'sandbox' }
+            ]"
+            size="lg"
+            class="w-full sm:w-48"
           />
-        </div>
-      </UPageCard>
-    </div>
+        </template>
+      </IdentityCollectionToolbar>
+
+      <IdentityTableCard
+        title="Project directory"
+        description="Open a project to manage members, clients, permissions, webhooks, and audit history."
+        :count="collection.total.value"
+      >
+        <UTable
+          :data="collection.paginatedItems.value"
+          :columns="columns"
+          empty="No projects match the current filters."
+          class="min-w-4xl"
+          :ui="{
+            thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
+            tbody: '[&>tr]:last:[&>td]:border-b-0',
+            th: 'border-b border-default',
+            td: 'border-b border-default'
+          }"
+        >
+          <template #name-cell="{ row }">
+            <div class="min-w-0 py-1">
+              <NuxtLink
+                :to="localePath(`/admin/projects/${row.original.id}`)"
+                class="font-medium text-highlighted hover:text-primary"
+              >
+                {{ row.original.name }}
+              </NuxtLink>
+              <p class="max-w-sm truncate text-xs text-muted">
+                {{ row.original.description || row.original.slug }}
+              </p>
+            </div>
+          </template>
+          <template #mode-cell="{ row }">
+            <UBadge
+              :color="row.original.mode === 'live' ? 'success' : 'warning'"
+              variant="soft"
+              class="capitalize"
+            >
+              {{ row.original.mode }}
+            </UBadge>
+          </template>
+          <template #registration_mode-cell="{ row }">
+            <span class="text-sm text-muted">
+              {{ row.original.registration_mode === 'public' ? 'Public' : 'Invite only' }}
+            </span>
+          </template>
+          <template #status-cell="{ row }">
+            <div class="flex items-center gap-2 text-sm capitalize">
+              <span
+                class="size-2 rounded-full"
+                :class="row.original.status === 'active' ? 'bg-success' : 'bg-warning'"
+              />
+              {{ row.original.status }}
+            </div>
+          </template>
+          <template #actions-cell="{ row }">
+            <div class="flex justify-end">
+              <UButton
+                label="Manage"
+                icon="i-lucide-arrow-up-right"
+                color="neutral"
+                variant="ghost"
+                :to="localePath(`/admin/projects/${row.original.id}`)"
+              />
+            </div>
+          </template>
+        </UTable>
+
+        <template
+          v-if="collection.total.value > collection.pageSize"
+          #footer
+        >
+          <p class="text-sm text-muted">
+            Page {{ collection.page.value }} of {{ Math.ceil(collection.total.value / collection.pageSize) }}
+          </p>
+          <UPagination
+            v-model:page="collection.page.value"
+            :total="collection.total.value"
+            :items-per-page="collection.pageSize"
+            size="sm"
+          />
+        </template>
+      </IdentityTableCard>
+    </template>
 
     <UModal
       v-model:open="open"
@@ -109,6 +228,7 @@ function closeProjectForm() {
           >
             <UInput
               v-model="form.name"
+              autofocus
               class="w-full"
             />
           </UFormField>
@@ -132,7 +252,7 @@ function closeProjectForm() {
               label="Cancel"
               color="neutral"
               variant="ghost"
-              @click="closeProjectForm"
+              @click="() => { open = false }"
             />
             <UButton
               type="submit"

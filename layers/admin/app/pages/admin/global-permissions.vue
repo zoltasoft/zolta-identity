@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { TableColumn } from '@nuxt/ui'
+import type { IdentityGlobalPermission } from '#admin/types/identity-access'
+
 definePageMeta({ layout: 'identity-admin', middleware: ['identity-system-admin'] })
 
 const access = useIdentityAccess()
@@ -7,22 +10,24 @@ const open = ref(false)
 const saving = ref(false)
 const deletingId = ref<string | null>(null)
 const form = reactive({ name: '', description: '' })
-
-function openForm() {
-  open.value = true
-}
-
-function closeForm() {
-  open.value = false
-}
+const collection = useIdentityCollection(permissions, permission => (
+  `${permission.name} ${permission.description ?? ''}`
+))
+const roleBindings = computed(() => permissions.value?.reduce((total, permission) => total + permission.roles.length, 0) ?? 0)
+const directBindings = computed(() => permissions.value?.reduce((total, permission) => total + permission.users.length, 0) ?? 0)
+const columns: TableColumn<IdentityGlobalPermission>[] = [
+  { accessorKey: 'name', header: 'Permission key' },
+  { accessorKey: 'description', header: 'Description' },
+  { accessorKey: 'roles', header: 'Roles' },
+  { accessorKey: 'users', header: 'Direct users' },
+  { accessorKey: 'updated_at', header: 'Updated' },
+  { id: 'actions', header: '' }
+]
 
 async function createPermission() {
   saving.value = true
   try {
-    await access.createGlobalPermission({
-      name: form.name,
-      description: form.description || null
-    })
+    await access.createGlobalPermission({ name: form.name, description: form.description || null })
     Object.assign(form, { name: '', description: '' })
     open.value = false
     await refresh()
@@ -46,13 +51,14 @@ async function removePermission(id: string) {
   <IdentityPanel
     panel-id="identity-global-permissions"
     title="Global permissions"
-    description="Installation-wide permissions are retained for migrated clients. New applications should publish project permission manifests."
+    icon="i-lucide-key-round"
+    description="Installation-wide grants retained for migrated clients. New applications should publish project permission manifests."
   >
     <template #actions>
       <UButton
-        label="New global permission"
+        label="New permission"
         icon="i-lucide-key-round"
-        @click="openForm"
+        @click="() => { open = true }"
       />
     </template>
 
@@ -68,42 +74,105 @@ async function removePermission(id: string) {
       :description="error.statusMessage || 'The identity API did not return the permission list.'"
       @retry="refresh()"
     />
-    <IdentityShellState
-      v-else-if="!permissions?.length"
-      state="empty"
-      title="No global permissions"
-      description="Create an installation-wide permission or publish a project manifest from a confidential client."
-    />
-    <div
-      v-else
-      class="divide-y divide-default rounded-2xl border border-default px-5"
-    >
-      <div
-        v-for="permission in permissions"
-        :key="permission.id"
-        class="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between"
-      >
-        <div>
-          <p class="font-medium">
-            {{ permission.name }}
-          </p>
-          <p class="text-sm text-muted">
-            {{ permission.description || 'No description' }}
-          </p>
-          <p class="mt-1 text-xs text-muted">
-            {{ permission.roles.length }} roles · {{ permission.users.length }} direct users
-          </p>
-        </div>
-        <UButton
-          label="Delete"
-          icon="i-lucide-trash-2"
-          color="error"
-          variant="ghost"
-          :loading="deletingId === permission.id"
-          @click="removePermission(permission.id)"
+
+    <template v-else>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <IdentityMetricCard
+          label="Permissions"
+          :value="permissions?.length ?? 0"
+          icon="i-lucide-key-round"
+          description="Global compatibility grants"
+        />
+        <IdentityMetricCard
+          label="Role bindings"
+          :value="roleBindings"
+          icon="i-lucide-badge-check"
+          color="info"
+          description="Inherited assignments"
+        />
+        <IdentityMetricCard
+          label="Direct bindings"
+          :value="directBindings"
+          icon="i-lucide-user-check"
+          color="warning"
+          description="User-specific grants"
         />
       </div>
-    </div>
+
+      <IdentityCollectionToolbar
+        v-model="collection.search.value"
+        placeholder="Search permission keys"
+        :result-count="collection.total.value"
+      />
+
+      <IdentityTableCard
+        title="Permission catalog"
+        description="Namespaced keys and their installation-level usage."
+        :count="collection.total.value"
+      >
+        <UTable
+          :data="collection.paginatedItems.value"
+          :columns="columns"
+          empty="No global permissions match your search."
+          class="min-w-5xl"
+          :ui="{
+            thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
+            tbody: '[&>tr]:last:[&>td]:border-b-0',
+            th: 'border-b border-default',
+            td: 'border-b border-default'
+          }"
+        >
+          <template #name-cell="{ row }">
+            <code class="rounded-md bg-elevated px-2 py-1 text-xs text-highlighted">
+              {{ row.original.name }}
+            </code>
+          </template>
+          <template #description-cell="{ row }">
+            <p class="max-w-md truncate text-sm text-muted">
+              {{ row.original.description || 'No description' }}
+            </p>
+          </template>
+          <template #roles-cell="{ row }">
+            <span class="tabular-nums">{{ row.original.roles.length }}</span>
+          </template>
+          <template #users-cell="{ row }">
+            <span class="tabular-nums">{{ row.original.users.length }}</span>
+          </template>
+          <template #updated_at-cell="{ row }">
+            <span class="whitespace-nowrap text-sm text-muted">
+              {{ formatIdentityDate(row.original.updated_at) }}
+            </span>
+          </template>
+          <template #actions-cell="{ row }">
+            <div class="flex justify-end">
+              <UButton
+                label="Delete"
+                icon="i-lucide-trash-2"
+                color="error"
+                variant="ghost"
+                :loading="deletingId === row.original.id"
+                @click="removePermission(row.original.id)"
+              />
+            </div>
+          </template>
+        </UTable>
+
+        <template
+          v-if="collection.total.value > collection.pageSize"
+          #footer
+        >
+          <p class="text-sm text-muted">
+            Showing {{ collection.paginatedItems.value.length }} of {{ collection.total.value }} permissions
+          </p>
+          <UPagination
+            v-model:page="collection.page.value"
+            :total="collection.total.value"
+            :items-per-page="collection.pageSize"
+            size="sm"
+          />
+        </template>
+      </IdentityTableCard>
+    </template>
 
     <UModal
       v-model:open="open"
@@ -121,6 +190,7 @@ async function removePermission(id: string) {
           >
             <UInput
               v-model="form.name"
+              autofocus
               placeholder="identity.users.audit"
               class="w-full"
             />
@@ -136,7 +206,7 @@ async function removePermission(id: string) {
               label="Cancel"
               color="neutral"
               variant="ghost"
-              @click="closeForm"
+              @click="() => { open = false }"
             />
             <UButton
               type="submit"

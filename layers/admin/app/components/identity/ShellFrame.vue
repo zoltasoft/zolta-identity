@@ -13,6 +13,7 @@ const props = withDefaults(defineProps<{
   unit?: 'rem' | 'px'
   collapsible?: boolean
   resizable?: boolean
+  collapsedSize?: number
   desktopCollapsed?: boolean
   primaryNavigationUi?: Record<string, string>
   secondaryNavigationUi?: Record<string, string>
@@ -26,7 +27,8 @@ const props = withDefaults(defineProps<{
   searchGroups: () => [],
   unit: 'rem',
   collapsible: true,
-  resizable: true,
+  resizable: false,
+  collapsedSize: 4,
   desktopCollapsed: false,
   primaryNavigationUi: undefined,
   secondaryNavigationUi: undefined,
@@ -40,15 +42,13 @@ const props = withDefaults(defineProps<{
 const open = defineModel<boolean>('open', { default: false })
 
 const isDesktop = useMediaQuery('(min-width: 1024px)')
-const collapsed = ref(isDesktop.value ? props.desktopCollapsed : false)
+const collapsed = computed(() => props.desktopCollapsed)
 
 watch(isDesktop, (desktop) => {
   // Avoid persisting mobile drawer state when switching to desktop.
   if (desktop && open.value) {
     open.value = false
   }
-
-  collapsed.value = desktop ? props.desktopCollapsed : false
 })
 </script>
 
@@ -59,6 +59,7 @@ watch(isDesktop, (desktop) => {
       v-model:open="open"
       :collapsible="props.collapsible"
       :collapsed="collapsed"
+      :collapsed-size="props.collapsedSize"
       :resizable="props.resizable"
       :ui="{ footer: 'lg:border-t lg:border-default' }"
     >

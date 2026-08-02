@@ -10,7 +10,7 @@ if (!userSession.ready.value) {
   await userSession.fetch()
 }
 
-const { primaryLinks, secondaryLinks } = useIdentityAdminNavigation(
+const { primaryLinks, secondaryLinks, searchGroups } = useIdentityAdminNavigation(
   identitySession,
   () => {
     open.value = false
@@ -40,28 +40,45 @@ async function signOut() {
   <IdentityShellFrame
     v-model:open="open"
     sidebar-id="identity-console-admin"
+    :desktop-collapsed="true"
     :primary-links="primaryLinks"
     :secondary-links="secondaryLinks"
+    :search-groups="searchGroups"
     primary-navigation-label="Identity administration"
     secondary-navigation-label="Application navigation"
   >
     <template #sidebar-header="{ collapsed }">
-      <UButton
+      <NuxtLink
         :to="localePath('/admin/projects')"
-        :label="collapsed ? '' : 'Identity Console'"
-        icon="i-lucide-shield-check"
-        size="md"
-        color="neutral"
-        variant="ghost"
-      />
+        class="flex min-w-0 items-center gap-3 rounded-lg p-2 transition hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary"
+        aria-label="Identity Console"
+      >
+        <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-inverted shadow-sm">
+          <UIcon
+            name="i-lucide-shield-check"
+            class="size-5"
+          />
+        </span>
+        <span
+          v-if="!collapsed"
+          class="truncate font-semibold tracking-tight text-highlighted"
+        >Identity Console</span>
+      </NuxtLink>
     </template>
 
-    <template #sidebar-start>
-      <div class="px-2 pb-2">
+    <template #sidebar-start="{ collapsed }">
+      <div class="space-y-3 pb-2">
+        <UDashboardSearchButton
+          aria-label="Search Identity Console"
+          :collapsed="collapsed"
+          class="bg-transparent ring-default"
+        />
         <UBadge
+          v-if="!collapsed"
           color="primary"
           variant="soft"
           :label="identitySession?.projectName || 'Administration'"
+          class="mx-2"
         />
       </div>
     </template>

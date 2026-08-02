@@ -1,4 +1,8 @@
-import type { NavigationMenuItem } from '@nuxt/ui'
+import type {
+  CommandPaletteGroup,
+  CommandPaletteItem,
+  NavigationMenuItem
+} from '@nuxt/ui'
 import type { Ref } from 'vue'
 import type { IdentityBrowserSession } from '../../types/identity-access'
 
@@ -15,32 +19,35 @@ export function useIdentityAdminNavigation(
     const installationUsersPath = localePath('/admin/identity-users')
     const globalRolesPath = localePath('/admin/global-roles')
     const globalPermissionsPath = localePath('/admin/global-permissions')
-    const items: NavigationMenuItem[] = [
+    const workspaceItems: NavigationMenuItem[] = [
       {
         label: 'Projects',
-        icon: 'i-lucide-folder-key',
+        icon: 'i-lucide-layout-dashboard',
         to: projectsPath,
         active: route.path === projectsPath || route.path.startsWith(`${projectsPath}/`),
         onSelect
       }
     ]
 
+    const directoryItems: NavigationMenuItem[] = []
+    const accessItems: NavigationMenuItem[] = []
+
     if (identitySession.value?.isSystemAdmin) {
-      items.push({
+      directoryItems.push({
         label: 'Users',
-        icon: 'i-lucide-shield-user',
+        icon: 'i-lucide-users',
         to: installationUsersPath,
         active: route.path === installationUsersPath,
         onSelect
       })
-      items.push({
+      accessItems.push({
         label: 'Global roles',
         icon: 'i-lucide-badge-check',
         to: globalRolesPath,
         active: route.path === globalRolesPath,
         onSelect
       })
-      items.push({
+      accessItems.push({
         label: 'Global permissions',
         icon: 'i-lucide-key-round',
         to: globalPermissionsPath,
@@ -49,7 +56,7 @@ export function useIdentityAdminNavigation(
       })
     }
 
-    return [items]
+    return [workspaceItems, directoryItems, accessItems].filter(items => items.length > 0)
   })
 
   const secondaryLinks = computed<NavigationMenuItem[][]>(() => {
@@ -64,5 +71,15 @@ export function useIdentityAdminNavigation(
     }]]
   })
 
-  return { primaryLinks, secondaryLinks }
+  const searchGroups = computed<CommandPaletteGroup<CommandPaletteItem>[]>(() => [{
+    id: 'identity-navigation',
+    label: 'Navigate',
+    items: [...primaryLinks.value.flat(), ...secondaryLinks.value.flat()].map(item => ({
+      label: item.label,
+      icon: item.icon,
+      to: item.to
+    }))
+  }])
+
+  return { primaryLinks, secondaryLinks, searchGroups }
 }

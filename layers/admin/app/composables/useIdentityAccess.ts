@@ -29,7 +29,10 @@ export function useIdentityAccess() {
     globalPermissions: () => useFetch<IdentityGlobalPermission[]>('/api/identity/global/permissions'),
     accountSessions: () => useFetch<IdentityAccountSession[]>('/api/auth/sessions'),
     project: (id: MaybeRefOrGetter<string>) => useFetch<IdentityProjectDetails>(() => `/api/identity/projects/${toValue(id)}`),
-    audit: (id: MaybeRefOrGetter<string>) => useFetch<IdentityAuditEvent[]>(() => `/api/identity/projects/${toValue(id)}/audit`),
+    audit: (id: MaybeRefOrGetter<string>, options: { immediate?: boolean } = {}) => useFetch<IdentityAuditEvent[]>(
+      () => `/api/identity/projects/${toValue(id)}/audit`,
+      { immediate: options.immediate ?? true }
+    ),
     createProject: (body: { name: string, slug: string, description?: string | null }) =>
       mutation<IdentityProject>('/api/identity/projects', { method: 'POST', body }),
     updateProjectRegistration: (

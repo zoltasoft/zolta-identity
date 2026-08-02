@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { TableColumn } from '@nuxt/ui'
+import type { IdentityGlobalRole } from '#admin/types/identity-access'
+
 definePageMeta({ layout: 'identity-admin', middleware: ['identity-system-admin'] })
 
 const access = useIdentityAccess()
@@ -8,18 +11,21 @@ const open = ref(false)
 const saving = ref(false)
 const deletingId = ref<string | null>(null)
 const form = reactive({ name: '', description: '', permissionIds: [] as string[] })
+const collection = useIdentityCollection(roles, role => (
+  `${role.name} ${role.description ?? ''} ${role.permissions.map(permission => permission.name).join(' ')}`
+))
+const assignmentCount = computed(() => roles.value?.reduce((total, role) => total + role.users.length, 0) ?? 0)
 const permissionOptions = computed(() => (permissions.value ?? []).map(permission => ({
   label: permission.name,
   value: permission.id
 })))
-
-function openForm() {
-  open.value = true
-}
-
-function closeForm() {
-  open.value = false
-}
+const columns: TableColumn<IdentityGlobalRole>[] = [
+  { accessorKey: 'name', header: 'Role' },
+  { accessorKey: 'permissions', header: 'Permissions' },
+  { accessorKey: 'users', header: 'Assigned users' },
+  { accessorKey: 'updated_at', header: 'Updated' },
+  { id: 'actions', header: '' }
+]
 
 async function createRole() {
   saving.value = true
@@ -52,13 +58,14 @@ async function removeRole(id: string) {
   <IdentityPanel
     panel-id="identity-global-roles"
     title="Global roles"
-    description="Installation-wide roles support the compatibility API. Application-specific access remains isolated inside each project."
+    icon="i-lucide-badge-check"
+    description="Installation-wide compatibility roles. Prefer project roles for application-specific authorization."
   >
     <template #actions>
       <UButton
         label="New global role"
         icon="i-lucide-badge-plus"
-        @click="openForm"
+        @click="() => { open = true }"
       />
     </template>
 
@@ -74,50 +81,125 @@ async function removeRole(id: string) {
       :description="error.statusMessage || 'The identity API did not return the role list.'"
       @retry="refresh()"
     />
-    <IdentityShellState
-      v-else-if="!roles?.length"
-      state="empty"
-      title="No global roles"
-      description="Create an installation-wide role or manage project roles from a project page."
-    />
-    <div
-      v-else
-      class="grid gap-4 lg:grid-cols-2"
-    >
-      <UPageCard
-        v-for="role in roles"
-        :key="role.id"
-        :title="role.name"
-        :description="role.description || 'No description'"
-        variant="subtle"
+
+    <template v-else>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <IdentityMetricCard
+          label="Global roles"
+          :value="roles?.length ?? 0"
+          icon="i-lucide-badge-check"
+          description="Compatibility access sets"
+        />
+        <IdentityMetricCard
+          label="Available permissions"
+          :value="permissions?.length ?? 0"
+          icon="i-lucide-key-round"
+          color="info"
+          description="Installation-wide grants"
+        />
+        <IdentityMetricCard
+          label="Assignments"
+          :value="assignmentCount"
+          icon="i-lucide-user-check"
+          color="success"
+          description="Role-to-user bindings"
+        />
+      </div>
+
+      <IdentityCollectionToolbar
+        v-model="collection.search.value"
+        placeholder="Search global roles"
+        :result-count="collection.total.value"
+      />
+
+      <IdentityTableCard
+        title="Role directory"
+        description="Review permission composition and global assignments."
+        :count="collection.total.value"
       >
-        <div class="flex flex-wrap gap-2">
-          <UBadge
-            v-for="permission in role.permissions"
-            :key="permission.id"
-            color="neutral"
-            variant="soft"
-          >
-            {{ permission.name }}
-          </UBadge>
-          <span
-            v-if="!role.permissions.length"
-            class="text-sm text-muted"
-          >No permissions</span>
-        </div>
-        <div class="mt-4 flex items-center justify-between text-sm text-muted">
-          <span>{{ role.users.length }} assigned user{{ role.users.length === 1 ? '' : 's' }}</span>
-          <UButton
-            label="Delete"
-            icon="i-lucide-trash-2"
-            color="error"
-            variant="ghost"
-            :loading="deletingId === role.id"
-            @click="removeRole(role.id)"
+        <UTable
+          :data="collection.paginatedItems.value"
+          :columns="columns"
+          empty="No global roles match your search."
+          class="min-w-4xl"
+          :ui="{
+            thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
+            tbody: '[&>tr]:last:[&>td]:border-b-0',
+            th: 'border-b border-default',
+            td: 'border-b border-default'
+          }"
+        >
+          <template #name-cell="{ row }">
+            <div class="max-w-sm py-1">
+              <p class="font-medium text-highlighted">
+                {{ row.original.name }}
+              </p>
+              <p class="truncate text-xs text-muted">
+                {{ row.original.description || 'No description' }}
+              </p>
+            </div>
+          </template>
+          <template #permissions-cell="{ row }">
+            <div class="flex max-w-md flex-wrap gap-1.5">
+              <UBadge
+                v-for="permission in row.original.permissions.slice(0, 3)"
+                :key="permission.id"
+                color="neutral"
+                variant="soft"
+              >
+                {{ permission.name }}
+              </UBadge>
+              <UBadge
+                v-if="row.original.permissions.length > 3"
+                color="neutral"
+                variant="outline"
+              >
+                +{{ row.original.permissions.length - 3 }}
+              </UBadge>
+              <span
+                v-if="!row.original.permissions.length"
+                class="text-sm text-muted"
+              >No permissions</span>
+            </div>
+          </template>
+          <template #users-cell="{ row }">
+            <span class="tabular-nums">{{ row.original.users.length }}</span>
+          </template>
+          <template #updated_at-cell="{ row }">
+            <span class="whitespace-nowrap text-sm text-muted">
+              {{ formatIdentityDate(row.original.updated_at) }}
+            </span>
+          </template>
+          <template #actions-cell="{ row }">
+            <div class="flex justify-end">
+              <UButton
+                label="Delete"
+                icon="i-lucide-trash-2"
+                color="error"
+                variant="ghost"
+                :loading="deletingId === row.original.id"
+                @click="removeRole(row.original.id)"
+              />
+            </div>
+          </template>
+        </UTable>
+
+        <template
+          v-if="collection.total.value > collection.pageSize"
+          #footer
+        >
+          <p class="text-sm text-muted">
+            Showing {{ collection.paginatedItems.value.length }} of {{ collection.total.value }} roles
+          </p>
+          <UPagination
+            v-model:page="collection.page.value"
+            :total="collection.total.value"
+            :items-per-page="collection.pageSize"
+            size="sm"
           />
-        </div>
-      </UPageCard>
-    </div>
+        </template>
+      </IdentityTableCard>
+    </template>
 
     <UModal
       v-model:open="open"
@@ -135,6 +217,7 @@ async function removeRole(id: string) {
           >
             <UInput
               v-model="form.name"
+              autofocus
               class="w-full"
             />
           </UFormField>
@@ -145,7 +228,7 @@ async function removeRole(id: string) {
             />
           </UFormField>
           <UFormField label="Permissions">
-            <div class="rounded-xl border border-default p-3">
+            <div class="max-h-72 overflow-y-auto rounded-xl border border-default p-3">
               <UCheckboxGroup
                 v-model="form.permissionIds"
                 :items="permissionOptions"
@@ -164,7 +247,7 @@ async function removeRole(id: string) {
               label="Cancel"
               color="neutral"
               variant="ghost"
-              @click="closeForm"
+              @click="() => { open = false }"
             />
             <UButton
               type="submit"

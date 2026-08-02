@@ -1,14 +1,14 @@
 <script setup lang="ts">
+import type { TableColumn } from '@nuxt/ui'
+import type { IdentityAccountSession } from '#admin/types/identity-access'
+
 definePageMeta({ layout: 'identity-admin', middleware: ['identity-admin'] })
 
 const access = useIdentityAccess()
 const userSession = useUserSession()
 const toast = useToast()
-const user = computed(() => userSession.user.value as {
-  name?: string
-  username?: string
-  email?: string
-} | null)
+const activeTab = ref<'profile' | 'security' | 'password' | 'sessions'>('profile')
+const user = computed(() => userSession.user.value as { name?: string, username?: string, email?: string } | null)
 const profile = reactive({ username: user.value?.username || user.value?.name || '', email: user.value?.email || '', avatarUrl: '' })
 const security = reactive({ twoFactorEnabled: false, loginAlertsEnabled: true, backupEmail: '' })
 const password = reactive({ current: '', next: '', confirmation: '' })
@@ -16,16 +16,26 @@ const savingProfile = ref(false)
 const savingSecurity = ref(false)
 const savingPassword = ref(false)
 const revokingId = ref<string | null>(null)
-const { data: sessions, status: sessionsStatus, refresh: refreshSessions } = await access.accountSessions()
+const { data: sessions, status: sessionsStatus, error: sessionsError, refresh: refreshSessions } = await access.accountSessions()
+const tabs = computed(() => [
+  { value: 'profile', label: 'Profile', icon: 'i-lucide-user-round' },
+  { value: 'security', label: 'Security', icon: 'i-lucide-shield-check' },
+  { value: 'password', label: 'Password', icon: 'i-lucide-key-round' },
+  { value: 'sessions', label: 'Sessions', icon: 'i-lucide-monitor-smartphone', badge: sessions.value?.length ?? 0 }
+])
+const sessionColumns: TableColumn<IdentityAccountSession>[] = [
+  { accessorKey: 'project', header: 'Project' },
+  { accessorKey: 'client', header: 'Client' },
+  { accessorKey: 'created_at', header: 'Started' },
+  { accessorKey: 'expires_at', header: 'Expires' },
+  { id: 'actions', header: '' }
+]
 
 async function saveProfile() {
   savingProfile.value = true
   try {
-    await access.updateAccount({
-      username: profile.username,
-      email: profile.email,
-      avatar_url: profile.avatarUrl || null
-    })
+    await access.updateAccount({ username: profile.username, email: profile.email, avatar_url: profile.avatarUrl || null })
+    await userSession.fetch()
     toast.add({ title: 'Account profile updated', color: 'success' })
   } finally {
     savingProfile.value = false
@@ -74,14 +84,54 @@ async function revokeSession(id: string) {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <IdentityPanel
-      panel-id="identity-account-profile"
-      title="My account"
-      description="Update the global identity shared by your project memberships."
+  <IdentityPanel
+    panel-id="identity-account"
+    title="My account"
+    icon="i-lucide-user-cog"
+    description="Manage the global identity shared across your project memberships and active sessions."
+  >
+    <div class="grid gap-4 sm:grid-cols-3">
+      <IdentityMetricCard
+        label="Signed in as"
+        :value="user?.username || user?.name || 'Administrator'"
+        icon="i-lucide-user-round"
+        :description="user?.email"
+      />
+      <IdentityMetricCard
+        label="Active sessions"
+        :value="sessions?.length ?? 0"
+        icon="i-lucide-monitor-smartphone"
+        color="info"
+        description="Project-scoped sessions"
+      />
+      <IdentityMetricCard
+        label="Login alerts"
+        :value="security.loginAlertsEnabled ? 'Enabled' : 'Disabled'"
+        icon="i-lucide-bell-ring"
+        :color="security.loginAlertsEnabled ? 'success' : 'neutral'"
+        description="Security notifications"
+      />
+    </div>
+
+    <div class="min-w-0 overflow-x-auto">
+      <UTabs
+        v-model="activeTab"
+        :items="tabs"
+        variant="pill"
+        :content="false"
+        size="lg"
+        class="min-w-max"
+      />
+    </div>
+
+    <UPageCard
+      v-if="activeTab === 'profile'"
+      title="Profile details"
+      description="This information identifies you throughout the installation."
+      variant="subtle"
     >
       <form
-        class="grid gap-4 md:grid-cols-2"
+        class="grid gap-5 md:grid-cols-2"
         @submit.prevent="saveProfile"
       >
         <UFormField
@@ -117,30 +167,55 @@ async function revokeSession(id: string) {
           <UButton
             type="submit"
             label="Save profile"
+            icon="i-lucide-save"
             :loading="savingProfile"
           />
         </div>
       </form>
-    </IdentityPanel>
+    </UPageCard>
 
-    <IdentityPanel
-      panel-id="identity-account-security"
+    <UPageCard
+      v-else-if="activeTab === 'security'"
       title="Security preferences"
       description="Configure identity-level security signals and recovery contact details."
+      variant="subtle"
     >
       <form
-        class="space-y-4"
+        class="space-y-5"
         @submit.prevent="saveSecurity"
       >
-        <USwitch
-          v-model="security.twoFactorEnabled"
-          label="Two-factor authentication preference"
-        />
-        <USwitch
-          v-model="security.loginAlertsEnabled"
-          label="Login alerts"
-        />
-        <UFormField label="Backup email">
+        <div class="divide-y divide-default rounded-xl border border-default px-4">
+          <div class="flex items-center justify-between gap-6 py-4">
+            <div>
+              <p class="font-medium text-highlighted">
+                Two-factor authentication
+              </p><p class="text-sm text-muted">
+                Require a second verification factor when signing in.
+              </p>
+            </div>
+            <USwitch
+              v-model="security.twoFactorEnabled"
+              aria-label="Two-factor authentication"
+            />
+          </div>
+          <div class="flex items-center justify-between gap-6 py-4">
+            <div>
+              <p class="font-medium text-highlighted">
+                Login alerts
+              </p><p class="text-sm text-muted">
+                Notify you when a new session is established.
+              </p>
+            </div>
+            <USwitch
+              v-model="security.loginAlertsEnabled"
+              aria-label="Login alerts"
+            />
+          </div>
+        </div>
+        <UFormField
+          label="Backup email"
+          description="Used for security notices and account recovery."
+        >
           <UInput
             v-model="security.backupEmail"
             type="email"
@@ -150,18 +225,20 @@ async function revokeSession(id: string) {
         <UButton
           type="submit"
           label="Save security preferences"
+          icon="i-lucide-save"
           :loading="savingSecurity"
         />
       </form>
-    </IdentityPanel>
+    </UPageCard>
 
-    <IdentityPanel
-      panel-id="identity-account-password"
+    <UPageCard
+      v-else-if="activeTab === 'password'"
       title="Change password"
       description="Changing your password keeps this session and revokes the others."
+      variant="subtle"
     >
       <form
-        class="grid gap-4 md:grid-cols-3"
+        class="grid gap-5 md:grid-cols-3"
         @submit.prevent="savePassword"
       >
         <UFormField
@@ -198,57 +275,73 @@ async function revokeSession(id: string) {
           <UButton
             type="submit"
             label="Change password"
+            icon="i-lucide-key-round"
             :loading="savingPassword"
           />
         </div>
       </form>
-    </IdentityPanel>
+    </UPageCard>
 
-    <IdentityPanel
-      panel-id="identity-account-sessions"
-      title="Sessions"
-      description="Review and revoke project-scoped identity sessions."
-    >
+    <template v-else>
       <IdentityShellState
         v-if="sessionsStatus === 'pending'"
         state="loading"
         title="Loading sessions"
       />
-      <div
+      <IdentityShellState
+        v-else-if="sessionsError"
+        state="error"
+        title="Unable to load sessions"
+        :description="sessionsError.statusMessage || 'Your active sessions could not be loaded.'"
+        @retry="refreshSessions()"
+      />
+      <IdentityTableCard
         v-else
-        class="divide-y divide-default rounded-2xl border border-default px-5"
+        title="Active sessions"
+        description="Review and revoke project-scoped identity sessions."
+        :count="sessions?.length ?? 0"
       >
-        <div
-          v-for="session in sessions"
-          :key="session.id"
-          class="flex items-center justify-between gap-4 py-4"
+        <UTable
+          :data="sessions ?? []"
+          :columns="sessionColumns"
+          empty="No active sessions were found."
+          class="min-w-4xl"
         >
-          <div>
-            <p class="font-medium">
-              {{ session.project?.name || 'Identity project' }}
-              <UBadge
-                v-if="session.current"
+          <template #project-cell="{ row }">
+            <div class="flex items-center gap-2">
+              <span class="font-medium text-highlighted">{{ row.original.project?.name || 'Identity project' }}</span><UBadge
+                v-if="row.original.current"
                 color="primary"
                 variant="soft"
               >
                 Current
               </UBadge>
-            </p>
-            <p class="text-sm text-muted">
-              {{ session.client?.name || 'Confidential client' }} · expires {{ session.expires_at }}
-            </p>
-          </div>
-          <UButton
-            v-if="!session.current"
-            label="Revoke"
-            icon="i-lucide-log-out"
-            color="error"
-            variant="ghost"
-            :loading="revokingId === session.id"
-            @click="revokeSession(session.id)"
-          />
-        </div>
-      </div>
-    </IdentityPanel>
-  </div>
+            </div>
+          </template>
+          <template #client-cell="{ row }">
+            <span class="text-sm text-muted">{{ row.original.client?.name || 'Confidential client' }}</span>
+          </template>
+          <template #created_at-cell="{ row }">
+            <span class="whitespace-nowrap text-sm text-muted">{{ formatIdentityDate(row.original.created_at) }}</span>
+          </template>
+          <template #expires_at-cell="{ row }">
+            <span class="whitespace-nowrap text-sm text-muted">{{ formatIdentityDate(row.original.expires_at) }}</span>
+          </template>
+          <template #actions-cell="{ row }">
+            <div class="flex justify-end">
+              <UButton
+                v-if="!row.original.current"
+                label="Revoke"
+                icon="i-lucide-log-out"
+                color="error"
+                variant="ghost"
+                :loading="revokingId === row.original.id"
+                @click="revokeSession(row.original.id)"
+              />
+            </div>
+          </template>
+        </UTable>
+      </IdentityTableCard>
+    </template>
+  </IdentityPanel>
 </template>

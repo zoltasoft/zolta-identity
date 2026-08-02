@@ -1,42 +1,43 @@
 <script setup lang="ts">
+import type { TableColumn } from '@nuxt/ui'
+import type {
+  IdentityAuditEvent,
+  IdentityClient,
+  IdentityMembership,
+  IdentityPermission,
+  IdentityRole,
+  IdentityWebhook
+} from '#admin/types/identity-access'
+
 definePageMeta({ layout: 'identity-admin', middleware: ['identity-admin'] })
 
+type ProjectTab = 'overview' | 'members' | 'access' | 'clients' | 'webhooks' | 'settings' | 'audit'
+
 const route = useRoute()
+const router = useRouter()
+const localePath = useLocalePath()
 const projectId = computed(() => String(route.params.id))
-const {
-  project: fetchProject,
-  audit: fetchAudit,
-  createClient,
-  updateProjectRegistration,
-  updateProjectEnvironment,
-  createWebhook,
-  updateWebhook,
-  rotateWebhookSecret,
-  removeWebhook,
-  rotateClientSecret,
-  setClientStatus,
-  createRole,
-  createPermission,
-  setRolePermissions,
-  setMembershipAccess,
-  removeMembership,
-  invite
-} = useIdentityAccess()
-const { data: project, status, error, refresh } = await fetchProject(projectId)
-const { data: auditEvents, refresh: refreshAudit } = await fetchAudit(projectId)
+const access = useIdentityAccess()
+const { data: project, status, error, refresh } = await access.project(projectId)
+const auditRequest = await access.audit(projectId, { immediate: false })
 const toast = useToast()
+const routeTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
+const validTabs: ProjectTab[] = ['overview', 'members', 'access', 'clients', 'webhooks', 'settings', 'audit']
+const activeTab = ref<ProjectTab>(validTabs.includes(routeTab as ProjectTab) ? routeTab as ProjectTab : 'overview')
+const auditLoaded = ref(false)
+const auditVisibleCount = ref(20)
+const auditSentinel = ref<HTMLElement | null>(null)
+const clientModalOpen = ref(false)
+const invitationModalOpen = ref(false)
+const roleModalOpen = ref(false)
+const permissionModalOpen = ref(false)
+const webhookModalOpen = ref(false)
 const clientName = ref('')
-const role = reactive({ name: '', slug: '' })
+const role = reactive({ name: '', slug: '', description: '' })
 const permissionForm = reactive({ key: '', name: '', description: '' })
 const invitation = reactive({ email: '', is_admin: false })
-const registration = reactive<{
-  mode: 'invite_only' | 'public'
-  roleId: string | null
-}>({ mode: 'invite_only', roleId: null })
-const environment = reactive<{
-  mode: 'live' | 'sandbox'
-  ttlMinutes: number
-}>({ mode: 'live', ttlMinutes: 60 })
+const registration = reactive<{ mode: 'invite_only' | 'public', roleId: string | null }>({ mode: 'invite_only', roleId: null })
+const environment = reactive<{ mode: 'live' | 'sandbox', ttlMinutes: number }>({ mode: 'live', ttlMinutes: 60 })
 const webhookForm = reactive({
   url: '',
   events: ['identity.user.expired'] as Array<'identity.user.expired' | 'identity.user.deletion_requested'>
@@ -52,14 +53,61 @@ const selectedMembership = ref<{
   isAdmin: boolean
   status: 'active' | 'suspended'
 } | null>(null)
-const projectRoleOptions = computed(() => (project.value?.roles ?? []).map(item => ({
-  label: item.name,
-  value: item.id
-})))
-const projectPermissionOptions = computed(() => (project.value?.permissions ?? []).map(item => ({
-  label: item.key,
-  value: item.id
-})))
+
+const tabs = computed(() => [
+  { value: 'overview', label: 'Overview', icon: 'i-lucide-layout-dashboard' },
+  { value: 'members', label: 'Members', icon: 'i-lucide-users', badge: project.value?.memberships.length ?? 0 },
+  { value: 'access', label: 'Roles & permissions', icon: 'i-lucide-shield-check' },
+  { value: 'clients', label: 'Clients', icon: 'i-lucide-server-cog', badge: project.value?.clients.length ?? 0 },
+  { value: 'webhooks', label: 'Webhooks', icon: 'i-lucide-webhook', badge: project.value?.webhooks.length ?? 0 },
+  { value: 'settings', label: 'Settings', icon: 'i-lucide-settings-2' },
+  { value: 'audit', label: 'Audit', icon: 'i-lucide-scroll-text' }
+])
+const projectRoleOptions = computed(() => (project.value?.roles ?? []).map(item => ({ label: item.name, value: item.id })))
+const projectPermissionOptions = computed(() => (project.value?.permissions ?? []).map(item => ({ label: item.key, value: item.id })))
+const auditEvents = computed(() => auditRequest.data.value ?? [])
+const visibleAuditEvents = computed(() => auditEvents.value.slice(0, auditVisibleCount.value))
+const hasMoreAuditEvents = computed(() => auditVisibleCount.value < auditEvents.value.length)
+
+const memberColumns: TableColumn<IdentityMembership>[] = [
+  { accessorKey: 'user', header: 'Member' },
+  { accessorKey: 'roles', header: 'Roles' },
+  { accessorKey: 'permissions', header: 'Effective permissions' },
+  { accessorKey: 'status', header: 'Status' },
+  { id: 'actions', header: '' }
+]
+const roleColumns: TableColumn<IdentityRole>[] = [
+  { accessorKey: 'name', header: 'Role' },
+  { accessorKey: 'permission_ids', header: 'Permissions' },
+  { id: 'actions', header: '' }
+]
+const permissionColumns: TableColumn<IdentityPermission>[] = [
+  { accessorKey: 'key', header: 'Permission key' },
+  { accessorKey: 'name', header: 'Name' },
+  { accessorKey: 'source', header: 'Source' },
+  { accessorKey: 'status', header: 'Status' }
+]
+const clientColumns: TableColumn<IdentityClient>[] = [
+  { accessorKey: 'name', header: 'Client' },
+  { accessorKey: 'secret_prefix', header: 'Credential' },
+  { accessorKey: 'last_used_at', header: 'Last used' },
+  { accessorKey: 'status', header: 'Status' },
+  { id: 'actions', header: '' }
+]
+const webhookColumns: TableColumn<IdentityWebhook>[] = [
+  { accessorKey: 'url', header: 'Endpoint' },
+  { accessorKey: 'events', header: 'Events' },
+  { accessorKey: 'last_delivered_at', header: 'Last delivery' },
+  { accessorKey: 'status', header: 'Status' },
+  { id: 'actions', header: '' }
+]
+const auditColumns: TableColumn<IdentityAuditEvent>[] = [
+  { accessorKey: 'event', header: 'Event' },
+  { accessorKey: 'target_type', header: 'Target' },
+  { accessorKey: 'actor_user_id', header: 'Actor' },
+  { accessorKey: 'ip_address', header: 'IP address' },
+  { accessorKey: 'created_at', header: 'Date' }
+]
 
 watch(project, (value) => {
   if (!value) return
@@ -69,124 +117,150 @@ watch(project, (value) => {
   environment.ttlMinutes = value.sandbox_ttl_minutes
 }, { immediate: true })
 
+watch(activeTab, async (tab) => {
+  if (route.query.tab !== tab) {
+    await router.replace({ query: { ...route.query, tab } })
+  }
+  if (tab === 'audit' && !auditLoaded.value) {
+    await auditRequest.execute()
+    auditLoaded.value = true
+  }
+}, { immediate: true })
+
+useIntersectionObserver(auditSentinel, ([entry]) => {
+  if (entry?.isIntersecting && activeTab.value === 'audit' && hasMoreAuditEvents.value) {
+    auditVisibleCount.value += 20
+  }
+})
+
+async function refreshProjectAndAudit() {
+  await refresh()
+  if (auditLoaded.value) await auditRequest.refresh()
+}
+
 async function addClient() {
-  const client = await createClient(projectId.value, clientName.value)
+  const client = await access.createClient(projectId.value, clientName.value)
   revealedSecret.value = { clientId: client.id, secret: client.client_secret ?? '' }
   clientName.value = ''
-  await refresh()
+  clientModalOpen.value = false
+  await refreshProjectAndAudit()
 }
 
-async function rotate(clientId: string) {
-  const client = await rotateClientSecret(projectId.value, clientId)
+async function rotateClient(clientId: string) {
+  const client = await access.rotateClientSecret(projectId.value, clientId)
   revealedSecret.value = { clientId: client.id, secret: client.client_secret ?? '' }
-  await refresh()
+  await refreshProjectAndAudit()
 }
 
-async function toggleClient(clientId: string, status: 'active' | 'disabled') {
-  await setClientStatus(projectId.value, clientId, status === 'active' ? 'disabled' : 'active')
-  await Promise.all([refresh(), refreshAudit()])
+async function toggleClient(client: IdentityClient) {
+  await access.setClientStatus(projectId.value, client.id, client.status === 'active' ? 'disabled' : 'active')
+  await refreshProjectAndAudit()
 }
 
 async function addRole() {
-  await createRole(projectId.value, role)
-  Object.assign(role, { name: '', slug: '' })
-  await refresh()
+  await access.createRole(projectId.value, { ...role, description: role.description || null })
+  Object.assign(role, { name: '', slug: '', description: '' })
+  roleModalOpen.value = false
+  await refreshProjectAndAudit()
 }
 
 async function addPermission() {
-  await createPermission(projectId.value, {
+  await access.createPermission(projectId.value, {
     key: permissionForm.key,
     name: permissionForm.name || null,
     description: permissionForm.description || null
   })
   Object.assign(permissionForm, { key: '', name: '', description: '' })
-  await Promise.all([refresh(), refreshAudit()])
+  permissionModalOpen.value = false
+  await refreshProjectAndAudit()
 }
 
 async function sendInvitation() {
-  const result = await invite(projectId.value, invitation)
+  const result = await access.invite(projectId.value, invitation)
   toast.add({ title: 'Invitation created', description: `One-time token: ${String(result.invitation_token ?? '')}`, duration: 0 })
   Object.assign(invitation, { email: '', is_admin: false })
-  await refresh()
+  invitationModalOpen.value = false
+  await refreshProjectAndAudit()
 }
 
 async function saveRegistrationPolicy() {
-  await updateProjectRegistration(projectId.value, {
+  await access.updateProjectRegistration(projectId.value, {
     registration_mode: registration.mode,
     registration_role_id: registration.mode === 'public' ? registration.roleId : null
   })
-  toast.add({ title: 'Registration policy saved' })
-  await Promise.all([refresh(), refreshAudit()])
+  toast.add({ title: 'Registration policy saved', color: 'success' })
+  await refreshProjectAndAudit()
 }
 
 async function saveEnvironment() {
-  await updateProjectEnvironment(projectId.value, {
+  await access.updateProjectEnvironment(projectId.value, {
     mode: environment.mode,
     sandbox_ttl_minutes: environment.ttlMinutes
   })
-  toast.add({ title: 'Project environment saved' })
-  await Promise.all([refresh(), refreshAudit()])
+  toast.add({ title: 'Project environment saved', color: 'success' })
+  await refreshProjectAndAudit()
 }
 
 async function addWebhook() {
-  const webhook = await createWebhook(projectId.value, webhookForm)
+  const webhook = await access.createWebhook(projectId.value, webhookForm)
   revealedWebhookSecret.value = { id: webhook.id, secret: webhook.secret ?? '' }
   webhookForm.url = ''
   webhookForm.events = ['identity.user.expired']
-  await refresh()
+  webhookModalOpen.value = false
+  await refreshProjectAndAudit()
 }
 
-async function toggleWebhook(webhook: NonNullable<typeof project.value>['webhooks'][number]) {
-  await updateWebhook(projectId.value, webhook.id, {
+async function toggleWebhook(webhook: IdentityWebhook) {
+  await access.updateWebhook(projectId.value, webhook.id, {
     url: webhook.url,
     events: webhook.events,
     status: webhook.status === 'active' ? 'disabled' : 'active'
   })
-  await Promise.all([refresh(), refreshAudit()])
+  await refreshProjectAndAudit()
 }
 
 async function rotateWebhook(webhookId: string) {
-  const webhook = await rotateWebhookSecret(projectId.value, webhookId)
+  const webhook = await access.rotateWebhookSecret(projectId.value, webhookId)
   revealedWebhookSecret.value = { id: webhook.id, secret: webhook.secret ?? '' }
-  await Promise.all([refresh(), refreshAudit()])
+  await refreshProjectAndAudit()
 }
 
 async function deleteWebhook(webhookId: string) {
-  await removeWebhook(projectId.value, webhookId)
-  await Promise.all([refresh(), refreshAudit()])
+  await access.removeWebhook(projectId.value, webhookId)
+  await refreshProjectAndAudit()
 }
 
 async function saveRolePermissions() {
   if (!selectedRole.value) return
-  await setRolePermissions(projectId.value, selectedRole.value.id, selectedRole.value.permissionIds)
+  await access.setRolePermissions(projectId.value, selectedRole.value.id, selectedRole.value.permissionIds)
   selectedRole.value = null
-  await Promise.all([refresh(), refreshAudit()])
+  await refreshProjectAndAudit()
 }
 
 async function saveMembership() {
   if (!selectedMembership.value) return
-  await setMembershipAccess(projectId.value, selectedMembership.value.id, {
+  await access.setMembershipAccess(projectId.value, selectedMembership.value.id, {
     role_ids: selectedMembership.value.roleIds,
     permission_ids: selectedMembership.value.permissionIds,
     is_admin: selectedMembership.value.isAdmin,
     status: selectedMembership.value.status
   })
   selectedMembership.value = null
-  await Promise.all([refresh(), refreshAudit()])
+  await refreshProjectAndAudit()
 }
 
 async function removeSelectedMembership() {
   if (!selectedMembership.value) return
-  await removeMembership(projectId.value, selectedMembership.value.id)
+  await access.removeMembership(projectId.value, selectedMembership.value.id)
   selectedMembership.value = null
-  await Promise.all([refresh(), refreshAudit()])
+  await refreshProjectAndAudit()
 }
 
-function selectRole(item: { id: string, name: string, permission_ids: string[] }) {
+function selectRole(item: IdentityRole) {
   selectedRole.value = { id: item.id, name: item.name, permissionIds: [...item.permission_ids] }
 }
 
-function selectMembership(membership: NonNullable<typeof project.value>['memberships'][number]) {
+function selectMembership(membership: IdentityMembership) {
   selectedMembership.value = {
     id: membership.id,
     label: membership.user.username || membership.user.email || membership.user.id,
@@ -202,7 +276,10 @@ function selectMembership(membership: NonNullable<typeof project.value>['members
   <IdentityPanel
     panel-id="identity-project-detail"
     :title="project?.name || 'Project'"
-    :description="project ? `${project.slug} · ${project.status}` : 'Loading project access configuration.'"
+    icon="i-lucide-folder-key"
+    :description="project ? `${project.slug} · ${project.mode} environment · ${project.status}` : 'Loading project access configuration.'"
+    :back-to="localePath('/admin/projects')"
+    back-label="Projects"
   >
     <IdentityShellState
       v-if="status === 'pending'"
@@ -217,10 +294,7 @@ function selectMembership(membership: NonNullable<typeof project.value>['members
       @retry="refresh()"
     />
 
-    <div
-      v-else
-      class="space-y-8"
-    >
+    <template v-else>
       <UAlert
         v-if="revealedSecret"
         color="warning"
@@ -242,372 +316,815 @@ function selectMembership(membership: NonNullable<typeof project.value>['members
         @update:open="revealedWebhookSecret = null"
       />
 
-      <div class="grid gap-6 xl:grid-cols-2">
-        <UPageCard
-          title="Project environment"
-          description="Sandbox projects issue temporary, credentialless identities for demos and automated tests."
-          variant="subtle"
-        >
-          <form
-            class="space-y-4"
-            @submit.prevent="saveEnvironment"
-          >
-            <UFormField label="Mode">
-              <USelect
-                v-model="environment.mode"
-                :items="[
-                  { label: 'Live', value: 'live' },
-                  { label: 'Sandbox', value: 'sandbox' }
-                ]"
-                class="w-full"
-              />
-            </UFormField>
-            <UFormField
-              v-if="environment.mode === 'sandbox'"
-              label="Temporary account lifetime"
-              description="Minutes before Identity expires and removes each sandbox identity."
-            >
-              <UInput
-                v-model.number="environment.ttlMinutes"
-                type="number"
-                :min="5"
-                :max="1440"
-                class="w-full"
-              />
-            </UFormField>
-            <UButton
-              type="submit"
-              label="Save environment"
-              icon="i-lucide-save"
-            />
-          </form>
-        </UPageCard>
+      <div class="min-w-0 overflow-x-auto">
+        <UTabs
+          v-model="activeTab"
+          :items="tabs"
+          variant="pill"
+          :content="false"
+          size="lg"
+          class="min-w-max"
+        />
+      </div>
 
-        <UPageCard
-          title="Cleanup webhooks"
-          description="Identity signs user-expiration and deletion events so this project can erase user-owned data."
-          variant="subtle"
-        >
-          <form
-            class="space-y-4"
-            @submit.prevent="addWebhook"
+      <template v-if="activeTab === 'overview'">
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <IdentityMetricCard
+            label="Members"
+            :value="project.memberships.length"
+            icon="i-lucide-users"
+            description="Project identities"
+          />
+          <IdentityMetricCard
+            label="Active clients"
+            :value="project.clients.filter(client => client.status === 'active').length"
+            icon="i-lucide-server-cog"
+            color="success"
+            description="Service credentials"
+          />
+          <IdentityMetricCard
+            label="Roles"
+            :value="project.roles.length"
+            icon="i-lucide-shield-check"
+            color="info"
+            description="Access profiles"
+          />
+          <IdentityMetricCard
+            label="Permissions"
+            :value="project.permissions.length"
+            icon="i-lucide-key-round"
+            color="warning"
+            description="Published capabilities"
+          />
+        </div>
+
+        <div class="grid gap-5 lg:grid-cols-2">
+          <UPageCard
+            title="Environment"
+            description="Runtime and identity-lifetime policy."
+            variant="subtle"
           >
-            <UFormField label="Endpoint URL">
-              <UInput
-                v-model="webhookForm.url"
-                type="url"
-                required
-                placeholder="https://api.example.com/api/webhooks/identity"
-                class="w-full"
+            <div class="space-y-4">
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-sm text-muted">Mode</span>
+                <UBadge
+                  :color="project.mode === 'live' ? 'success' : 'warning'"
+                  variant="soft"
+                  class="capitalize"
+                >
+                  {{ project.mode }}
+                </UBadge>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-sm text-muted">Registration</span>
+                <span class="text-sm font-medium text-highlighted">
+                  {{ project.registration_mode === 'public' ? 'Public' : 'Invite only' }}
+                </span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-sm text-muted">Project status</span>
+                <span class="text-sm font-medium capitalize text-highlighted">{{ project.status }}</span>
+              </div>
+              <UButton
+                label="Open settings"
+                icon="i-lucide-settings-2"
+                color="neutral"
+                variant="outline"
+                @click="() => { activeTab = 'settings' }"
               />
-            </UFormField>
-            <UFormField label="Events">
-              <UCheckboxGroup
-                v-model="webhookForm.events"
-                :items="[
-                  { label: 'Temporary user expired', value: 'identity.user.expired' },
-                  { label: 'User deletion requested', value: 'identity.user.deletion_requested' }
-                ]"
+            </div>
+          </UPageCard>
+          <UPageCard
+            title="Integration health"
+            description="Connected credentials and cleanup delivery endpoints."
+            variant="subtle"
+          >
+            <div class="space-y-4">
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-sm text-muted">Confidential clients</span>
+                <span class="font-semibold tabular-nums text-highlighted">{{ project.clients.length }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-sm text-muted">Active webhooks</span>
+                <span class="font-semibold tabular-nums text-highlighted">
+                  {{ project.webhooks.filter(webhook => webhook.status === 'active').length }}
+                </span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-sm text-muted">Stale permissions</span>
+                <span class="font-semibold tabular-nums text-highlighted">
+                  {{ project.permissions.filter(permission => permission.status === 'stale').length }}
+                </span>
+              </div>
+              <UButton
+                label="Review clients"
+                icon="i-lucide-server-cog"
+                color="neutral"
+                variant="outline"
+                @click="() => { activeTab = 'clients' }"
               />
-            </UFormField>
+            </div>
+          </UPageCard>
+        </div>
+      </template>
+
+      <template v-else-if="activeTab === 'members'">
+        <IdentityTableCard
+          title="Project members"
+          description="Effective access is the union of roles and direct permission grants."
+          :count="project.memberships.length"
+        >
+          <template #actions>
             <UButton
-              type="submit"
-              label="Add webhook"
-              icon="i-lucide-plus"
+              label="Invite member"
+              icon="i-lucide-mail-plus"
+              @click="() => { invitationModalOpen = true }"
             />
-          </form>
-          <div class="mt-5 space-y-3">
-            <div
-              v-for="webhook in project.webhooks"
-              :key="webhook.id"
-              class="rounded-xl border border-default p-3"
-            >
-              <p class="break-all text-sm font-medium">
-                {{ webhook.url }}
-              </p>
-              <p class="mt-1 text-xs text-muted">
-                {{ webhook.status }} · secret {{ webhook.secret_prefix }}… · {{ webhook.events.join(', ') }}
-              </p>
-              <div class="mt-3 flex flex-wrap gap-2">
+          </template>
+          <UTable
+            :data="project.memberships"
+            :columns="memberColumns"
+            empty="No members belong to this project."
+            class="min-w-5xl"
+          >
+            <template #user-cell="{ row }">
+              <div class="flex items-center gap-3 py-1">
+                <UAvatar
+                  :alt="row.original.user.username || row.original.user.email || row.original.user.id"
+                  size="sm"
+                />
+                <div class="min-w-0">
+                  <p class="truncate font-medium text-highlighted">
+                    {{ row.original.user.username || row.original.user.email }}
+                  </p>
+                  <p class="truncate text-xs text-muted">
+                    {{ row.original.user.email }} · authorization v{{ row.original.authorization_version }}
+                  </p>
+                </div>
+              </div>
+            </template>
+            <template #roles-cell="{ row }">
+              <div class="flex flex-wrap gap-1.5">
+                <UBadge
+                  v-if="row.original.is_admin"
+                  color="primary"
+                  variant="soft"
+                >
+                  Admin
+                </UBadge>
+                <UBadge
+                  v-for="item in row.original.roles.slice(0, 3)"
+                  :key="item"
+                  color="neutral"
+                  variant="soft"
+                >
+                  {{ item }}
+                </UBadge>
+                <span
+                  v-if="!row.original.roles.length && !row.original.is_admin"
+                  class="text-sm text-muted"
+                >No roles</span>
+              </div>
+            </template>
+            <template #permissions-cell="{ row }">
+              <span class="text-sm text-muted">{{ row.original.permissions.length }} permission{{ row.original.permissions.length === 1 ? '' : 's' }}</span>
+            </template>
+            <template #status-cell="{ row }">
+              <UBadge
+                :color="row.original.status === 'active' ? 'success' : 'warning'"
+                variant="soft"
+                class="capitalize"
+              >
+                {{ row.original.status }}
+              </UBadge>
+            </template>
+            <template #actions-cell="{ row }">
+              <div class="flex justify-end">
                 <UButton
-                  :label="webhook.status === 'active' ? 'Disable' : 'Enable'"
+                  label="Manage"
+                  icon="i-lucide-settings-2"
                   color="neutral"
                   variant="ghost"
-                  @click="toggleWebhook(webhook)"
-                />
-                <UButton
-                  label="Rotate secret"
-                  color="neutral"
-                  variant="outline"
-                  @click="rotateWebhook(webhook.id)"
-                />
-                <UButton
-                  label="Remove"
-                  color="error"
-                  variant="ghost"
-                  @click="deleteWebhook(webhook.id)"
+                  @click="selectMembership(row.original)"
                 />
               </div>
-            </div>
-          </div>
-        </UPageCard>
+            </template>
+          </UTable>
+        </IdentityTableCard>
+      </template>
 
-        <UPageCard
-          title="Confidential clients"
-          description="Create one client per BFF, API, worker, or environment."
-          variant="subtle"
-        >
-          <form
-            class="mb-5 flex gap-2"
-            @submit.prevent="addClient"
+      <template v-else-if="activeTab === 'access'">
+        <div class="grid gap-5 xl:grid-cols-2">
+          <IdentityTableCard
+            title="Project roles"
+            description="Reusable permission sets assigned to members."
+            :count="project.roles.length"
           >
-            <UInput
-              v-model="clientName"
-              required
-              placeholder="Portfolio BFF"
-              class="flex-1"
-            />
-            <UButton
-              type="submit"
-              label="Create"
-              icon="i-lucide-plus"
-            />
-          </form>
-          <div class="space-y-3">
-            <div
-              v-for="client in project.clients"
-              :key="client.id"
-              class="flex items-center justify-between rounded-xl border border-default p-3"
+            <template #actions>
+              <UButton
+                label="New role"
+                icon="i-lucide-plus"
+                size="sm"
+                @click="() => { roleModalOpen = true }"
+              />
+            </template>
+            <UTable
+              :data="project.roles"
+              :columns="roleColumns"
+              empty="No project roles yet."
             >
-              <div>
-                <p class="font-medium">
-                  {{ client.name }}
-                </p><p class="text-xs text-muted">
-                  {{ client.id }} · secret {{ client.secret_prefix }}…
+              <template #name-cell="{ row }">
+                <div class="py-1">
+                  <p class="font-medium text-highlighted">
+                    {{ row.original.name }}
+                  </p>
+                  <p class="text-xs text-muted">
+                    {{ row.original.slug }}
+                  </p>
+                </div>
+              </template>
+              <template #permission_ids-cell="{ row }">
+                <span class="text-sm text-muted">{{ row.original.permission_ids.length }} assigned</span>
+              </template>
+              <template #actions-cell="{ row }">
+                <div class="flex justify-end">
+                  <UButton
+                    label="Configure"
+                    icon="i-lucide-sliders-horizontal"
+                    color="neutral"
+                    variant="ghost"
+                    @click="selectRole(row.original)"
+                  />
+                </div>
+              </template>
+            </UTable>
+          </IdentityTableCard>
+
+          <IdentityTableCard
+            title="Permission catalog"
+            description="Stable keys published manually or through client manifests."
+            :count="project.permissions.length"
+          >
+            <template #actions>
+              <UButton
+                label="New permission"
+                icon="i-lucide-plus"
+                size="sm"
+                @click="() => { permissionModalOpen = true }"
+              />
+            </template>
+            <UTable
+              :data="project.permissions"
+              :columns="permissionColumns"
+              empty="No project permissions yet."
+              class="min-w-2xl"
+            >
+              <template #key-cell="{ row }">
+                <code class="rounded-md bg-elevated px-2 py-1 text-xs">{{ row.original.key }}</code>
+              </template>
+              <template #name-cell="{ row }">
+                <span class="text-sm text-muted">{{ row.original.name }}</span>
+              </template>
+              <template #source-cell="{ row }">
+                <UBadge
+                  color="neutral"
+                  variant="soft"
+                  class="capitalize"
+                >
+                  {{ row.original.source }}
+                </UBadge>
+              </template>
+              <template #status-cell="{ row }">
+                <UBadge
+                  :color="row.original.status === 'active' ? 'success' : 'warning'"
+                  variant="soft"
+                  class="capitalize"
+                >
+                  {{ row.original.status }}
+                </UBadge>
+              </template>
+            </UTable>
+          </IdentityTableCard>
+        </div>
+      </template>
+
+      <template v-else-if="activeTab === 'clients'">
+        <IdentityTableCard
+          title="Confidential clients"
+          description="Create one credential per BFF, API, worker, or environment."
+          :count="project.clients.length"
+        >
+          <template #actions>
+            <UButton
+              label="New client"
+              icon="i-lucide-plus"
+              @click="() => { clientModalOpen = true }"
+            />
+          </template>
+          <UTable
+            :data="project.clients"
+            :columns="clientColumns"
+            empty="No confidential clients yet."
+            class="min-w-5xl"
+          >
+            <template #name-cell="{ row }">
+              <div class="py-1">
+                <p class="font-medium text-highlighted">
+                  {{ row.original.name }}
+                </p>
+                <p class="font-mono text-xs text-muted">
+                  {{ row.original.id }}
                 </p>
               </div>
-              <div class="flex gap-2">
+            </template>
+            <template #secret_prefix-cell="{ row }">
+              <code class="text-xs text-muted">{{ row.original.secret_prefix }}••••••••</code>
+            </template>
+            <template #last_used_at-cell="{ row }">
+              <span class="whitespace-nowrap text-sm text-muted">{{ formatIdentityDate(row.original.last_used_at) }}</span>
+            </template>
+            <template #status-cell="{ row }">
+              <UBadge
+                :color="row.original.status === 'active' ? 'success' : 'neutral'"
+                variant="soft"
+                class="capitalize"
+              >
+                {{ row.original.status }}
+              </UBadge>
+            </template>
+            <template #actions-cell="{ row }">
+              <div class="flex justify-end gap-1">
                 <UButton
-                  :label="client.status === 'active' ? 'Disable' : 'Enable'"
-                  :icon="client.status === 'active' ? 'i-lucide-ban' : 'i-lucide-circle-check'"
+                  :label="row.original.status === 'active' ? 'Disable' : 'Enable'"
+                  :icon="row.original.status === 'active' ? 'i-lucide-ban' : 'i-lucide-circle-check'"
                   color="neutral"
                   variant="ghost"
-                  @click="toggleClient(client.id, client.status)"
+                  @click="toggleClient(row.original)"
                 />
                 <UButton
                   label="Rotate"
                   icon="i-lucide-refresh-cw"
                   color="neutral"
                   variant="outline"
-                  @click="rotate(client.id)"
+                  @click="rotateClient(row.original.id)"
                 />
               </div>
-            </div>
-          </div>
-        </UPageCard>
+            </template>
+          </UTable>
+        </IdentityTableCard>
+      </template>
 
-        <UPageCard
-          title="Invite a member"
-          description="Create a one-time invitation for this project."
-          variant="subtle"
+      <template v-else-if="activeTab === 'webhooks'">
+        <IdentityTableCard
+          title="Cleanup webhooks"
+          description="Signed lifecycle events allow consuming services to erase user-owned data."
+          :count="project.webhooks.length"
         >
+          <template #actions>
+            <UButton
+              label="Add webhook"
+              icon="i-lucide-plus"
+              @click="() => { webhookModalOpen = true }"
+            />
+          </template>
+          <UTable
+            :data="project.webhooks"
+            :columns="webhookColumns"
+            empty="No cleanup webhooks configured."
+            class="min-w-6xl"
+          >
+            <template #url-cell="{ row }">
+              <div class="max-w-md py-1">
+                <p class="truncate font-medium text-highlighted">
+                  {{ row.original.url }}
+                </p>
+                <p class="text-xs text-muted">
+                  Secret {{ row.original.secret_prefix }}••••••••
+                </p>
+              </div>
+            </template>
+            <template #events-cell="{ row }">
+              <div class="flex flex-wrap gap-1.5">
+                <UBadge
+                  v-for="event in row.original.events"
+                  :key="event"
+                  color="neutral"
+                  variant="soft"
+                >
+                  {{ event.replace('identity.user.', '') }}
+                </UBadge>
+              </div>
+            </template>
+            <template #last_delivered_at-cell="{ row }">
+              <span class="whitespace-nowrap text-sm text-muted">{{ formatIdentityDate(row.original.last_delivered_at) }}</span>
+            </template>
+            <template #status-cell="{ row }">
+              <UBadge
+                :color="row.original.status === 'active' ? 'success' : 'neutral'"
+                variant="soft"
+                class="capitalize"
+              >
+                {{ row.original.status }}
+              </UBadge>
+            </template>
+            <template #actions-cell="{ row }">
+              <div class="flex justify-end gap-1">
+                <UButton
+                  :icon="row.original.status === 'active' ? 'i-lucide-pause' : 'i-lucide-play'"
+                  color="neutral"
+                  variant="ghost"
+                  :aria-label="row.original.status === 'active' ? 'Disable webhook' : 'Enable webhook'"
+                  @click="toggleWebhook(row.original)"
+                />
+                <UButton
+                  icon="i-lucide-refresh-cw"
+                  color="neutral"
+                  variant="ghost"
+                  aria-label="Rotate webhook secret"
+                  @click="rotateWebhook(row.original.id)"
+                />
+                <UButton
+                  icon="i-lucide-trash-2"
+                  color="error"
+                  variant="ghost"
+                  aria-label="Delete webhook"
+                  @click="deleteWebhook(row.original.id)"
+                />
+              </div>
+            </template>
+          </UTable>
+        </IdentityTableCard>
+      </template>
+
+      <template v-else-if="activeTab === 'settings'">
+        <div class="grid gap-5 lg:grid-cols-2">
+          <UPageCard
+            title="Project environment"
+            description="Sandbox identities are temporary and intended for demos and automated tests."
+            variant="subtle"
+          >
+            <form
+              class="space-y-5"
+              @submit.prevent="saveEnvironment"
+            >
+              <UFormField label="Mode">
+                <USelect
+                  v-model="environment.mode"
+                  :items="[{ label: 'Live', value: 'live' }, { label: 'Sandbox', value: 'sandbox' }]"
+                  class="w-full"
+                />
+              </UFormField>
+              <UFormField
+                v-if="environment.mode === 'sandbox'"
+                label="Temporary account lifetime"
+                description="Minutes before Identity expires and removes the sandbox identity."
+              >
+                <UInput
+                  v-model.number="environment.ttlMinutes"
+                  type="number"
+                  :min="5"
+                  :max="1440"
+                  class="w-full"
+                />
+              </UFormField>
+              <UAlert
+                v-if="environment.mode === 'live'"
+                color="success"
+                variant="soft"
+                icon="i-lucide-shield-check"
+                title="Production safeguards enabled"
+                description="Live mode uses the complete credential and verification flow."
+              />
+              <UButton
+                type="submit"
+                label="Save environment"
+                icon="i-lucide-save"
+              />
+            </form>
+          </UPageCard>
+          <UPageCard
+            title="Registration policy"
+            description="Control how new identities become project members."
+            variant="subtle"
+          >
+            <form
+              class="space-y-5"
+              @submit.prevent="saveRegistrationPolicy"
+            >
+              <UFormField label="Registration">
+                <USelect
+                  v-model="registration.mode"
+                  :items="[{ label: 'Invitation only', value: 'invite_only' }, { label: 'Public registration', value: 'public' }]"
+                  class="w-full"
+                />
+              </UFormField>
+              <UFormField
+                v-if="registration.mode === 'public'"
+                label="Default role"
+                description="Optional role assigned to every new member."
+              >
+                <USelect
+                  v-model="registration.roleId"
+                  :items="[{ label: 'No default role', value: null }, ...project.roles.map(item => ({ label: item.name, value: item.id }))]"
+                  class="w-full"
+                />
+              </UFormField>
+              <UAlert
+                :color="registration.mode === 'public' ? 'warning' : 'info'"
+                variant="soft"
+                icon="i-lucide-info"
+                :title="registration.mode === 'public' ? 'Public enrollment enabled' : 'Invitation required'"
+                :description="registration.mode === 'public' ? 'Anyone using an approved client can create a project membership.' : 'New members need a one-time invitation token.'"
+              />
+              <UButton
+                type="submit"
+                label="Save policy"
+                icon="i-lucide-save"
+              />
+            </form>
+          </UPageCard>
+        </div>
+      </template>
+
+      <template v-else-if="activeTab === 'audit'">
+        <IdentityShellState
+          v-if="auditRequest.status.value === 'pending'"
+          state="loading"
+          title="Loading audit history"
+        />
+        <IdentityShellState
+          v-else-if="auditRequest.error.value"
+          state="error"
+          title="Unable to load audit history"
+          :description="auditRequest.error.value.statusMessage || 'The audit stream could not be loaded.'"
+          @retry="auditRequest.refresh()"
+        />
+        <IdentityTableCard
+          v-else
+          title="Audit history"
+          description="Authentication and access-management changes for this project."
+          :count="auditEvents.length"
+        >
+          <UTable
+            :data="visibleAuditEvents"
+            :columns="auditColumns"
+            empty="No audit events recorded yet."
+            class="min-w-6xl"
+          >
+            <template #event-cell="{ row }">
+              <code class="text-xs text-highlighted">{{ row.original.event }}</code>
+            </template>
+            <template #target_type-cell="{ row }">
+              <div class="max-w-xs">
+                <p class="text-sm">
+                  {{ row.original.target_type || 'project' }}
+                </p><p class="truncate font-mono text-xs text-muted">
+                  {{ row.original.target_id || projectId }}
+                </p>
+              </div>
+            </template>
+            <template #actor_user_id-cell="{ row }">
+              <span class="font-mono text-xs text-muted">{{ row.original.actor_user_id || 'System' }}</span>
+            </template>
+            <template #ip_address-cell="{ row }">
+              <span class="font-mono text-xs text-muted">{{ row.original.ip_address || '—' }}</span>
+            </template>
+            <template #created_at-cell="{ row }">
+              <time class="whitespace-nowrap text-sm text-muted">{{ formatIdentityDate(row.original.created_at) }}</time>
+            </template>
+          </UTable>
+          <template
+            v-if="hasMoreAuditEvents"
+            #footer
+          >
+            <p class="text-sm text-muted">
+              Showing {{ visibleAuditEvents.length }} of {{ auditEvents.length }} events
+            </p>
+            <UButton
+              label="Load more"
+              icon="i-lucide-chevron-down"
+              color="neutral"
+              variant="ghost"
+              @click="() => { auditVisibleCount += 20 }"
+            />
+          </template>
+        </IdentityTableCard>
+        <div
+          ref="auditSentinel"
+          class="h-px"
+          aria-hidden="true"
+        />
+      </template>
+
+      <UModal
+        v-model:open="clientModalOpen"
+        title="Create confidential client"
+        description="The secret is shown once after creation."
+      >
+        <template #body>
+          <form
+            class="space-y-4"
+            @submit.prevent="addClient"
+          >
+            <UFormField
+              label="Client name"
+              required
+            >
+              <UInput
+                v-model="clientName"
+                autofocus
+                placeholder="Job Tracker BFF"
+                class="w-full"
+              />
+            </UFormField><div class="flex justify-end gap-2">
+              <UButton
+                label="Cancel"
+                color="neutral"
+                variant="ghost"
+                @click="() => { clientModalOpen = false }"
+              /><UButton
+                type="submit"
+                label="Create client"
+                icon="i-lucide-plus"
+              />
+            </div>
+          </form>
+        </template>
+      </UModal>
+      <UModal
+        v-model:open="invitationModalOpen"
+        title="Invite a member"
+        description="Create a one-time invitation for this project."
+      >
+        <template #body>
           <form
             class="space-y-4"
             @submit.prevent="sendInvitation"
           >
-            <UFormField label="Email">
+            <UFormField
+              label="Email"
+              required
+            >
               <UInput
                 v-model="invitation.email"
-                required
+                autofocus
                 type="email"
                 class="w-full"
               />
-            </UFormField>
-            <UCheckbox
+            </UFormField><UCheckbox
               v-model="invitation.is_admin"
               label="Project administrator"
-            />
-            <UButton
-              type="submit"
-              label="Create invitation"
-              icon="i-lucide-mail-plus"
-            />
+            /><div class="flex justify-end gap-2">
+              <UButton
+                label="Cancel"
+                color="neutral"
+                variant="ghost"
+                @click="() => { invitationModalOpen = false }"
+              /><UButton
+                type="submit"
+                label="Create invitation"
+                icon="i-lucide-mail-plus"
+              />
+            </div>
           </form>
-        </UPageCard>
-
-        <UPageCard
-          title="Registration policy"
-          description="Choose whether accounts need an invitation or may join this project directly."
-          variant="subtle"
-        >
+        </template>
+      </UModal>
+      <UModal
+        v-model:open="roleModalOpen"
+        title="Create project role"
+        description="Roles collect stable permission keys."
+      >
+        <template #body>
           <form
             class="space-y-4"
-            @submit.prevent="saveRegistrationPolicy"
-          >
-            <UFormField label="Registration">
-              <USelect
-                v-model="registration.mode"
-                :items="[
-                  { label: 'Invitation only', value: 'invite_only' },
-                  { label: 'Public registration', value: 'public' }
-                ]"
-                class="w-full"
-              />
-            </UFormField>
-            <UFormField
-              v-if="registration.mode === 'public'"
-              label="Default role"
-              description="Optional role assigned to each new project member."
-            >
-              <USelect
-                v-model="registration.roleId"
-                :items="[
-                  { label: 'No default role', value: null },
-                  ...project.roles.map(item => ({ label: item.name, value: item.id }))
-                ]"
-                class="w-full"
-              />
-            </UFormField>
-            <UButton
-              type="submit"
-              label="Save policy"
-              icon="i-lucide-save"
-            />
-          </form>
-        </UPageCard>
-
-        <UPageCard
-          title="Project roles"
-          description="Roles collect stable permission keys declared by consuming services."
-          variant="subtle"
-        >
-          <form
-            class="mb-5 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
             @submit.prevent="addRole"
           >
-            <UInput
-              v-model="role.name"
+            <UFormField
+              label="Name"
               required
-              placeholder="Editor"
-            />
-            <UInput
-              v-model="role.slug"
-              required
-              placeholder="editor"
-            />
-            <UButton
-              type="submit"
-              label="Add"
-              icon="i-lucide-plus"
-            />
-          </form>
-          <div class="flex flex-wrap gap-2">
-            <UButton
-              v-for="item in project.roles"
-              :key="item.id"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-shield"
-              @click="selectRole(item)"
             >
-              {{ item.name }}
-            </UButton>
-          </div>
-        </UPageCard>
-
-        <UPageCard
-          title="Permission catalog"
-          description="Manifest permissions remain visible when stale and are never silently deleted."
-          variant="subtle"
-        >
-          <form
-            class="mb-5 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
-            @submit.prevent="addPermission"
-          >
-            <UInput
-              v-model="permissionForm.key"
+              <UInput
+                v-model="role.name"
+                autofocus
+                placeholder="Editor"
+                class="w-full"
+              />
+            </UFormField><UFormField
+              label="Slug"
               required
-              placeholder="documents.read"
-            />
-            <UInput
-              v-model="permissionForm.name"
-              placeholder="Read documents"
-            />
-            <UButton
-              type="submit"
-              label="Add"
-              icon="i-lucide-plus"
-            />
-          </form>
-          <div class="space-y-2">
-            <div
-              v-for="permission in project.permissions"
-              :key="permission.id"
-              class="flex items-center justify-between rounded-xl border border-default p-3"
             >
-              <div>
-                <p class="font-mono text-sm">
-                  {{ permission.key }}
-                </p><p class="text-xs text-muted">
-                  {{ permission.description || permission.name }}
-                </p>
-              </div>
-              <UBadge
-                :color="permission.status === 'active' ? 'success' : 'warning'"
-                variant="soft"
-              >
-                {{ permission.status }}
-              </UBadge>
-            </div>
-          </div>
-        </UPageCard>
-      </div>
-
-      <UPageCard
-        title="Memberships"
-        description="Effective access is the union of project roles and direct grants."
-        variant="subtle"
-      >
-        <div class="divide-y divide-default">
-          <div
-            v-for="membership in project.memberships"
-            :key="membership.id"
-            class="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between"
-          >
-            <div>
-              <p class="font-medium">
-                {{ membership.user.username || membership.user.email || membership.user.id }}
-              </p><p class="text-xs text-muted">
-                {{ membership.user.email }} · authorization v{{ membership.authorization_version }}
-              </p>
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <UBadge
-                v-if="membership.is_admin"
-                color="primary"
-                variant="soft"
-              >
-                Project admin
-              </UBadge><UBadge
-                v-for="item in membership.roles"
-                :key="item"
-                variant="outline"
-              >
-                {{ item }}
-              </UBadge>
+              <UInput
+                v-model="role.slug"
+                placeholder="editor"
+                class="w-full"
+              />
+            </UFormField><UFormField label="Description">
+              <UTextarea
+                v-model="role.description"
+                class="w-full"
+              />
+            </UFormField><div class="flex justify-end gap-2">
               <UButton
-                label="Manage"
-                size="xs"
+                label="Cancel"
                 color="neutral"
-                variant="outline"
-                icon="i-lucide-settings-2"
-                @click="selectMembership(membership)"
+                variant="ghost"
+                @click="() => { roleModalOpen = false }"
+              /><UButton
+                type="submit"
+                label="Create role"
+                icon="i-lucide-plus"
               />
             </div>
-          </div>
-        </div>
-      </UPageCard>
-
+          </form>
+        </template>
+      </UModal>
+      <UModal
+        v-model:open="permissionModalOpen"
+        title="Create permission"
+        description="Use a stable namespaced key shared with consuming services."
+      >
+        <template #body>
+          <form
+            class="space-y-4"
+            @submit.prevent="addPermission"
+          >
+            <UFormField
+              label="Permission key"
+              required
+            >
+              <UInput
+                v-model="permissionForm.key"
+                autofocus
+                placeholder="documents.read"
+                class="w-full"
+              />
+            </UFormField><UFormField label="Name">
+              <UInput
+                v-model="permissionForm.name"
+                placeholder="Read documents"
+                class="w-full"
+              />
+            </UFormField><UFormField label="Description">
+              <UTextarea
+                v-model="permissionForm.description"
+                class="w-full"
+              />
+            </UFormField><div class="flex justify-end gap-2">
+              <UButton
+                label="Cancel"
+                color="neutral"
+                variant="ghost"
+                @click="() => { permissionModalOpen = false }"
+              /><UButton
+                type="submit"
+                label="Create permission"
+                icon="i-lucide-plus"
+              />
+            </div>
+          </form>
+        </template>
+      </UModal>
+      <UModal
+        v-model:open="webhookModalOpen"
+        title="Add cleanup webhook"
+        description="Identity signs every lifecycle event delivered to this endpoint."
+      >
+        <template #body>
+          <form
+            class="space-y-4"
+            @submit.prevent="addWebhook"
+          >
+            <UFormField
+              label="Endpoint URL"
+              required
+            >
+              <UInput
+                v-model="webhookForm.url"
+                autofocus
+                type="url"
+                placeholder="https://api.example.com/api/webhooks/identity"
+                class="w-full"
+              />
+            </UFormField><UFormField label="Events">
+              <UCheckboxGroup
+                v-model="webhookForm.events"
+                :items="[{ label: 'Temporary user expired', value: 'identity.user.expired' }, { label: 'User deletion requested', value: 'identity.user.deletion_requested' }]"
+              />
+            </UFormField><div class="flex justify-end gap-2">
+              <UButton
+                label="Cancel"
+                color="neutral"
+                variant="ghost"
+                @click="() => { webhookModalOpen = false }"
+              /><UButton
+                type="submit"
+                label="Add webhook"
+                icon="i-lucide-plus"
+              />
+            </div>
+          </form>
+        </template>
+      </UModal>
       <UModal
         :open="selectedRole != null"
         title="Role permissions"
@@ -620,12 +1137,13 @@ function selectMembership(membership: NonNullable<typeof project.value>['members
             class="space-y-5"
             @submit.prevent="saveRolePermissions"
           >
-            <UCheckboxGroup
-              v-model="selectedRole.permissionIds"
-              :items="projectPermissionOptions"
-              class="grid gap-3 sm:grid-cols-2"
-            />
-            <div class="flex justify-end">
+            <div class="max-h-96 overflow-y-auto rounded-xl border border-default p-3">
+              <UCheckboxGroup
+                v-model="selectedRole.permissionIds"
+                :items="projectPermissionOptions"
+                class="grid gap-3 sm:grid-cols-2"
+              />
+            </div><div class="flex justify-end">
               <UButton
                 type="submit"
                 label="Save role"
@@ -635,7 +1153,6 @@ function selectMembership(membership: NonNullable<typeof project.value>['members
           </form>
         </template>
       </UModal>
-
       <UModal
         :open="selectedMembership != null"
         title="Membership access"
@@ -651,35 +1168,29 @@ function selectMembership(membership: NonNullable<typeof project.value>['members
             <UCheckbox
               v-model="selectedMembership.isAdmin"
               label="Project administrator"
-            />
-            <UFormField label="Status">
+            /><UFormField label="Status">
               <USelect
                 v-model="selectedMembership.status"
                 :items="[{ label: 'Active', value: 'active' }, { label: 'Suspended', value: 'suspended' }]"
                 class="w-full"
               />
-            </UFormField>
-            <div>
+            </UFormField><div>
               <p class="mb-3 text-sm font-medium">
                 Roles
-              </p>
-              <UCheckboxGroup
+              </p><UCheckboxGroup
                 v-model="selectedMembership.roleIds"
                 :items="projectRoleOptions"
                 class="grid gap-3 sm:grid-cols-2"
               />
-            </div>
-            <div>
+            </div><div>
               <p class="mb-3 text-sm font-medium">
                 Direct permission grants
-              </p>
-              <UCheckboxGroup
+              </p><UCheckboxGroup
                 v-model="selectedMembership.permissionIds"
                 :items="projectPermissionOptions"
                 class="grid gap-3 sm:grid-cols-2"
               />
-            </div>
-            <div class="flex justify-between gap-3">
+            </div><div class="flex justify-between gap-3">
               <UButton
                 type="button"
                 label="Remove membership"
@@ -687,8 +1198,7 @@ function selectMembership(membership: NonNullable<typeof project.value>['members
                 variant="outline"
                 icon="i-lucide-user-minus"
                 @click="removeSelectedMembership"
-              />
-              <UButton
+              /><UButton
                 type="submit"
                 label="Save access"
                 icon="i-lucide-save"
@@ -697,36 +1207,6 @@ function selectMembership(membership: NonNullable<typeof project.value>['members
           </form>
         </template>
       </UModal>
-
-      <UPageCard
-        title="Audit history"
-        description="Authentication and access-management changes for this project."
-        variant="subtle"
-      >
-        <div class="divide-y divide-default">
-          <div
-            v-for="item in auditEvents"
-            :key="item.id"
-            class="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between"
-          >
-            <div>
-              <p class="font-mono text-sm">
-                {{ item.event }}
-              </p>
-              <p class="text-xs text-muted">
-                {{ item.target_type || 'project' }} {{ item.target_id || projectId }}
-              </p>
-            </div>
-            <time class="text-xs text-muted">{{ item.created_at }}</time>
-          </div>
-          <p
-            v-if="!auditEvents?.length"
-            class="py-4 text-sm text-muted"
-          >
-            No audit events recorded yet.
-          </p>
-        </div>
-      </UPageCard>
-    </div>
+    </template>
   </IdentityPanel>
 </template>
