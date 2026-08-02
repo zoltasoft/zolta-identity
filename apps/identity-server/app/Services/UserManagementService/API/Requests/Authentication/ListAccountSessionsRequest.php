@@ -12,7 +12,7 @@ final class ListAccountSessionsRequest extends BaseRequest
         return Auth::check();
     }
 
-    public function withData(): array
+    public function trustedData(): array
     {
         return [
             'user_id' => (string) $this->user()?->getAuthIdentifier(),

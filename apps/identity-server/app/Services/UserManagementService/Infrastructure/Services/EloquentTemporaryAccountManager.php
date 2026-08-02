@@ -8,6 +8,7 @@ use App\Services\UserManagementService\Application\Contracts\AccountDataEraserIn
 use App\Services\UserManagementService\Application\Contracts\TemporaryAccountManagerInterface;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\Role;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
+use App\Services\UserManagementService\Infrastructure\Webhooks\IdentityWebhookPublisher;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -15,7 +16,10 @@ use Zolta\Domain\ValueObjects\UserId;
 
 final readonly class EloquentTemporaryAccountManager implements TemporaryAccountManagerInterface
 {
-    public function __construct(private AccountDataEraserInterface $dataEraser) {}
+    public function __construct(
+        private AccountDataEraserInterface $dataEraser,
+        private IdentityWebhookPublisher $webhooks,
+    ) {}
 
     public function provision(): array
     {
@@ -65,6 +69,13 @@ final readonly class EloquentTemporaryAccountManager implements TemporaryAccount
             ->orderBy('id')
             ->chunkById(100, function ($users) use (&$purged): void {
                 foreach ($users as $user) {
+                    $user->identityMemberships()->pluck('project_id')->each(function (string $projectId) use ($user): void {
+                        $this->webhooks->publish($projectId, 'identity.user.expired', [
+                            'user_id' => (string) $user->id,
+                            'reason' => 'sandbox_ttl_elapsed',
+                            'temporary_expires_at' => $user->demo_expires_at?->toIso8601String(),
+                        ]);
+                    });
                     $this->dataEraser->erase(new UserId((string) $user->id), (string) $user->email);
                     $user->delete();
                     $purged++;

@@ -15,11 +15,19 @@ use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityPr
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectPermission;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectRole;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityRefreshToken;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityWebhookEndpoint;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\Role;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
 use App\Services\UserManagementService\Infrastructure\Notifications\ResetIdentityPassword;
 use App\Services\UserManagementService\Infrastructure\Notifications\VerifyEmailCode;
+use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityAuditEventRepository;
+use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityProjectClientRepository;
+use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityProjectMembershipRepository;
+use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityProjectPermissionRepository;
+use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityProjectRoleRepository;
+use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityWebhookEndpointRepository;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -28,6 +36,15 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 final class EloquentIdentityAccessService implements IdentityAccessServiceInterface
 {
+    public function __construct(
+        private readonly EloquentIdentityProjectMembershipRepository $memberships,
+        private readonly EloquentIdentityProjectRoleRepository $projectRoles,
+        private readonly EloquentIdentityProjectPermissionRepository $projectPermissions,
+        private readonly EloquentIdentityProjectClientRepository $projectClients,
+        private readonly EloquentIdentityWebhookEndpointRepository $webhooks,
+        private readonly EloquentIdentityAuditEventRepository $auditEvents,
+    ) {}
+
     public function listInstallationUsers(string $actorUserId): array
     {
         $this->assertSystemAdmin($actorUserId);
@@ -67,6 +84,9 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
     {
         $client = $this->authenticateClient((string) $credentials['client_id'], (string) $credentials['client_secret']);
         $project = $client->project;
+        if ($project->mode === 'sandbox') {
+            throw new IdentityAuthorizationException('Sandbox projects only accept temporary sessions.');
+        }
         $requestedProject = (string) ($credentials['project'] ?? '');
 
         if ($requestedProject !== '' && ! in_array($requestedProject, [$project->id, $project->slug], true)) {
@@ -83,11 +103,7 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
             $user->forceFill(['locked' => false, 'lock_expiry' => null])->save();
         }
 
-        $membership = IdentityProjectMembership::query()
-            ->where('project_id', $project->id)
-            ->where('user_id', $user->id)
-            ->where('status', 'active')
-            ->first();
+        $membership = $this->memberships->findActiveForProjectUser($project->id, $user->id);
 
         if (! $membership || $project->status !== 'active') {
             throw new IdentityAuthenticationException('This account does not have access to the project.');
@@ -99,10 +115,33 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
         return $tokens + ['identity' => $this->identityPayload($user, $project, $client, $membership)];
     }
 
+    public function authenticationContext(string $clientId, string $clientSecret, ?string $requestedProject = null): array
+    {
+        $client = $this->authenticateClient($clientId, $clientSecret);
+        $project = $client->project;
+
+        if ($requestedProject !== null
+            && $requestedProject !== ''
+            && ! in_array($requestedProject, [$project->id, $project->slug], true)) {
+            throw new IdentityAuthenticationException('Invalid client credentials.');
+        }
+
+        return [
+            'project' => $this->projectPayload($project),
+            'client' => [
+                'id' => $client->id,
+                'name' => $client->name,
+            ],
+        ];
+    }
+
     public function register(array $attributes, ?string $ipAddress = null, ?string $userAgent = null): array
     {
         $client = $this->authenticateClient((string) $attributes['client_id'], (string) $attributes['client_secret']);
         $project = $client->project;
+        if ($project->mode === 'sandbox') {
+            throw new IdentityAuthorizationException('Sandbox projects do not accept permanent registrations.');
+        }
         $requestedProject = (string) ($attributes['project'] ?? '');
         if ($requestedProject !== '' && ! in_array($requestedProject, [$project->id, $project->slug], true)) {
             throw new IdentityAuthenticationException('Invalid credentials.');
@@ -134,10 +173,7 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
                 'is_admin' => false,
             ]);
             if ($project->registration_role_id !== null) {
-                $roleExists = IdentityProjectRole::query()
-                    ->where('project_id', $project->id)
-                    ->whereKey($project->registration_role_id)
-                    ->exists();
+                $roleExists = $this->projectRoles->existsForProject($project->id, $project->registration_role_id);
                 if ($roleExists) {
                     $membership->roles()->attach($project->registration_role_id);
                 }
@@ -148,6 +184,57 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
             $this->audit('auth.registered', $project->id, $client->id, $user->id, 'user', $user->id, [], $ipAddress, $userAgent);
 
             return $tokens + ['identity' => $this->identityPayload($user, $project, $client, $membership)];
+        });
+    }
+
+    public function createSandboxSession(string $clientId, string $clientSecret, ?string $ipAddress = null, ?string $userAgent = null): array
+    {
+        $client = $this->authenticateClient($clientId, $clientSecret);
+        $project = $client->project;
+        if ($project->mode !== 'sandbox') {
+            throw new IdentityAuthorizationException('Temporary sessions are only available for sandbox projects.');
+        }
+
+        return DB::transaction(function () use ($project, $client, $ipAddress, $userAgent): array {
+            $id = (string) Str::uuid();
+            $suffix = Str::lower(Str::random(8));
+            $expiresAt = now()->addMinutes((int) $project->sandbox_ttl_minutes);
+            $user = User::query()->create([
+                'id' => $id,
+                'username' => "Sandbox Guest {$suffix}",
+                'email' => "sandbox-{$id}@identity.invalid",
+                'password' => Str::random(64),
+                'role_id' => Role::query()->firstOrCreate(
+                    ['role' => 'User'],
+                    ['description' => 'Default global identity role'],
+                )->id,
+                'terms' => 'accepted',
+                'email_verified_at' => now(),
+                'is_temporary' => true,
+                'demo_expires_at' => $expiresAt,
+                'login_alerts_enabled' => false,
+            ]);
+            $membership = IdentityProjectMembership::query()->create([
+                'project_id' => $project->id,
+                'user_id' => $user->id,
+                'status' => 'active',
+                'is_admin' => false,
+            ]);
+            if ($project->registration_role_id !== null
+                && $this->projectRoles->existsForProject($project->id, $project->registration_role_id)) {
+                $membership->roles()->attach($project->registration_role_id);
+            }
+
+            $tokens = $this->issueTokenPair($user, $project, $client, $membership);
+            $this->audit('auth.sandbox_session_created', $project->id, $client->id, $user->id, 'user', $user->id, [
+                'expires_at' => $expiresAt->toIso8601String(),
+            ], $ipAddress, $userAgent);
+
+            return $tokens + [
+                'is_temporary' => true,
+                'expires_at' => $expiresAt->toIso8601String(),
+                'identity' => $this->identityPayload($user, $project, $client, $membership),
+            ];
         });
     }
 
@@ -260,11 +347,7 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
 
             $user = User::query()->findOrFail($refresh->user_id);
             $project = IdentityProject::query()->where('status', 'active')->findOrFail($refresh->project_id);
-            $membership = IdentityProjectMembership::query()
-                ->where('project_id', $project->id)
-                ->where('user_id', $user->id)
-                ->where('status', 'active')
-                ->first();
+            $membership = $this->memberships->findActiveForProjectUser($project->id, $user->id);
             if (! $membership) {
                 $this->revokeFamily($refresh->family_id);
                 throw new IdentityAuthenticationException('Project access has been revoked.');
@@ -294,18 +377,17 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
             return ['active' => false];
         }
 
-        $membership = IdentityProjectMembership::query()
-            ->where('project_id', $token->identity_project_id)
-            ->where('user_id', $token->tokenable_id)
-            ->where('status', 'active')
-            ->first();
+        $membership = $this->memberships->findActiveForProjectUser(
+            (string) $token->identity_project_id,
+            (string) $token->tokenable_id,
+        );
 
         if (! $membership) {
             return ['active' => false];
         }
 
         $user = User::query()->find($token->tokenable_id);
-        if (! $user) {
+        if (! $user || ($user->is_temporary && ($user->demo_expires_at === null || $user->demo_expires_at->isPast()))) {
             return ['active' => false];
         }
 
@@ -319,11 +401,15 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
             'username' => $user->username,
             'email_verified' => $user->email_verified_at !== null,
             'project_id' => $token->identity_project_id,
+            'project_slug' => $client->project->slug,
+            'project_mode' => $client->project->mode,
             'client_id' => $token->identity_client_id,
             'session_id' => $token->identity_refresh_family_id,
             'roles' => $membership->effectiveRoleSlugs(),
             'permissions' => $membership->effectivePermissionKeys(),
             'authorization_version' => $membership->authorization_version,
+            'is_temporary' => $user->is_temporary,
+            'temporary_expires_at' => $user->demo_expires_at?->toIso8601String(),
             'exp' => $token->expires_at?->getTimestamp(),
         ];
     }
@@ -351,9 +437,14 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
 
         $user = User::query()->findOrFail($userId);
         $project = IdentityProject::query()->findOrFail($token->identity_project_id);
-        $client = IdentityProjectClient::query()->findOrFail($token->identity_client_id);
-        $membership = IdentityProjectMembership::query()
-            ->where('project_id', $project->id)->where('user_id', $userId)->where('status', 'active')->firstOrFail();
+        $client = $this->projectClients->findForProjectOrFail($project->id, (string) $token->identity_client_id);
+        $membership = $this->memberships->findActiveForProjectUser($project->id, $userId);
+        if ($membership === null) {
+            throw (new ModelNotFoundException)->setModel(
+                IdentityProjectMembership::class,
+                [$userId],
+            );
+        }
 
         return $this->identityPayload($user, $project, $client, $membership);
     }
@@ -371,7 +462,9 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
             ->unique('family_id')
             ->map(function (IdentityRefreshToken $token) use ($currentFamily): array {
                 $project = IdentityProject::query()->find($token->project_id);
-                $client = IdentityProjectClient::query()->find($token->client_id);
+                $client = $project
+                    ? $this->projectClients->findForProject($project->id, $token->client_id)
+                    : null;
 
                 return [
                     'id' => $token->family_id,
@@ -435,7 +528,7 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
     public function updateProjectRegistration(string $actorUserId, string $projectId, string $mode, ?string $roleId): void
     {
         $this->assertProjectAdmin($actorUserId, $projectId);
-        if ($roleId !== null && ! IdentityProjectRole::query()->where('project_id', $projectId)->whereKey($roleId)->exists()) {
+        if ($roleId !== null && ! $this->projectRoles->existsForProject($projectId, $roleId)) {
             throw new IdentityAuthorizationException('The default registration role must belong to this project.');
         }
 
@@ -449,16 +542,81 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
         ]);
     }
 
+    public function updateProjectEnvironment(string $actorUserId, string $projectId, string $mode, int $sandboxTtlMinutes): void
+    {
+        $this->assertProjectAdmin($actorUserId, $projectId);
+        $project = IdentityProject::query()->findOrFail($projectId);
+        $project->forceFill([
+            'mode' => $mode,
+            'sandbox_ttl_minutes' => $sandboxTtlMinutes,
+        ])->save();
+        $this->audit('project.environment_updated', $projectId, null, $actorUserId, 'project', $projectId, [
+            'mode' => $mode,
+            'sandbox_ttl_minutes' => $sandboxTtlMinutes,
+        ]);
+    }
+
+    public function createWebhook(string $actorUserId, string $projectId, string $url, array $events): array
+    {
+        $this->assertProjectAdmin($actorUserId, $projectId);
+        $this->assertWebhookUrl($url);
+        $secret = Str::random(64);
+        $endpoint = IdentityWebhookEndpoint::query()->create([
+            'project_id' => $projectId,
+            'url' => $url,
+            'events' => array_values(array_unique($events)),
+            'secret' => $secret,
+            'secret_prefix' => Str::substr($secret, 0, 8),
+            'status' => 'active',
+        ]);
+        $this->audit('webhook.created', $projectId, null, $actorUserId, 'webhook', $endpoint->id);
+
+        return $this->webhookPayload($endpoint) + ['secret' => $secret];
+    }
+
+    public function updateWebhook(string $actorUserId, string $projectId, string $webhookId, string $url, array $events, string $status): void
+    {
+        $this->assertProjectAdmin($actorUserId, $projectId);
+        $this->assertWebhookUrl($url);
+        $endpoint = $this->webhooks->findForProjectOrFail($projectId, $webhookId);
+        $endpoint->forceFill([
+            'url' => $url,
+            'events' => array_values(array_unique($events)),
+            'status' => $status,
+        ])->save();
+        $this->audit('webhook.updated', $projectId, null, $actorUserId, 'webhook', $endpoint->id);
+    }
+
+    public function rotateWebhookSecret(string $actorUserId, string $projectId, string $webhookId): array
+    {
+        $this->assertProjectAdmin($actorUserId, $projectId);
+        $endpoint = $this->webhooks->findForProjectOrFail($projectId, $webhookId);
+        $secret = Str::random(64);
+        $endpoint->forceFill(['secret' => $secret, 'secret_prefix' => Str::substr($secret, 0, 8)])->save();
+        $this->audit('webhook.secret_rotated', $projectId, null, $actorUserId, 'webhook', $endpoint->id);
+
+        return $this->webhookPayload($endpoint) + ['secret' => $secret];
+    }
+
+    public function removeWebhook(string $actorUserId, string $projectId, string $webhookId): void
+    {
+        $this->assertProjectAdmin($actorUserId, $projectId);
+        $endpoint = $this->webhooks->findForProjectOrFail($projectId, $webhookId);
+        $endpoint->delete();
+        $this->audit('webhook.deleted', $projectId, null, $actorUserId, 'webhook', $webhookId);
+    }
+
     public function projectDetails(string $actorUserId, string $projectId): array
     {
         $this->assertProjectAdmin($actorUserId, $projectId);
         $project = IdentityProject::query()->findOrFail($projectId);
 
         return $this->projectPayload($project) + [
-            'clients' => $project->clients()->orderBy('name')->get()->map(fn ($client) => $this->clientPayload($client))->all(),
-            'memberships' => $project->memberships()->with(['user', 'roles', 'permissions'])->get()->map(fn ($membership) => $this->membershipPayload($membership))->all(),
-            'roles' => $project->roles()->with('permissions')->orderBy('name')->get()->map(fn ($role) => $this->rolePayload($role))->all(),
-            'permissions' => $project->permissions()->orderBy('key')->get()->map(fn ($permission) => $this->permissionPayload($permission))->all(),
+            'clients' => $this->projectClients->listForProject($projectId, sort: ['name'])->map(fn ($client) => $this->clientPayload($client))->all(),
+            'memberships' => $this->memberships->listForProject($projectId, ['user', 'roles', 'permissions'])->map(fn ($membership) => $this->membershipPayload($membership))->all(),
+            'roles' => $this->projectRoles->listForProject($projectId, ['permissions'], ['name'])->map(fn ($role) => $this->rolePayload($role))->all(),
+            'permissions' => $this->projectPermissions->listForProject($projectId, sort: ['key'])->map(fn ($permission) => $this->permissionPayload($permission))->all(),
+            'webhooks' => $this->webhooks->listForProject($projectId, sort: ['url'])->map(fn ($endpoint) => $this->webhookPayload($endpoint))->all(),
         ];
     }
 
@@ -474,7 +632,7 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
     public function rotateClientSecret(string $actorUserId, string $projectId, string $clientId): array
     {
         $this->assertProjectAdmin($actorUserId, $projectId);
-        $client = IdentityProjectClient::query()->where('project_id', $projectId)->findOrFail($clientId);
+        $client = $this->projectClients->findForProjectOrFail($projectId, $clientId);
         $secret = Str::random(64);
         $client->forceFill(['secret_hash' => hash('sha256', $secret), 'secret_prefix' => Str::substr($secret, 0, 8)])->save();
         $this->audit('client.secret_rotated', $projectId, $client->id, $actorUserId, 'client', $client->id);
@@ -485,7 +643,7 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
     public function setClientStatus(string $actorUserId, string $projectId, string $clientId, string $status): void
     {
         $this->assertProjectAdmin($actorUserId, $projectId);
-        $client = IdentityProjectClient::query()->where('project_id', $projectId)->findOrFail($clientId);
+        $client = $this->projectClients->findForProjectOrFail($projectId, $clientId);
         $client->forceFill(['status' => $status])->save();
         if ($status !== 'active') {
             IdentityRefreshToken::query()->where('client_id', $clientId)->pluck('family_id')->unique()->each(fn (string $familyId) => $this->revokeFamily($familyId));
@@ -497,7 +655,7 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
     public function syncPermissionManifest(string $actorUserId, string $projectId, string $clientId, array $manifest): array
     {
         $this->assertProjectAdmin($actorUserId, $projectId);
-        IdentityProjectClient::query()->where('project_id', $projectId)->findOrFail($clientId);
+        $this->projectClients->findForProjectOrFail($projectId, $clientId);
         $permissions = $this->persistPermissionManifest($projectId, $clientId, $manifest);
         $this->audit('permission_manifest.synced', $projectId, $clientId, $actorUserId, 'client', $clientId, ['permission_count' => count($manifest)]);
 
@@ -536,7 +694,10 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
         });
         $this->touchProjectMemberships($projectId);
 
-        return IdentityProjectPermission::query()->where('project_id', $projectId)->orderBy('key')->get()->map(fn ($permission) => $this->permissionPayload($permission))->all();
+        return $this->projectPermissions
+            ->listForProject($projectId, sort: ['key'])
+            ->map(fn ($permission) => $this->permissionPayload($permission))
+            ->all();
     }
 
     public function createRole(string $actorUserId, string $projectId, array $attributes): array
@@ -573,8 +734,8 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
     public function setRolePermissions(string $actorUserId, string $projectId, string $roleId, array $permissionIds): void
     {
         $this->assertProjectAdmin($actorUserId, $projectId);
-        $role = IdentityProjectRole::query()->where('project_id', $projectId)->findOrFail($roleId);
-        $validIds = IdentityProjectPermission::query()->where('project_id', $projectId)->whereIn('id', $permissionIds)->pluck('id')->all();
+        $role = $this->projectRoles->findForProjectOrFail($projectId, $roleId);
+        $validIds = $this->projectPermissions->existingIdsForProject($projectId, $permissionIds);
         if (count($validIds) !== count(array_unique($permissionIds))) {
             throw new IdentityAuthorizationException('Every permission must belong to the project.');
         }
@@ -648,13 +809,13 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
     public function setMembershipAccess(string $actorUserId, string $projectId, string $membershipId, array $roleIds, array $permissionIds, bool $isAdmin, string $status): void
     {
         $this->assertProjectAdmin($actorUserId, $projectId);
-        $membership = IdentityProjectMembership::query()->where('project_id', $projectId)->findOrFail($membershipId);
+        $membership = $this->memberships->findForProjectOrFail($projectId, $membershipId);
         $actor = User::query()->findOrFail($actorUserId);
         if ($membership->user_id === $actorUserId && ! $actor->is_system_admin && (! $isAdmin || $status !== 'active')) {
             throw new IdentityAuthorizationException('Project administrators cannot suspend or demote their own membership.');
         }
-        $roles = IdentityProjectRole::query()->where('project_id', $projectId)->whereIn('id', $roleIds)->pluck('id')->all();
-        $permissions = IdentityProjectPermission::query()->where('project_id', $projectId)->whereIn('id', $permissionIds)->pluck('id')->all();
+        $roles = $this->projectRoles->existingIdsForProject($projectId, $roleIds);
+        $permissions = $this->projectPermissions->existingIdsForProject($projectId, $permissionIds);
         if (count($roles) !== count(array_unique($roleIds)) || count($permissions) !== count(array_unique($permissionIds))) {
             throw new IdentityAuthorizationException('Roles and permissions must belong to the project.');
         }
@@ -671,7 +832,7 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
     public function removeMembership(string $actorUserId, string $projectId, string $membershipId): void
     {
         $this->assertProjectAdmin($actorUserId, $projectId);
-        $membership = IdentityProjectMembership::query()->where('project_id', $projectId)->findOrFail($membershipId);
+        $membership = $this->memberships->findForProjectOrFail($projectId, $membershipId);
         if ($membership->user_id === $actorUserId && $membership->is_admin) {
             throw new IdentityAuthorizationException('Project administrators cannot remove their own membership.');
         }
@@ -686,7 +847,11 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
     {
         $this->assertProjectAdmin($actorUserId, $projectId);
 
-        return IdentityAuditEvent::query()->where('project_id', $projectId)->latest()->limit(min(max($limit, 1), 250))->get()
+        return $this->auditEvents->listForProject(
+            $projectId,
+            sort: ['-created_at'],
+            limit: min(max($limit, 1), 250),
+        )
             ->map(fn (IdentityAuditEvent $event) => [
                 'id' => $event->id,
                 'event' => $event->event,
@@ -731,6 +896,13 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
         $familyId ??= (string) Str::uuid();
         $accessExpiresAt = now()->addMinutes((int) config('identity.access_token_ttl_minutes', 15));
         $refreshExpiresAt = now()->addDays((int) config('identity.refresh_token_ttl_days', 30));
+        if ($user->is_temporary && $user->demo_expires_at !== null) {
+            if ($user->demo_expires_at->isPast()) {
+                throw new IdentityAuthenticationException('Temporary identity has expired.');
+            }
+            $accessExpiresAt = $user->demo_expires_at->lessThan($accessExpiresAt) ? $user->demo_expires_at->copy() : $accessExpiresAt;
+            $refreshExpiresAt = $user->demo_expires_at->lessThan($refreshExpiresAt) ? $user->demo_expires_at->copy() : $refreshExpiresAt;
+        }
         $access = $user->createToken('identity:'.$project->slug, $membership->effectivePermissionKeys(), $accessExpiresAt);
         $access->accessToken->forceFill([
             'identity_project_id' => $project->id,
@@ -769,7 +941,7 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
         if ($user->is_system_admin) {
             return;
         }
-        $membership = IdentityProjectMembership::query()->where('project_id', $projectId)->where('user_id', $userId)->where('status', 'active')->first();
+        $membership = $this->memberships->findActiveForProjectUser($projectId, $userId);
         if (! $membership || (! $membership->is_admin && ! in_array('identity.project.manage', $membership->effectivePermissionKeys(), true))) {
             throw new IdentityAuthorizationException('Project administrator access is required.');
         }
@@ -785,7 +957,7 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
 
     private function touchProjectMemberships(string $projectId): void
     {
-        IdentityProjectMembership::query()->where('project_id', $projectId)->increment('authorization_version');
+        $this->memberships->touchAuthorizationForProject($projectId);
     }
 
     /** @return array<string, mixed> */
@@ -799,6 +971,8 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
                 'avatar_url' => $user->avatar_url,
                 'email_verified' => $user->email_verified_at !== null,
                 'is_system_admin' => $user->is_system_admin,
+                'is_temporary' => $user->is_temporary,
+                'temporary_expires_at' => $user->demo_expires_at?->toIso8601String(),
             ],
             'project' => $this->projectPayload($project),
             'client' => $this->clientPayload($client),
@@ -815,6 +989,8 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
             'slug' => $project->slug,
             'description' => $project->description,
             'status' => $project->status,
+            'mode' => $project->mode,
+            'sandbox_ttl_minutes' => $project->sandbox_ttl_minutes,
             'registration_mode' => $project->registration_mode,
             'registration_role_id' => $project->registration_role_id,
         ];
@@ -853,6 +1029,40 @@ final class EloquentIdentityAccessService implements IdentityAccessServiceInterf
     private function permissionPayload(IdentityProjectPermission $permission): array
     {
         return ['id' => $permission->id, 'project_id' => $permission->project_id, 'key' => $permission->key, 'name' => $permission->name, 'description' => $permission->description, 'source' => $permission->source, 'source_client_id' => $permission->source_client_id, 'status' => $permission->status];
+    }
+
+    /** @return array<string, mixed> */
+    private function webhookPayload(IdentityWebhookEndpoint $endpoint): array
+    {
+        return [
+            'id' => $endpoint->id,
+            'project_id' => $endpoint->project_id,
+            'url' => $endpoint->url,
+            'events' => $endpoint->events,
+            'secret_prefix' => $endpoint->secret_prefix,
+            'status' => $endpoint->status,
+            'last_delivered_at' => $endpoint->last_delivered_at?->toIso8601String(),
+        ];
+    }
+
+    private function assertWebhookUrl(string $url): void
+    {
+        $parts = parse_url($url);
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        if (! in_array($scheme, ['http', 'https'], true) || $host === '') {
+            throw new IdentityAuthorizationException('The webhook URL is invalid.');
+        }
+        if (app()->environment('production') && $scheme !== 'https') {
+            throw new IdentityAuthorizationException('Production webhook URLs must use HTTPS.');
+        }
+        if (app()->environment('production')) {
+            $resolved = filter_var($host, FILTER_VALIDATE_IP) ? $host : gethostbyname($host);
+            if ($host === 'localhost' || str_ends_with($host, '.localhost')
+                || filter_var($resolved, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+                throw new IdentityAuthorizationException('Private webhook destinations are not allowed in production.');
+            }
+        }
     }
 
     private function issueEmailVerification(User $user): string

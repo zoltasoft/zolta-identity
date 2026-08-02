@@ -32,8 +32,8 @@
         "laravel/sanctum": "^4.0",
         "laravel/socialite": "^5.21",
         "laravel/tinker": "^3.0",
-        "zolta/cqrs": "^1.0",
-        "zolta/http": "^1.0"
+        "zolta/cqrs": "^2.0",
+        "zolta/http": "^2.0"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

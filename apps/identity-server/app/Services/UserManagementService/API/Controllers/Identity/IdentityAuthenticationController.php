@@ -26,6 +26,21 @@ final class IdentityAuthenticationController extends Controller
         return response()->json(['data' => $this->identity->login($input, $request->ip(), $request->userAgent())]);
     }
 
+    public function context(Request $request): JsonResponse
+    {
+        $input = $request->validate([
+            'project' => ['nullable', 'string', 'max:255'],
+            'client_id' => ['required', 'uuid'],
+            'client_secret' => ['required', 'string', 'min:32'],
+        ]);
+
+        return response()->json(['data' => $this->identity->authenticationContext(
+            $input['client_id'],
+            $input['client_secret'],
+            $input['project'] ?? null,
+        )]);
+    }
+
     public function register(Request $request): JsonResponse
     {
         $input = $request->validate([
@@ -39,6 +54,23 @@ final class IdentityAuthenticationController extends Controller
 
         return response()->json([
             'data' => $this->identity->register($input, $request->ip(), $request->userAgent()),
+        ], 201);
+    }
+
+    public function sandboxSession(Request $request): JsonResponse
+    {
+        $input = $request->validate([
+            'client_id' => ['required', 'uuid'],
+            'client_secret' => ['required', 'string', 'min:32'],
+        ]);
+
+        return response()->json([
+            'data' => $this->identity->createSandboxSession(
+                $input['client_id'],
+                $input['client_secret'],
+                $request->ip(),
+                $request->userAgent(),
+            ),
         ], 201);
     }
 

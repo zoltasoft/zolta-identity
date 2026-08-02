@@ -4,19 +4,49 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Services\UserManagementService\Infrastructure\Jobs\DeliverIdentityWebhook;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectClient;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectMembership;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectPermission;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectRole;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityWebhookDelivery;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityWebhookEndpoint;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
+use App\Services\UserManagementService\Infrastructure\Webhooks\IdentityWebhookPublisher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
 final class IdentityAccessServiceTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_client_can_resolve_the_project_authentication_experience(): void
+    {
+        [, $project, $client, $secret] = $this->identityFixture();
+        $project->forceFill([
+            'mode' => 'sandbox',
+            'sandbox_ttl_minutes' => 45,
+        ])->save();
+
+        $this->postJson('/api/v1/identity/auth/context', [
+            'project' => $project->slug,
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+        ])->assertOk()
+            ->assertJsonPath('data.project.id', $project->id)
+            ->assertJsonPath('data.project.mode', 'sandbox')
+            ->assertJsonPath('data.project.sandbox_ttl_minutes', 45)
+            ->assertJsonPath('data.client.id', $client->id);
+
+        $this->postJson('/api/v1/identity/auth/context', [
+            'project' => 'another-project',
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+        ])->assertUnauthorized();
+    }
 
     public function test_login_refresh_and_introspection_return_current_project_grants(): void
     {
@@ -119,6 +149,79 @@ final class IdentityAccessServiceTest extends TestCase
         ])->assertForbidden();
     }
 
+    public function test_sandbox_client_creates_a_temporary_identity_without_credentials(): void
+    {
+        [, $project, $client, $secret] = $this->identityFixture();
+        $role = IdentityProjectRole::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Demo member',
+            'slug' => 'demo-member',
+        ]);
+        $project->forceFill([
+            'mode' => 'sandbox',
+            'sandbox_ttl_minutes' => 60,
+            'registration_role_id' => $role->id,
+        ])->save();
+
+        $session = $this->postJson('/api/v1/identity/auth/sandbox-session', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+        ])->assertCreated()
+            ->assertJsonPath('data.is_temporary', true)
+            ->assertJsonPath('data.identity.project.mode', 'sandbox')
+            ->assertJsonPath('data.identity.membership.roles.0', 'demo-member')
+            ->json('data');
+
+        $this->postJson('/api/v1/identity/auth/introspect', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'token' => $session['access_token'],
+        ])->assertOk()
+            ->assertJsonPath('active', true)
+            ->assertJsonPath('project_slug', $project->slug)
+            ->assertJsonPath('project_mode', 'sandbox')
+            ->assertJsonPath('is_temporary', true);
+
+        $temporary = User::query()->findOrFail($session['identity']['user']['id']);
+        $this->assertTrue($temporary->is_temporary);
+        $this->assertNotNull($temporary->email_verified_at);
+        $this->assertEqualsWithDelta(now()->addHour()->getTimestamp(), $temporary->demo_expires_at?->getTimestamp(), 5);
+    }
+
+    public function test_live_project_rejects_sandbox_sessions(): void
+    {
+        [, , $client, $secret] = $this->identityFixture();
+
+        $this->postJson('/api/v1/identity/auth/sandbox-session', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+        ])->assertForbidden();
+    }
+
+    public function test_identity_cleanup_webhooks_are_queued_for_subscribed_project_endpoints(): void
+    {
+        Queue::fake();
+        [, $project] = $this->identityFixture();
+        IdentityWebhookEndpoint::query()->create([
+            'project_id' => $project->id,
+            'url' => 'http://localhost:8000/api/webhooks/identity',
+            'events' => ['identity.user.expired'],
+            'secret' => Str::random(64),
+            'secret_prefix' => 'test',
+            'status' => 'active',
+        ]);
+        $userId = (string) Str::uuid();
+
+        app(IdentityWebhookPublisher::class)->publish($project->id, 'identity.user.expired', [
+            'user_id' => $userId,
+        ]);
+
+        $delivery = IdentityWebhookDelivery::query()->firstOrFail();
+        $this->assertSame('identity.user.expired', $delivery->event);
+        $this->assertSame($userId, $delivery->payload['data']['user_id']);
+        Queue::assertPushed(DeliverIdentityWebhook::class);
+    }
+
     public function test_registered_user_can_resend_and_verify_email(): void
     {
         config()->set('identity.expose_development_tokens', true);
@@ -206,6 +309,127 @@ final class IdentityAccessServiceTest extends TestCase
         ])->assertOk()->assertJsonPath('active', false);
     }
 
+    public function test_project_administrator_only_lists_and_reads_their_projects_resources(): void
+    {
+        [$administrator, $project, $client, $secret] = $this->identityFixture(true);
+        [, $otherProject] = $this->identityFixture();
+        IdentityProjectRole::query()->create([
+            'project_id' => $otherProject->id,
+            'name' => 'Other project role',
+            'slug' => 'other-project-role',
+        ]);
+        IdentityProjectPermission::query()->create([
+            'project_id' => $otherProject->id,
+            'key' => 'other.read',
+            'name' => 'Other project permission',
+            'source' => 'manual',
+            'status' => 'active',
+        ]);
+        IdentityWebhookEndpoint::query()->create([
+            'project_id' => $otherProject->id,
+            'url' => 'https://other.example.com/identity',
+            'events' => ['identity.user.expired'],
+            'secret' => Str::random(64),
+            'secret_prefix' => 'other',
+            'status' => 'active',
+        ]);
+        $accessToken = $this->login($administrator, $project, $client, $secret)['access_token'];
+
+        $this->withToken($accessToken)
+            ->getJson('/api/v1/identity/projects')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $project->id);
+
+        $this->withToken($accessToken)
+            ->getJson("/api/v1/identity/projects/{$project->id}")
+            ->assertOk()
+            ->assertJsonCount(1, 'data.clients')
+            ->assertJsonCount(1, 'data.memberships')
+            ->assertJsonCount(0, 'data.roles')
+            ->assertJsonCount(0, 'data.permissions')
+            ->assertJsonCount(0, 'data.webhooks');
+
+        $this->withToken($accessToken)
+            ->getJson("/api/v1/identity/projects/{$otherProject->id}")
+            ->assertForbidden();
+    }
+
+    public function test_project_administrator_cannot_mutate_resources_from_another_project(): void
+    {
+        [$administrator, $project, $client, $secret, $membership] = $this->identityFixture(true);
+        [, $otherProject, $otherClient, , $otherMembership] = $this->identityFixture();
+        $role = IdentityProjectRole::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Project role',
+            'slug' => 'project-role',
+        ]);
+        $otherPermission = IdentityProjectPermission::query()->create([
+            'project_id' => $otherProject->id,
+            'key' => 'other.manage',
+            'name' => 'Other project permission',
+            'source' => 'manual',
+            'status' => 'active',
+        ]);
+        $otherRole = IdentityProjectRole::query()->create([
+            'project_id' => $otherProject->id,
+            'name' => 'Other project role',
+            'slug' => 'other-project-role',
+        ]);
+        $otherWebhook = IdentityWebhookEndpoint::query()->create([
+            'project_id' => $otherProject->id,
+            'url' => 'https://other.example.com/identity',
+            'events' => ['identity.user.expired'],
+            'secret' => Str::random(64),
+            'secret_prefix' => 'other',
+            'status' => 'active',
+        ]);
+        $accessToken = $this->login($administrator, $project, $client, $secret)['access_token'];
+
+        $this->withToken($accessToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/clients/{$otherClient->id}/rotate-secret")
+            ->assertNotFound();
+
+        $this->withToken($accessToken)
+            ->putJson("/api/v1/identity/projects/{$project->id}/roles/{$otherRole->id}/permissions", [
+                'permission_ids' => [$otherPermission->id],
+            ])
+            ->assertNotFound();
+
+        $this->withToken($accessToken)
+            ->putJson("/api/v1/identity/projects/{$project->id}/roles/{$role->id}/permissions", [
+                'permission_ids' => [$otherPermission->id],
+            ])
+            ->assertForbidden();
+
+        $this->withToken($accessToken)
+            ->putJson("/api/v1/identity/projects/{$project->id}/memberships/{$otherMembership->id}/access", [
+                'role_ids' => [],
+                'permission_ids' => [],
+                'is_admin' => false,
+                'status' => 'active',
+            ])
+            ->assertNotFound();
+
+        $this->withToken($accessToken)
+            ->putJson("/api/v1/identity/projects/{$project->id}/memberships/{$membership->id}/access", [
+                'role_ids' => [$otherRole->id],
+                'permission_ids' => [$otherPermission->id],
+                'is_admin' => true,
+                'status' => 'active',
+            ])
+            ->assertForbidden();
+
+        $this->withToken($accessToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/webhooks/{$otherWebhook->id}/rotate-secret")
+            ->assertNotFound();
+
+        $this->assertSame($otherProject->id, $otherClient->fresh()->project_id);
+        $this->assertSame($otherProject->id, $otherRole->fresh()->project_id);
+        $this->assertSame($otherProject->id, $otherMembership->fresh()->project_id);
+        $this->assertSame($otherProject->id, $otherWebhook->fresh()->project_id);
+    }
+
     /** @return array{User, IdentityProject, IdentityProjectClient, string, IdentityProjectMembership} */
     private function identityFixture(bool $isAdmin = false): array
     {
@@ -219,6 +443,8 @@ final class IdentityAccessServiceTest extends TestCase
             'name' => 'Portfolio',
             'slug' => 'portfolio-'.Str::random(6),
             'status' => 'active',
+            'mode' => 'live',
+            'sandbox_ttl_minutes' => 60,
             'registration_mode' => 'invite_only',
         ]);
         $secret = Str::random(64);

@@ -12,7 +12,7 @@ final class DeleteOwnAccountRequest extends BaseRequest
         return Auth::check();
     }
 
-    public function withData(): array
+    public function trustedData(): array
     {
         return ['id' => (string) $this->user()?->getAuthIdentifier()];
     }

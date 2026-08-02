@@ -14,8 +14,14 @@ interface IdentityAccessServiceInterface
     /** @param array<string, mixed> $credentials @return array<string, mixed> */
     public function login(array $credentials, ?string $ipAddress = null, ?string $userAgent = null): array;
 
+    /** @return array<string, mixed> */
+    public function authenticationContext(string $clientId, string $clientSecret, ?string $project = null): array;
+
     /** @param array<string, mixed> $attributes @return array<string, mixed> */
     public function register(array $attributes, ?string $ipAddress = null, ?string $userAgent = null): array;
+
+    /** @return array<string, mixed> */
+    public function createSandboxSession(string $clientId, string $clientSecret, ?string $ipAddress = null, ?string $userAgent = null): array;
 
     /** @return array<string, mixed> */
     public function resendEmailVerification(string $userId): array;
@@ -50,6 +56,19 @@ interface IdentityAccessServiceInterface
     public function createProject(string $actorUserId, array $attributes): array;
 
     public function updateProjectRegistration(string $actorUserId, string $projectId, string $mode, ?string $roleId): void;
+
+    public function updateProjectEnvironment(string $actorUserId, string $projectId, string $mode, int $sandboxTtlMinutes): void;
+
+    /** @param list<string> $events @return array<string, mixed> */
+    public function createWebhook(string $actorUserId, string $projectId, string $url, array $events): array;
+
+    /** @param list<string> $events */
+    public function updateWebhook(string $actorUserId, string $projectId, string $webhookId, string $url, array $events, string $status): void;
+
+    /** @return array<string, mixed> */
+    public function rotateWebhookSecret(string $actorUserId, string $projectId, string $webhookId): array;
+
+    public function removeWebhook(string $actorUserId, string $projectId, string $webhookId): void;
 
     /** @return array<string, mixed> */
     public function projectDetails(string $actorUserId, string $projectId): array;

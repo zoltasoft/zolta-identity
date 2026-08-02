@@ -46,6 +46,62 @@ final class IdentityProjectController extends Controller
         return response()->json(['data' => ['message' => 'Registration policy updated.']]);
     }
 
+    public function updateEnvironment(Request $request, string $project): JsonResponse
+    {
+        $input = $request->validate([
+            'mode' => ['required', Rule::in(['live', 'sandbox'])],
+            'sandbox_ttl_minutes' => ['required', 'integer', 'min:5', 'max:1440'],
+        ]);
+        $this->identity->updateProjectEnvironment(
+            $this->userId($request),
+            $project,
+            $input['mode'],
+            (int) $input['sandbox_ttl_minutes'],
+        );
+
+        return response()->json(['data' => ['message' => 'Project environment updated.']]);
+    }
+
+    public function storeWebhook(Request $request, string $project): JsonResponse
+    {
+        $input = $request->validate([
+            'url' => ['required', 'url:http,https', 'max:2048'],
+            'events' => ['required', 'array', 'min:1'],
+            'events.*' => ['required', Rule::in(['identity.user.expired', 'identity.user.deletion_requested'])],
+        ]);
+
+        return response()->json(['data' => $this->identity->createWebhook(
+            $this->userId($request), $project, $input['url'], $input['events'],
+        )], 201);
+    }
+
+    public function updateWebhook(Request $request, string $project, string $webhook): JsonResponse
+    {
+        $input = $request->validate([
+            'url' => ['required', 'url:http,https', 'max:2048'],
+            'events' => ['required', 'array', 'min:1'],
+            'events.*' => ['required', Rule::in(['identity.user.expired', 'identity.user.deletion_requested'])],
+            'status' => ['required', Rule::in(['active', 'disabled'])],
+        ]);
+        $this->identity->updateWebhook(
+            $this->userId($request), $project, $webhook, $input['url'], $input['events'], $input['status'],
+        );
+
+        return response()->json(['data' => ['message' => 'Webhook updated.']]);
+    }
+
+    public function rotateWebhookSecret(Request $request, string $project, string $webhook): JsonResponse
+    {
+        return response()->json(['data' => $this->identity->rotateWebhookSecret($this->userId($request), $project, $webhook)]);
+    }
+
+    public function destroyWebhook(Request $request, string $project, string $webhook): JsonResponse
+    {
+        $this->identity->removeWebhook($this->userId($request), $project, $webhook);
+
+        return response()->json(['data' => ['message' => 'Webhook removed.']]);
+    }
+
     public function show(Request $request, string $project): JsonResponse
     {
         return response()->json(['data' => $this->identity->projectDetails($this->userId($request), $project)]);

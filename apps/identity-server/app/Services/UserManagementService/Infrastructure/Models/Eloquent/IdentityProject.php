@@ -15,7 +15,11 @@ final class IdentityProject extends Model
     protected $table = 'identity_projects';
 
     protected $fillable = [
-        'name', 'slug', 'description', 'status', 'registration_mode', 'registration_role_id',
+        'name', 'slug', 'description', 'status', 'mode', 'sandbox_ttl_minutes', 'registration_mode', 'registration_role_id',
+    ];
+
+    protected $casts = [
+        'sandbox_ttl_minutes' => 'integer',
     ];
 
     public function clients(): HasMany

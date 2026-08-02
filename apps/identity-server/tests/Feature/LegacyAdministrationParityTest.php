@@ -73,10 +73,12 @@ final class LegacyAdministrationParityTest extends TestCase
     public function test_regular_user_can_still_update_their_own_account_profile_and_security(): void
     {
         $user = $this->user('account-owner');
+        $otherUser = $this->user('other-account');
         $token = $user->createToken('browser')->plainTextToken;
 
         $this->withToken($token)
             ->putJson('/api/users/profile', [
+                'user_id' => $otherUser->id,
                 'username' => 'updated-owner',
                 'email' => $user->email,
                 'avatar_url' => 'https://example.com/avatar.png',
@@ -97,6 +99,7 @@ final class LegacyAdministrationParityTest extends TestCase
             'two_factor_enabled' => true,
             'backup_email' => 'backup@example.com',
         ]);
+        $this->assertSame('other-account', $otherUser->fresh()->username);
     }
 
     private function user(string $name, bool $systemAdministrator = false): User

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\UserManagementService\Application\Commands\Users\DeleteUserById;
 
 use App\Services\UserManagementService\Application\Contracts\AccountDataEraserInterface;
+use App\Services\UserManagementService\Application\Contracts\IdentityLifecyclePublisherInterface;
 use App\Services\UserManagementService\Domain\Repositories\UserRepository;
 use Zolta\Cqrs\Attributes\HandlesCommand;
 use Zolta\Cqrs\Services\Result;
@@ -15,6 +16,7 @@ final readonly class DeleteUserByIdCommandHandler
     public function __construct(
         private UserRepository $userRepository,
         private AccountDataEraserInterface $accountDataEraser,
+        private IdentityLifecyclePublisherInterface $lifecycle,
     ) {}
 
     public function __invoke(DeleteUserByIdCommand $deleteUserByIdCommand): Result
@@ -22,9 +24,13 @@ final readonly class DeleteUserByIdCommandHandler
         $user = $this->userRepository->findUserById($deleteUserByIdCommand->id);
 
         if ($user !== null) {
+            $email = (string) $user->getEmail()->get('address');
+            if ($this->lifecycle->requestUserDeletion((string) $user->getId()->get('value'), $email)) {
+                return Result::success(['message' => 'Account deletion is waiting for connected applications to erase user data.']);
+            }
             $this->accountDataEraser->erase(
                 $user->getId(),
-                (string) $user->getEmail()->get('address')
+                $email
             );
             $this->userRepository->deleteUser($user);
         }

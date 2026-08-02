@@ -7,7 +7,9 @@ namespace App\Services\UserManagementService\Infrastructure\Providers;
 use App\Services\UserManagementService\API\Middleware\IdentityIntrospectionMiddleware;
 use App\Services\UserManagementService\API\Middleware\RequireIdentityAccessToken;
 use App\Services\UserManagementService\Application\Contracts\IdentityAccessServiceInterface;
+use App\Services\UserManagementService\Application\Contracts\IdentityLifecyclePublisherInterface;
 use App\Services\UserManagementService\Infrastructure\Services\EloquentIdentityAccessService;
+use App\Services\UserManagementService\Infrastructure\Webhooks\IdentityWebhookPublisher;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
 
@@ -16,6 +18,7 @@ final class IdentityAccessServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(IdentityAccessServiceInterface::class, EloquentIdentityAccessService::class);
+        $this->app->bind(IdentityLifecyclePublisherInterface::class, IdentityWebhookPublisher::class);
         $this->mergeConfigFrom(config_path('identity.php'), 'identity');
     }
 
