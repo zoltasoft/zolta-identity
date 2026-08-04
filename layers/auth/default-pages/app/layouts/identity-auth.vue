@@ -1,19 +1,46 @@
 <template>
   <main class="identity-auth-layout">
+    <div class="identity-auth-controls">
+      <IdentityConsoleControls />
+    </div>
     <slot />
   </main>
 </template>
 
 <style>
 :root {
+  --identity-auth-bg: #f6f7fb;
+  --identity-auth-card: #fff;
+  --identity-auth-text: #172033;
+  --identity-auth-muted: #59657b;
+  --identity-auth-border: #e1e5ee;
+  --identity-auth-input-border: #cdd3df;
+  --identity-auth-status: #f1f4fb;
   color-scheme: light;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+.dark {
+  --identity-auth-bg: #0f172a;
+  --identity-auth-card: #111827;
+  --identity-auth-text: #f8fafc;
+  --identity-auth-muted: #cbd5e1;
+  --identity-auth-border: #334155;
+  --identity-auth-input-border: #475569;
+  --identity-auth-status: #1e293b;
+  color-scheme: dark;
+}
+
 body {
   margin: 0;
-  background: #f6f7fb;
-  color: #172033;
+  background: var(--identity-auth-bg);
+  color: var(--identity-auth-text);
+}
+
+.identity-auth-controls {
+  position: absolute;
+  inset-block-start: 1rem;
+  inset-inline-end: 1rem;
 }
 
 .identity-auth-layout {
@@ -22,21 +49,22 @@ body {
   min-height: 100vh;
   place-items: center;
   padding: 2rem 1rem;
+  position: relative;
 }
 
 .identity-auth-card {
   box-sizing: border-box;
   width: min(100%, 28rem);
-  border: 1px solid #e1e5ee;
+  border: 1px solid var(--identity-auth-border);
   border-radius: 1rem;
-  background: #fff;
+  background: var(--identity-auth-card);
   box-shadow: 0 1rem 3rem rgba(23, 32, 51, 0.08);
   padding: 2rem;
 }
 
 .identity-auth-eyebrow {
   margin: 0 0 0.5rem;
-  color: #59657b;
+  color: var(--identity-auth-muted);
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -50,7 +78,7 @@ body {
 
 .identity-auth-intro {
   margin: 0.75rem 0 1.5rem;
-  color: #59657b;
+  color: var(--identity-auth-muted);
   line-height: 1.5;
 }
 
@@ -69,7 +97,8 @@ body {
 .identity-auth-field input {
   min-height: 2.75rem;
   box-sizing: border-box;
-  border: 1px solid #cdd3df;
+  border: 1px solid var(--identity-auth-input-border);
+  background: var(--identity-auth-card);
   border-radius: 0.65rem;
   padding: 0.7rem 0.8rem;
   color: inherit;
@@ -119,15 +148,15 @@ body {
 }
 
 .identity-auth-status {
-  background: #f1f4fb;
-  color: #59657b;
+  background: var(--identity-auth-status);
+  color: var(--identity-auth-muted);
 }
 
 .identity-auth-demo {
   display: grid;
   gap: 1rem;
   margin-top: 1.25rem;
-  border-top: 1px solid #e1e5ee;
+  border-top: 1px solid var(--identity-auth-border);
   padding-top: 1.25rem;
 }
 
@@ -141,14 +170,14 @@ body {
 
 .identity-auth-expiry {
   margin: 0;
-  color: #59657b;
+  color: var(--identity-auth-muted);
   font-size: 0.85rem;
   line-height: 1.45;
 }
 
 .identity-auth-field input[readonly] {
-  background: #f6f7fb;
-  color: #59657b;
+  background: var(--identity-auth-bg);
+  color: var(--identity-auth-muted);
 }
 
 .identity-auth-links {

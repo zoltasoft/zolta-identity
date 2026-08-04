@@ -93,6 +93,40 @@
       "fr": "Français"
     }
   },
+  "identityConsole": {
+    "brand": "Console d’identité",
+    "administration": "Administration",
+    "administrator": "Administrateur",
+    "language": "Langue",
+    "appearance": "Changer l’apparence",
+    "collapseSidebar": "Réduire la barre latérale",
+    "expandSidebar": "Développer la barre latérale",
+    "signOut": "Se déconnecter",
+    "navigate": "Naviguer",
+    "signIn": {
+      "description": "Connectez-vous via le client serveur confidentiel. Les identifiants et les jetons restent dans la session BFF.",
+      "email": "E-mail",
+      "password": "Mot de passe",
+      "submit": "Se connecter",
+      "error": "Impossible de se connecter."
+    },
+    "locales": {
+      "en": "Anglais",
+      "fr": "Français"
+    },
+    "nav": {
+      "projects": "Projets",
+      "users": "Utilisateurs",
+      "globalRoles": "Rôles globaux",
+      "globalPermissions": "Permissions globales",
+      "account": "Mon compte"
+    },
+    "accessibility": {
+      "primaryNavigation": "Administration des identités",
+      "secondaryNavigation": "Navigation du compte",
+      "search": "Rechercher dans la console d’identité"
+    }
+  },
   "admin": {
     "common": {
       "back": "Retour"

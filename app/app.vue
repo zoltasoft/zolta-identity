@@ -1,7 +1,9 @@
 <script setup lang="ts">
 const colorMode = useColorMode()
 const { locale } = useI18n()
-const color = computed(() => (colorMode.value === 'dark' ? '#1b1718' : 'white'))
+const color = computed(() =>
+  colorMode.value === 'dark' ? '#1b1718' : 'white'
+)
 
 useHead({
   meta: [
@@ -14,8 +16,10 @@ useHead({
   }
 })
 
-const title = 'Laravel Zolta Identity'
-const description = 'Independent identity, project access, roles, permissions, and confidential client management.'
+const title
+  = 'Zolta Identity (Laravel + Nuxt 3) - Independent identity, project access, roles, permissions, and confidential client management.'
+const description
+  = 'Independent identity, project access, roles, permissions, and confidential client management.'
 
 useSeoMeta({
   title,

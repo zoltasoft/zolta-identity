@@ -1,21 +1,23 @@
 <script setup lang="ts">
 const open = ref(false)
 const signingOut = ref(false)
+
 const localePath = useLocalePath()
+const { t } = useI18n()
+
 const identityAccess = useIdentityAccess()
 const userSession = useUserSession()
+
 const { data: identitySession } = await identityAccess.session()
 
 if (!userSession.ready.value) {
   await userSession.fetch()
 }
 
-const { primaryLinks, secondaryLinks, searchGroups } = useIdentityAdminNavigation(
-  identitySession,
-  () => {
+const { primaryLinks, secondaryLinks, searchGroups }
+  = useIdentityAdminNavigation(identitySession, () => {
     open.value = false
-  }
-)
+  })
 
 const user = computed(() => userSession.user.value as {
   name?: string
@@ -23,7 +25,10 @@ const user = computed(() => userSession.user.value as {
 } | null)
 
 async function signOut() {
-  if (signingOut.value) return
+  if (signingOut.value) {
+    return
+  }
+
   signingOut.value = true
 
   try {
@@ -44,40 +49,55 @@ async function signOut() {
     :primary-links="primaryLinks"
     :secondary-links="secondaryLinks"
     :search-groups="searchGroups"
-    primary-navigation-label="Identity administration"
-    secondary-navigation-label="Application navigation"
+    :primary-navigation-label="
+      t('identityConsole.accessibility.primaryNavigation')
+    "
+    :secondary-navigation-label="
+      t('identityConsole.accessibility.secondaryNavigation')
+    "
+    :search-label="t('identityConsole.accessibility.search')"
   >
     <template #sidebar-header="{ collapsed }">
       <NuxtLink
         :to="localePath('/admin/projects')"
         class="flex min-w-0 items-center gap-3 rounded-lg p-2 transition hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary"
-        aria-label="Identity Console"
+        :class="collapsed ? 'justify-center' : undefined"
+        :aria-label="t('identityConsole.brand')"
       >
-        <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-inverted shadow-sm">
+        <span
+          class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-inverted shadow-sm"
+        >
           <UIcon
             name="i-lucide-shield-check"
             class="size-5"
           />
         </span>
+
         <span
           v-if="!collapsed"
           class="truncate font-semibold tracking-tight text-highlighted"
-        >Identity Console</span>
+        >
+          {{ t('identityConsole.brand') }}
+        </span>
       </NuxtLink>
     </template>
 
     <template #sidebar-start="{ collapsed }">
       <div class="space-y-3 pb-2">
         <UDashboardSearchButton
-          aria-label="Search Identity Console"
+          :aria-label="t('identityConsole.accessibility.search')"
           :collapsed="collapsed"
           class="bg-transparent ring-default"
         />
+
         <UBadge
           v-if="!collapsed"
           color="primary"
           variant="soft"
-          :label="identitySession?.projectName || 'Administration'"
+          :label="
+            identitySession?.projectName
+              || t('identityConsole.administration')
+          "
           class="mx-2"
         />
       </div>
@@ -90,21 +110,29 @@ async function signOut() {
           class="min-w-0 flex-1"
         >
           <p class="truncate text-sm font-medium text-highlighted">
-            {{ user?.name || 'Administrator' }}
+            {{ user?.name || t('identityConsole.administrator') }}
           </p>
+
           <p class="truncate text-xs text-muted">
             {{ user?.email }}
           </p>
         </div>
-        <UButton
-          :label="collapsed ? undefined : 'Sign out'"
-          icon="i-lucide-log-out"
-          color="neutral"
-          variant="ghost"
-          :loading="signingOut"
-          :aria-label="collapsed ? 'Sign out' : undefined"
-          @click="signOut"
-        />
+
+        <UTooltip :text="t('identityConsole.signOut')">
+          <UButton
+            :label="collapsed ? undefined : t('identityConsole.signOut')"
+            icon="i-lucide-log-out"
+            color="neutral"
+            variant="ghost"
+            :loading="signingOut"
+            :aria-label="
+              collapsed
+                ? t('identityConsole.signOut')
+                : undefined
+            "
+            @click="signOut"
+          />
+        </UTooltip>
       </div>
     </template>
 

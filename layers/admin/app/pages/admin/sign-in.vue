@@ -3,6 +3,7 @@ definePageMeta({ layout: false })
 
 const route = useRoute()
 const localePath = useLocalePath()
+const { t } = useI18n()
 const { login } = useIdentityAuth()
 const form = reactive({ email: '', password: '' })
 const pending = ref(false)
@@ -27,7 +28,7 @@ async function submit() {
   } catch (error: unknown) {
     errorMessage.value = (error as { data?: { message?: string }, statusMessage?: string }).data?.message
       ?? (error as { statusMessage?: string }).statusMessage
-      ?? 'Unable to sign in.'
+      ?? t('identityConsole.signIn.error')
   } finally {
     pending.value = false
   }
@@ -35,18 +36,21 @@ async function submit() {
 </script>
 
 <template>
-  <main class="flex min-h-screen items-center justify-center bg-default px-6 py-12">
+  <main class="relative flex min-h-screen items-center justify-center bg-default px-6 py-12">
+    <div class="absolute end-4 top-4 sm:end-6 sm:top-6">
+      <IdentityConsoleControls />
+    </div>
     <UPageCard
       class="w-full max-w-md"
-      title="Identity Console"
-      description="Sign in through the confidential server-side client. Credentials and tokens remain inside the BFF session."
+      :title="t('identityConsole.brand')"
+      :description="t('identityConsole.signIn.description')"
     >
       <form
         class="space-y-5"
         @submit.prevent="submit"
       >
         <UFormField
-          label="Email"
+          :label="t('identityConsole.signIn.email')"
           required
         >
           <UInput
@@ -57,7 +61,7 @@ async function submit() {
           />
         </UFormField>
         <UFormField
-          label="Password"
+          :label="t('identityConsole.signIn.password')"
           required
         >
           <UInput
@@ -76,7 +80,7 @@ async function submit() {
         <UButton
           type="submit"
           block
-          label="Sign in"
+          :label="t('identityConsole.signIn.submit')"
           icon="i-lucide-log-in"
           :loading="pending"
         />

@@ -12,6 +12,7 @@ export function useIdentityAdminNavigation(
 ) {
   const route = useRoute()
   const localePath = useLocalePath()
+  const { t } = useI18n()
   const onSelect = () => closeSidebar?.()
 
   const primaryLinks = computed<NavigationMenuItem[][]>(() => {
@@ -21,7 +22,7 @@ export function useIdentityAdminNavigation(
     const globalPermissionsPath = localePath('/admin/global-permissions')
     const workspaceItems: NavigationMenuItem[] = [
       {
-        label: 'Projects',
+        label: t('identityConsole.nav.projects'),
         icon: 'i-lucide-layout-dashboard',
         to: projectsPath,
         active: route.path === projectsPath || route.path.startsWith(`${projectsPath}/`),
@@ -34,21 +35,21 @@ export function useIdentityAdminNavigation(
 
     if (identitySession.value?.isSystemAdmin) {
       directoryItems.push({
-        label: 'Users',
+        label: t('identityConsole.nav.users'),
         icon: 'i-lucide-users',
         to: installationUsersPath,
         active: route.path === installationUsersPath,
         onSelect
       })
       accessItems.push({
-        label: 'Global roles',
+        label: t('identityConsole.nav.globalRoles'),
         icon: 'i-lucide-badge-check',
         to: globalRolesPath,
         active: route.path === globalRolesPath,
         onSelect
       })
       accessItems.push({
-        label: 'Global permissions',
+        label: t('identityConsole.nav.globalPermissions'),
         icon: 'i-lucide-key-round',
         to: globalPermissionsPath,
         active: route.path === globalPermissionsPath,
@@ -63,7 +64,7 @@ export function useIdentityAdminNavigation(
     const accountPath = localePath('/admin/account')
 
     return [[{
-      label: 'My account',
+      label: t('identityConsole.nav.account'),
       icon: 'i-lucide-user-cog',
       to: accountPath,
       active: route.path === accountPath,
@@ -73,7 +74,7 @@ export function useIdentityAdminNavigation(
 
   const searchGroups = computed<CommandPaletteGroup<CommandPaletteItem>[]>(() => [{
     id: 'identity-navigation',
-    label: 'Navigate',
+    label: t('identityConsole.navigate'),
     items: [...primaryLinks.value.flat(), ...secondaryLinks.value.flat()].map(item => ({
       label: item.label,
       icon: item.icon,

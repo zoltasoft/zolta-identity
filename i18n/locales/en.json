@@ -93,6 +93,40 @@
       "fr": "French"
     }
   },
+  "identityConsole": {
+    "brand": "Identity Console",
+    "administration": "Administration",
+    "administrator": "Administrator",
+    "language": "Language",
+    "appearance": "Change appearance",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar",
+    "signOut": "Sign out",
+    "navigate": "Navigate",
+    "signIn": {
+      "description": "Sign in through the confidential server-side client. Credentials and tokens remain inside the BFF session.",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Sign in",
+      "error": "Unable to sign in."
+    },
+    "locales": {
+      "en": "English",
+      "fr": "French"
+    },
+    "nav": {
+      "projects": "Projects",
+      "users": "Users",
+      "globalRoles": "Global roles",
+      "globalPermissions": "Global permissions",
+      "account": "My account"
+    },
+    "accessibility": {
+      "primaryNavigation": "Identity administration",
+      "secondaryNavigation": "Account navigation",
+      "search": "Search Identity Console"
+    }
+  },
   "admin": {
     "common": {
       "back": "Back"

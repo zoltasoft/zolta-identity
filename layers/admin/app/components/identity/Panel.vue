@@ -35,6 +35,8 @@ const resolvedBackLabel = computed(() => {
         <template #right>
           <slot name="leading" />
 
+          <IdentityConsoleControls />
+
           <div
             v-if="props.backTo || $slots.actions"
             class="flex items-center gap-2"

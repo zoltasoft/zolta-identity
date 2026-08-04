@@ -39,13 +39,17 @@ const props = withDefaults(defineProps<{
   searchLabel: 'Search dashboard'
 })
 
-const open = defineModel<boolean>('open', { default: false })
+const open = defineModel<boolean>('open', {
+  default: false
+})
 
 const isDesktop = useMediaQuery('(min-width: 1024px)')
-const collapsed = computed(() => props.desktopCollapsed)
+
+const collapsed = computed(() => {
+  return isDesktop.value && props.desktopCollapsed
+})
 
 watch(isDesktop, (desktop) => {
-  // Avoid persisting mobile drawer state when switching to desktop.
   if (desktop && open.value) {
     open.value = false
   }
@@ -114,7 +118,7 @@ watch(isDesktop, (desktop) => {
           name="sidebar-footer"
           :collapsed="sidebarCollapsed"
         >
-          <DashboardUserMenu :collapsed="sidebarCollapsed" />
+          <UserMenu :collapsed="sidebarCollapsed" />
         </slot>
       </template>
     </UDashboardSidebar>
