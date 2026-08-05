@@ -14,7 +14,6 @@ const form = reactive({ name: '', description: '', permissionIds: [] as string[]
 const collection = useIdentityCollection(roles, role => (
   `${role.name} ${role.description ?? ''} ${role.permissions.map(permission => permission.name).join(' ')}`
 ))
-const assignmentCount = computed(() => roles.value?.reduce((total, role) => total + role.users.length, 0) ?? 0)
 const permissionOptions = computed(() => (permissions.value ?? []).map(permission => ({
   label: permission.name,
   value: permission.id
@@ -61,14 +60,6 @@ async function removeRole(id: string) {
     icon="i-lucide-badge-check"
     description="Installation-wide compatibility roles. Prefer project roles for application-specific authorization."
   >
-    <template #actions>
-      <UButton
-        label="New global role"
-        icon="i-lucide-badge-plus"
-        @click="() => { open = true }"
-      />
-    </template>
-
     <IdentityShellState
       v-if="status === 'pending'"
       state="loading"
@@ -83,34 +74,19 @@ async function removeRole(id: string) {
     />
 
     <template v-else>
-      <div class="grid gap-4 sm:grid-cols-3">
-        <IdentityMetricCard
-          label="Global roles"
-          :value="roles?.length ?? 0"
-          icon="i-lucide-badge-check"
-          description="Compatibility access sets"
-        />
-        <IdentityMetricCard
-          label="Available permissions"
-          :value="permissions?.length ?? 0"
-          icon="i-lucide-key-round"
-          color="info"
-          description="Installation-wide grants"
-        />
-        <IdentityMetricCard
-          label="Assignments"
-          :value="assignmentCount"
-          icon="i-lucide-user-check"
-          color="success"
-          description="Role-to-user bindings"
-        />
-      </div>
-
       <IdentityCollectionToolbar
         v-model="collection.search.value"
         placeholder="Search global roles"
         :result-count="collection.total.value"
-      />
+      >
+        <template #actions>
+          <UButton
+            label="New global role"
+            icon="i-lucide-badge-plus"
+            @click="() => { open = true }"
+          />
+        </template>
+      </IdentityCollectionToolbar>
 
       <IdentityTableCard
         title="Role directory"

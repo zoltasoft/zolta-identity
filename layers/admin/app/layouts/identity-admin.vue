@@ -1,6 +1,5 @@
 <script setup lang="ts">
 const open = ref(false)
-const signingOut = ref(false)
 
 const localePath = useLocalePath()
 const { t } = useI18n()
@@ -18,27 +17,6 @@ const { primaryLinks, secondaryLinks, searchGroups }
   = useIdentityAdminNavigation(identitySession, () => {
     open.value = false
   })
-
-const user = computed(() => userSession.user.value as {
-  name?: string
-  email?: string
-} | null)
-
-async function signOut() {
-  if (signingOut.value) {
-    return
-  }
-
-  signingOut.value = true
-
-  try {
-    await identityAccess.logout()
-  } finally {
-    await userSession.fetch()
-    await navigateTo(localePath('/admin/sign-in'))
-    signingOut.value = false
-  }
-}
 </script>
 
 <template>
@@ -104,36 +82,7 @@ async function signOut() {
     </template>
 
     <template #sidebar-footer="{ collapsed }">
-      <div class="flex min-w-0 items-center gap-2 p-2">
-        <div
-          v-if="!collapsed"
-          class="min-w-0 flex-1"
-        >
-          <p class="truncate text-sm font-medium text-highlighted">
-            {{ user?.name || t('identityConsole.administrator') }}
-          </p>
-
-          <p class="truncate text-xs text-muted">
-            {{ user?.email }}
-          </p>
-        </div>
-
-        <UTooltip :text="t('identityConsole.signOut')">
-          <UButton
-            :label="collapsed ? undefined : t('identityConsole.signOut')"
-            icon="i-lucide-log-out"
-            color="neutral"
-            variant="ghost"
-            :loading="signingOut"
-            :aria-label="
-              collapsed
-                ? t('identityConsole.signOut')
-                : undefined
-            "
-            @click="signOut"
-          />
-        </UTooltip>
-      </div>
+      <IdentityUserMenu :collapsed="collapsed" />
     </template>
 
     <slot />

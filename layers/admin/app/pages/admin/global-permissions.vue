@@ -13,8 +13,6 @@ const form = reactive({ name: '', description: '' })
 const collection = useIdentityCollection(permissions, permission => (
   `${permission.name} ${permission.description ?? ''}`
 ))
-const roleBindings = computed(() => permissions.value?.reduce((total, permission) => total + permission.roles.length, 0) ?? 0)
-const directBindings = computed(() => permissions.value?.reduce((total, permission) => total + permission.users.length, 0) ?? 0)
 const columns: TableColumn<IdentityGlobalPermission>[] = [
   { accessorKey: 'name', header: 'Permission key' },
   { accessorKey: 'description', header: 'Description' },
@@ -54,14 +52,6 @@ async function removePermission(id: string) {
     icon="i-lucide-key-round"
     description="Installation-wide grants retained for migrated clients. New applications should publish project permission manifests."
   >
-    <template #actions>
-      <UButton
-        label="New permission"
-        icon="i-lucide-key-round"
-        @click="() => { open = true }"
-      />
-    </template>
-
     <IdentityShellState
       v-if="status === 'pending'"
       state="loading"
@@ -76,34 +66,19 @@ async function removePermission(id: string) {
     />
 
     <template v-else>
-      <div class="grid gap-4 sm:grid-cols-3">
-        <IdentityMetricCard
-          label="Permissions"
-          :value="permissions?.length ?? 0"
-          icon="i-lucide-key-round"
-          description="Global compatibility grants"
-        />
-        <IdentityMetricCard
-          label="Role bindings"
-          :value="roleBindings"
-          icon="i-lucide-badge-check"
-          color="info"
-          description="Inherited assignments"
-        />
-        <IdentityMetricCard
-          label="Direct bindings"
-          :value="directBindings"
-          icon="i-lucide-user-check"
-          color="warning"
-          description="User-specific grants"
-        />
-      </div>
-
       <IdentityCollectionToolbar
         v-model="collection.search.value"
         placeholder="Search permission keys"
         :result-count="collection.total.value"
-      />
+      >
+        <template #actions>
+          <UButton
+            label="New permission"
+            icon="i-lucide-key-round"
+            @click="() => { open = true }"
+          />
+        </template>
+      </IdentityCollectionToolbar>
 
       <IdentityTableCard
         title="Permission catalog"

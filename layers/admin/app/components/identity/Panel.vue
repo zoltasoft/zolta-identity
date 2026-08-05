@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import PageTitle from '../PageTitle.vue'
+
 const { t } = useI18n()
 const props = withDefaults(defineProps<{
   panelId: string
@@ -57,14 +59,20 @@ const resolvedBackLabel = computed(() => {
     </template>
 
     <template #body>
-      <UContainer class="h-full w-full overflow-y-auto py-6 sm:py-8">
+      <UContainer class="w-full py-6 sm:py-8">
         <div :class="props.bodyClass">
-          <p
+          <div
             v-if="props.description"
-            class="max-w-3xl text-sm leading-6 text-muted"
+            class="flex max-w-3xl items-start gap-2 rounded-lg border border-default/60 bg-elevated/40 px-3 py-2 text-sm font-medium leading-6 text-muted"
           >
-            {{ props.description }}
-          </p>
+            <UIcon
+              name="i-lucide-info"
+              class="mt-0.5 size-4 shrink-0 text-muted"
+            />
+            <p>
+              {{ props.description }}
+            </p>
+          </div>
 
           <slot />
         </div>

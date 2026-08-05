@@ -17,9 +17,6 @@ const scopedUsers = computed(() => (users.value ?? []).filter((user) => {
 const collection = useIdentityCollection(scopedUsers, user => (
   `${user.username} ${user.email} ${user.is_system_admin ? 'system admin' : ''} ${user.locked ? 'locked' : ''}`
 ))
-const adminCount = computed(() => users.value?.filter(user => user.is_system_admin).length ?? 0)
-const lockedCount = computed(() => users.value?.filter(user => user.locked).length ?? 0)
-const unverifiedCount = computed(() => users.value?.filter(user => !user.email_verified_at).length ?? 0)
 
 const columns: TableColumn<IdentityInstallationUser>[] = [
   { accessorKey: 'username', header: 'Identity' },
@@ -69,36 +66,6 @@ async function update(user: IdentityInstallationUser, changes: Partial<Pick<Iden
     />
 
     <template v-else>
-      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <IdentityMetricCard
-          label="Total identities"
-          :value="users?.length ?? 0"
-          icon="i-lucide-users"
-          description="Across all projects"
-        />
-        <IdentityMetricCard
-          label="System admins"
-          :value="adminCount"
-          icon="i-lucide-shield-user"
-          color="info"
-          description="Installation access"
-        />
-        <IdentityMetricCard
-          label="Locked"
-          :value="lockedCount"
-          icon="i-lucide-lock"
-          color="error"
-          description="Sign-in blocked"
-        />
-        <IdentityMetricCard
-          label="Unverified"
-          :value="unverifiedCount"
-          icon="i-lucide-mail-warning"
-          color="warning"
-          description="Email pending"
-        />
-      </div>
-
       <IdentityCollectionToolbar
         v-model="collection.search.value"
         placeholder="Search users or email"

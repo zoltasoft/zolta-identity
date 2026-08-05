@@ -11,7 +11,7 @@ import type {
 
 definePageMeta({ layout: 'identity-admin', middleware: ['identity-admin'] })
 
-type ProjectTab = 'overview' | 'members' | 'access' | 'clients' | 'webhooks' | 'settings' | 'audit'
+type ProjectTab = 'overview' | 'members' | 'access' | 'clients' | 'webhooks' | 'audit'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,7 +22,7 @@ const { data: project, status, error, refresh } = await access.project(projectId
 const auditRequest = await access.audit(projectId, { immediate: false })
 const toast = useToast()
 const routeTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
-const validTabs: ProjectTab[] = ['overview', 'members', 'access', 'clients', 'webhooks', 'settings', 'audit']
+const validTabs: ProjectTab[] = ['overview', 'members', 'access', 'clients', 'webhooks', 'audit']
 const activeTab = ref<ProjectTab>(validTabs.includes(routeTab as ProjectTab) ? routeTab as ProjectTab : 'overview')
 const auditLoaded = ref(false)
 const auditVisibleCount = ref(20)
@@ -60,7 +60,6 @@ const tabs = computed(() => [
   { value: 'access', label: 'Roles & permissions', icon: 'i-lucide-shield-check' },
   { value: 'clients', label: 'Clients', icon: 'i-lucide-server-cog', badge: project.value?.clients.length ?? 0 },
   { value: 'webhooks', label: 'Webhooks', icon: 'i-lucide-webhook', badge: project.value?.webhooks.length ?? 0 },
-  { value: 'settings', label: 'Settings', icon: 'i-lucide-settings-2' },
   { value: 'audit', label: 'Audit', icon: 'i-lucide-scroll-text' }
 ])
 const projectRoleOptions = computed(() => (project.value?.roles ?? []).map(item => ({ label: item.name, value: item.id })))
@@ -316,6 +315,36 @@ function selectMembership(membership: IdentityMembership) {
         @update:open="revealedWebhookSecret = null"
       />
 
+      <div class="flex flex-wrap gap-2">
+        <IdentityStatPill
+          label="Members"
+          :value="project.memberships.length"
+          icon="i-lucide-users"
+          description="Identities"
+        />
+        <IdentityStatPill
+          label="Active clients"
+          :value="project.clients.filter(client => client.status === 'active').length"
+          icon="i-lucide-server-cog"
+          color="success"
+          description="Credentials"
+        />
+        <IdentityStatPill
+          label="Roles"
+          :value="project.roles.length"
+          icon="i-lucide-shield-check"
+          color="primary"
+          description="Profiles"
+        />
+        <IdentityStatPill
+          label="Permissions"
+          :value="project.permissions.length"
+          icon="i-lucide-key-round"
+          color="warning"
+          description="Published"
+        />
+      </div>
+
       <div class="min-w-0 overflow-x-auto">
         <UTabs
           v-model="activeTab"
@@ -328,93 +357,111 @@ function selectMembership(membership: IdentityMembership) {
       </div>
 
       <template v-if="activeTab === 'overview'">
-        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <IdentityMetricCard
-            label="Members"
-            :value="project.memberships.length"
-            icon="i-lucide-users"
-            description="Project identities"
-          />
-          <IdentityMetricCard
-            label="Active clients"
-            :value="project.clients.filter(client => client.status === 'active').length"
-            icon="i-lucide-server-cog"
-            color="success"
-            description="Service credentials"
-          />
-          <IdentityMetricCard
-            label="Roles"
-            :value="project.roles.length"
-            icon="i-lucide-shield-check"
-            color="info"
-            description="Access profiles"
-          />
-          <IdentityMetricCard
-            label="Permissions"
-            :value="project.permissions.length"
-            icon="i-lucide-key-round"
-            color="warning"
-            description="Published capabilities"
-          />
-        </div>
-
         <div class="grid gap-5 lg:grid-cols-2">
           <UPageCard
-            title="Environment"
-            description="Runtime and identity-lifetime policy."
+            title="Project environment"
+            description="Control runtime mode and sandbox lifetime directly."
             variant="subtle"
           >
-            <div class="space-y-4">
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-sm text-muted">Mode</span>
-                <UBadge
-                  :color="project.mode === 'live' ? 'success' : 'warning'"
-                  variant="soft"
-                  class="capitalize"
-                >
-                  {{ project.mode }}
-                </UBadge>
-              </div>
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-sm text-muted">Registration</span>
-                <span class="text-sm font-medium text-highlighted">
-                  {{ project.registration_mode === 'public' ? 'Public' : 'Invite only' }}
-                </span>
-              </div>
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-sm text-muted">Project status</span>
-                <span class="text-sm font-medium capitalize text-highlighted">{{ project.status }}</span>
-              </div>
-              <UButton
-                label="Open settings"
-                icon="i-lucide-settings-2"
-                color="neutral"
-                variant="outline"
-                @click="() => { activeTab = 'settings' }"
+            <form
+              class="space-y-5"
+              @submit.prevent="saveEnvironment"
+            >
+              <UFormField label="Mode">
+                <USelect
+                  v-model="environment.mode"
+                  :items="[{ label: 'Live', value: 'live' }, { label: 'Sandbox', value: 'sandbox' }]"
+                  class="w-full"
+                />
+              </UFormField>
+
+              <UFormField
+                v-if="environment.mode === 'sandbox'"
+                label="Temporary account lifetime"
+                description="Minutes before Identity expires and removes the sandbox identity."
+              >
+                <UInput
+                  v-model.number="environment.ttlMinutes"
+                  type="number"
+                  :min="5"
+                  :max="1440"
+                  class="w-full"
+                />
+              </UFormField>
+
+              <UAlert
+                v-if="environment.mode === 'live'"
+                color="success"
+                variant="soft"
+                icon="i-lucide-shield-check"
+                title="Production safeguards enabled"
+                description="Live mode uses the complete credential and verification flow."
               />
-            </div>
+
+              <UButton
+                type="submit"
+                label="Save environment"
+                icon="i-lucide-save"
+              />
+            </form>
           </UPageCard>
+
           <UPageCard
-            title="Integration health"
-            description="Connected credentials and cleanup delivery endpoints."
+            title="Registration policy"
+            description="Control how identities become members of this project."
+            variant="subtle"
+          >
+            <form
+              class="space-y-5"
+              @submit.prevent="saveRegistrationPolicy"
+            >
+              <UFormField label="Registration">
+                <USelect
+                  v-model="registration.mode"
+                  :items="[{ label: 'Invitation only', value: 'invite_only' }, { label: 'Public registration', value: 'public' }]"
+                  class="w-full"
+                />
+              </UFormField>
+
+              <UFormField
+                v-if="registration.mode === 'public'"
+                label="Default role"
+                description="Optional role assigned to every new member."
+              >
+                <USelect
+                  v-model="registration.roleId"
+                  :items="[{ label: 'No default role', value: null }, ...project.roles.map(item => ({ label: item.name, value: item.id }))]"
+                  class="w-full"
+                />
+              </UFormField>
+
+              <UAlert
+                :color="registration.mode === 'public' ? 'warning' : 'info'"
+                variant="soft"
+                icon="i-lucide-info"
+                :title="registration.mode === 'public' ? 'Public enrollment enabled' : 'Invitation required'"
+                :description="registration.mode === 'public' ? 'Anyone using an approved client can create a project membership.' : 'New members need a one-time invitation token.'"
+              />
+
+              <UButton
+                type="submit"
+                label="Save policy"
+                icon="i-lucide-save"
+              />
+            </form>
+          </UPageCard>
+        </div>
+
+        <div class="grid gap-5 lg:grid-cols-3">
+          <UPageCard
+            title="Client access"
+            description="Confidential clients and their current state."
             variant="subtle"
           >
             <div class="space-y-4">
               <div class="flex items-center justify-between gap-4">
-                <span class="text-sm text-muted">Confidential clients</span>
-                <span class="font-semibold tabular-nums text-highlighted">{{ project.clients.length }}</span>
-              </div>
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-sm text-muted">Active webhooks</span>
-                <span class="font-semibold tabular-nums text-highlighted">
-                  {{ project.webhooks.filter(webhook => webhook.status === 'active').length }}
-                </span>
-              </div>
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-sm text-muted">Stale permissions</span>
-                <span class="font-semibold tabular-nums text-highlighted">
-                  {{ project.permissions.filter(permission => permission.status === 'stale').length }}
-                </span>
+                <span class="text-sm text-muted">Active clients</span>
+                <span class="font-semibold tabular-nums text-highlighted">{{ project.clients.filter(client => client.status === 'active').length }}</span>
               </div>
               <UButton
                 label="Review clients"
@@ -422,6 +469,50 @@ function selectMembership(membership: IdentityMembership) {
                 color="neutral"
                 variant="outline"
                 @click="() => { activeTab = 'clients' }"
+              />
+            </div>
+          </UPageCard>
+
+          <UPageCard
+            title="Webhook delivery"
+            description="Lifecycle hooks for cleanup automation."
+            variant="subtle"
+          >
+            <div class="space-y-4">
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-sm text-muted">Active webhooks</span>
+                <span class="font-semibold tabular-nums text-highlighted">
+                  {{ project.webhooks.filter(webhook => webhook.status === 'active').length }}
+                </span>
+              </div>
+              <UButton
+                label="Open webhooks"
+                icon="i-lucide-webhook"
+                color="neutral"
+                variant="outline"
+                @click="() => { activeTab = 'webhooks' }"
+              />
+            </div>
+          </UPageCard>
+
+          <UPageCard
+            title="Permission health"
+            description="Permissions that need attention."
+            variant="subtle"
+          >
+            <div class="space-y-4">
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-sm text-muted">Stale permissions</span>
+                <span class="font-semibold tabular-nums text-highlighted">
+                  {{ project.permissions.filter(permission => permission.status === 'stale').length }}
+                </span>
+              </div>
+              <UButton
+                label="Inspect access"
+                icon="i-lucide-shield-check"
+                color="neutral"
+                variant="outline"
+                @click="() => { activeTab = 'access' }"
               />
             </div>
           </UPageCard>
@@ -756,96 +847,6 @@ function selectMembership(membership: IdentityMembership) {
         </IdentityTableCard>
       </template>
 
-      <template v-else-if="activeTab === 'settings'">
-        <div class="grid gap-5 lg:grid-cols-2">
-          <UPageCard
-            title="Project environment"
-            description="Sandbox identities are temporary and intended for demos and automated tests."
-            variant="subtle"
-          >
-            <form
-              class="space-y-5"
-              @submit.prevent="saveEnvironment"
-            >
-              <UFormField label="Mode">
-                <USelect
-                  v-model="environment.mode"
-                  :items="[{ label: 'Live', value: 'live' }, { label: 'Sandbox', value: 'sandbox' }]"
-                  class="w-full"
-                />
-              </UFormField>
-              <UFormField
-                v-if="environment.mode === 'sandbox'"
-                label="Temporary account lifetime"
-                description="Minutes before Identity expires and removes the sandbox identity."
-              >
-                <UInput
-                  v-model.number="environment.ttlMinutes"
-                  type="number"
-                  :min="5"
-                  :max="1440"
-                  class="w-full"
-                />
-              </UFormField>
-              <UAlert
-                v-if="environment.mode === 'live'"
-                color="success"
-                variant="soft"
-                icon="i-lucide-shield-check"
-                title="Production safeguards enabled"
-                description="Live mode uses the complete credential and verification flow."
-              />
-              <UButton
-                type="submit"
-                label="Save environment"
-                icon="i-lucide-save"
-              />
-            </form>
-          </UPageCard>
-          <UPageCard
-            title="Registration policy"
-            description="Control how new identities become project members."
-            variant="subtle"
-          >
-            <form
-              class="space-y-5"
-              @submit.prevent="saveRegistrationPolicy"
-            >
-              <UFormField label="Registration">
-                <USelect
-                  v-model="registration.mode"
-                  :items="[{ label: 'Invitation only', value: 'invite_only' }, { label: 'Public registration', value: 'public' }]"
-                  class="w-full"
-                />
-              </UFormField>
-              <UFormField
-                v-if="registration.mode === 'public'"
-                label="Default role"
-                description="Optional role assigned to every new member."
-              >
-                <USelect
-                  v-model="registration.roleId"
-                  :items="[{ label: 'No default role', value: null }, ...project.roles.map(item => ({ label: item.name, value: item.id }))]"
-                  class="w-full"
-                />
-              </UFormField>
-              <UAlert
-                :color="registration.mode === 'public' ? 'warning' : 'info'"
-                variant="soft"
-                icon="i-lucide-info"
-                :title="registration.mode === 'public' ? 'Public enrollment enabled' : 'Invitation required'"
-                :description="registration.mode === 'public' ? 'Anyone using an approved client can create a project membership.' : 'New members need a one-time invitation token.'"
-              />
-              <UButton
-                type="submit"
-                label="Save policy"
-                icon="i-lucide-save"
-              />
-            </form>
-          </UPageCard>
-        </div>
-      </template>
-
       <template v-else-if="activeTab === 'audit'">
         <IdentityShellState
           v-if="auditRequest.status.value === 'pending'"
@@ -933,7 +934,7 @@ function selectMembership(membership: IdentityMembership) {
               <UInput
                 v-model="clientName"
                 autofocus
-                placeholder="Job Tracker BFF"
+                placeholder="My client"
                 class="w-full"
               />
             </UFormField><div class="flex justify-end gap-2">

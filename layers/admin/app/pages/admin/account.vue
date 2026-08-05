@@ -90,26 +90,26 @@ async function revokeSession(id: string) {
     icon="i-lucide-user-cog"
     description="Manage the global identity shared across your project memberships and active sessions."
   >
-    <div class="grid gap-4 sm:grid-cols-3">
-      <IdentityMetricCard
+    <div class="flex flex-wrap gap-2">
+      <IdentityStatPill
         label="Signed in as"
         :value="user?.username || user?.name || 'Administrator'"
         icon="i-lucide-user-round"
         :description="user?.email"
       />
-      <IdentityMetricCard
+      <IdentityStatPill
         label="Active sessions"
         :value="sessions?.length ?? 0"
         icon="i-lucide-monitor-smartphone"
-        color="info"
-        description="Project-scoped sessions"
+        color="primary"
+        description="Project-scoped"
       />
-      <IdentityMetricCard
+      <IdentityStatPill
         label="Login alerts"
         :value="security.loginAlertsEnabled ? 'Enabled' : 'Disabled'"
         icon="i-lucide-bell-ring"
         :color="security.loginAlertsEnabled ? 'success' : 'neutral'"
-        description="Security notifications"
+        description="Security"
       />
     </div>
 

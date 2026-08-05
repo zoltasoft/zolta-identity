@@ -20,6 +20,7 @@ export function useIdentityAdminNavigation(
     const installationUsersPath = localePath('/admin/identity-users')
     const globalRolesPath = localePath('/admin/global-roles')
     const globalPermissionsPath = localePath('/admin/global-permissions')
+
     const workspaceItems: NavigationMenuItem[] = [
       {
         label: t('identityConsole.nav.projects'),
@@ -38,26 +39,30 @@ export function useIdentityAdminNavigation(
         label: t('identityConsole.nav.users'),
         icon: 'i-lucide-users',
         to: installationUsersPath,
-        active: route.path === installationUsersPath,
+        active: route.path === installationUsersPath || route.path.startsWith(`${installationUsersPath}/`),
         onSelect
       })
       accessItems.push({
         label: t('identityConsole.nav.globalRoles'),
         icon: 'i-lucide-badge-check',
         to: globalRolesPath,
-        active: route.path === globalRolesPath,
+        active: route.path === globalRolesPath || route.path.startsWith(`${globalRolesPath}/`),
         onSelect
       })
       accessItems.push({
         label: t('identityConsole.nav.globalPermissions'),
         icon: 'i-lucide-key-round',
         to: globalPermissionsPath,
-        active: route.path === globalPermissionsPath,
+        active: route.path === globalPermissionsPath || route.path.startsWith(`${globalPermissionsPath}/`),
         onSelect
       })
     }
 
-    return [workspaceItems, directoryItems, accessItems].filter(items => items.length > 0)
+    return [
+      workspaceItems,
+      directoryItems,
+      accessItems
+    ].filter(items => items.length > 0)
   })
 
   const secondaryLinks = computed<NavigationMenuItem[][]>(() => {

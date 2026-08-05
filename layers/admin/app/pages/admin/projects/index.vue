@@ -18,9 +18,6 @@ const scopedProjects = computed(() => (projects.value ?? []).filter(project => (
 const collection = useIdentityCollection(scopedProjects, project => (
   `${project.name} ${project.slug} ${project.description ?? ''} ${project.status} ${project.mode}`
 ))
-const liveCount = computed(() => projects.value?.filter(project => project.mode === 'live').length ?? 0)
-const sandboxCount = computed(() => projects.value?.filter(project => project.mode === 'sandbox').length ?? 0)
-const publicCount = computed(() => projects.value?.filter(project => project.registration_mode === 'public').length ?? 0)
 
 const columns: TableColumn<IdentityProject>[] = [
   { accessorKey: 'name', header: 'Project' },
@@ -58,14 +55,6 @@ async function submit() {
     icon="i-lucide-layout-dashboard"
     description="Manage the applications, environments, and access boundaries that trust this identity installation."
   >
-    <template #actions>
-      <UButton
-        label="New project"
-        icon="i-lucide-folder-plus"
-        @click="() => { open = true }"
-      />
-    </template>
-
     <IdentityShellState
       v-if="status === 'pending'"
       state="loading"
@@ -80,36 +69,6 @@ async function submit() {
     />
 
     <template v-else>
-      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <IdentityMetricCard
-          label="Total projects"
-          :value="projects?.length ?? 0"
-          icon="i-lucide-folder-key"
-          description="Application boundaries"
-        />
-        <IdentityMetricCard
-          label="Live"
-          :value="liveCount"
-          icon="i-lucide-radio-tower"
-          color="success"
-          description="Production environments"
-        />
-        <IdentityMetricCard
-          label="Sandbox"
-          :value="sandboxCount"
-          icon="i-lucide-flask-conical"
-          color="warning"
-          description="Temporary identities"
-        />
-        <IdentityMetricCard
-          label="Public registration"
-          :value="publicCount"
-          icon="i-lucide-user-plus"
-          color="info"
-          description="Open enrollment"
-        />
-      </div>
-
       <IdentityCollectionToolbar
         v-model="collection.search.value"
         placeholder="Search projects"
@@ -125,6 +84,14 @@ async function submit() {
             ]"
             size="lg"
             class="w-full sm:w-48"
+          />
+        </template>
+
+        <template #actions>
+          <UButton
+            label="New project"
+            icon="i-lucide-folder-plus"
+            @click="() => { open = true }"
           />
         </template>
       </IdentityCollectionToolbar>

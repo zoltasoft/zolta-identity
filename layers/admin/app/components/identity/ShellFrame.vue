@@ -118,7 +118,7 @@ watch(isDesktop, (desktop) => {
           name="sidebar-footer"
           :collapsed="sidebarCollapsed"
         >
-          <UserMenu :collapsed="sidebarCollapsed" />
+          <IdentityUserMenu :collapsed="sidebarCollapsed" />
         </slot>
       </template>
     </UDashboardSidebar>
