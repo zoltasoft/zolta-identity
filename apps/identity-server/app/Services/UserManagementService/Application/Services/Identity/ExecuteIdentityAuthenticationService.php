@@ -6,12 +6,14 @@ namespace App\Services\UserManagementService\Application\Services\Identity;
 
 use App\Services\UserManagementService\Application\Commands\Identity\AcceptIdentityInvitation\AcceptIdentityInvitationCommand;
 use App\Services\UserManagementService\Application\Commands\Identity\ExecuteIdentityAccess\ExecuteIdentityAccessCommand;
+use App\Services\UserManagementService\Application\Commands\Identity\ExecuteIdentityHandoff\ExecuteIdentityHandoffCommand;
 use App\Services\UserManagementService\Application\Commands\Identity\ExecuteIdentityPasswordRecovery\ExecuteIdentityPasswordRecoveryCommand;
 use App\Services\UserManagementService\Application\Commands\Identity\ExecuteIdentitySession\ExecuteIdentitySessionCommand;
 use App\Services\UserManagementService\Application\Commands\Identity\ExecuteIdentityVerification\ExecuteIdentityVerificationCommand;
 use App\Services\UserManagementService\Application\Commands\Identity\SyncIdentityClientManifest\SyncIdentityClientManifestCommand;
 use App\Services\UserManagementService\Application\DTOs\Input\IdentityOperationDTO;
 use App\Services\UserManagementService\Application\Enums\Identity\IdentityAccessOperation;
+use App\Services\UserManagementService\Application\Enums\Identity\IdentityHandoffOperation;
 use App\Services\UserManagementService\Application\Enums\Identity\IdentityPasswordRecoveryOperation;
 use App\Services\UserManagementService\Application\Enums\Identity\IdentitySessionOperation;
 use App\Services\UserManagementService\Application\Enums\Identity\IdentityVerificationOperation;
@@ -43,6 +45,17 @@ final readonly class ExecuteIdentityAuthenticationService
                     ?? throw new InvalidArgumentException(
                         'An authenticated Identity actor is required.',
                     ),
+            ]);
+        }
+
+        if (($operation = IdentityHandoffOperation::tryFrom($dto->operation)) !== null) {
+            return $this->execute(ExecuteIdentityHandoffCommand::class, [
+                'operation' => $operation,
+                'input' => $dto->input,
+                'actorUserId' => $dto->actorUserId,
+                'accessToken' => $dto->accessToken,
+                'ipAddress' => $dto->ipAddress,
+                'userAgent' => $dto->userAgent,
             ]);
         }
 

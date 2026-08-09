@@ -24,8 +24,8 @@ final class IdentityTokenManager
         ?string $familyId = null,
     ): array {
         $familyId ??= (string) Str::uuid();
-        $accessExpiresAt = now()->addMinutes((int) config('identity.access_token_ttl_minutes', 15));
-        $refreshExpiresAt = now()->addDays((int) config('identity.refresh_token_ttl_days', 30));
+        $accessExpiresAt = now()->addMinutes((int) config('zolta.identity.access_token_ttl_minutes', 15));
+        $refreshExpiresAt = now()->addDays((int) config('zolta.identity.refresh_token_ttl_days', 30));
 
         if ($user->is_temporary && $user->demo_expires_at !== null) {
             if ($user->demo_expires_at->isPast()) {

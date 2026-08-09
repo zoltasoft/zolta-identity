@@ -8,6 +8,7 @@ use App\Services\UserManagementService\API\Middleware\IdentityIntrospectionMiddl
 use App\Services\UserManagementService\API\Middleware\RequireIdentityAccessToken;
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\AcceptIdentityInvitation;
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\IssueIdentityAccess;
+use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\ManageIdentityHandoffs;
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\ManageIdentitySessions;
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\ReadIdentityAccessContext;
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\ReadIdentitySessions;
@@ -39,6 +40,7 @@ final class IdentityAccessServiceProvider extends ServiceProvider
         $this->app->bind(VerifyIdentityEmail::class, EloquentIdentityAuthenticationService::class);
         $this->app->bind(RecoverIdentityPassword::class, EloquentIdentityAuthenticationService::class);
         $this->app->bind(ManageIdentitySessions::class, EloquentIdentityAuthenticationService::class);
+        $this->app->bind(ManageIdentityHandoffs::class, EloquentIdentityAuthenticationService::class);
         $this->app->bind(ReadIdentitySessions::class, EloquentIdentityAuthenticationService::class);
         $this->app->bind(AcceptIdentityInvitation::class, EloquentIdentityAuthenticationService::class);
         $this->app->bind(SyncIdentityClientManifest::class, EloquentIdentityAuthenticationService::class);
@@ -51,7 +53,23 @@ final class IdentityAccessServiceProvider extends ServiceProvider
         $this->app->bind(ManageIdentityProjectAccess::class, EloquentIdentityProjectService::class);
         $this->app->bind(ReadIdentityProjects::class, EloquentIdentityProjectService::class);
         $this->app->bind(IdentityLifecyclePublisherInterface::class, IdentityWebhookPublisher::class);
-        $this->mergeConfigFrom(config_path('identity.php'), 'identity');
+
+        $configPath = config_path('zolta.php');
+        $this->mergeConfigFrom($configPath, 'zolta');
+
+        $defaults = (array) require $configPath;
+        $configured = array_replace_recursive($defaults, (array) config('zolta', []));
+
+        $this->app['config']->set('zolta', $configured);
+        $this->app['config']->set(
+            'identity',
+            array_replace_recursive(
+                (array) ($configured['identity'] ?? []),
+                ['consumer' => (array) ($configured['identity_consumer'] ?? [])],
+            ),
+        );
+        $this->app['config']->set('identity.consumer', (array) ($configured['identity_consumer'] ?? []));
+        $this->app['config']->set('demo', (array) ($configured['demo'] ?? []));
     }
 
     public function boot(): void

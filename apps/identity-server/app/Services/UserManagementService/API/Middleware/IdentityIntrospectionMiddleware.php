@@ -26,10 +26,10 @@ final class IdentityIntrospectionMiddleware
     public function handle(Request $request, Closure $next, ?string $requiredPermission = null): Response
     {
         $token = $request->bearerToken();
-        $baseUrl = (string) config('identity.consumer.base_url');
-        $clientId = (string) config('identity.consumer.client_id');
-        $clientSecret = (string) config('identity.consumer.client_secret');
-        $local = (bool) config('identity.consumer.local', false);
+        $baseUrl = (string) config('zolta.identity_consumer.base_url');
+        $clientId = (string) config('zolta.identity_consumer.client_id');
+        $clientSecret = (string) config('zolta.identity_consumer.client_secret');
+        $local = (bool) config('zolta.identity_consumer.local', false);
         if (! $token || (! $local && ! $baseUrl) || ! $clientId || ! $clientSecret) {
             return response()->json(['message' => 'Identity authentication is not configured or missing.'], 401);
         }
@@ -64,7 +64,7 @@ final class IdentityIntrospectionMiddleware
 
             if (($payload['active'] ?? false) === true) {
                 $ttl = min(
-                    (int) config('identity.consumer.introspection_cache_seconds', 30),
+                    (int) config('zolta.identity_consumer.introspection_cache_seconds', 30),
                     max(1, (int) $payload['exp'] - now()->getTimestamp()),
                 );
                 Cache::put($cacheKey, $payload, $ttl);

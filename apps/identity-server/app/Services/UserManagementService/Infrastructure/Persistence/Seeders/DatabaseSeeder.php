@@ -1,6 +1,6 @@
 <?php
 
-namespace Database\Seeders\UserManagementService;
+namespace App\Services\UserManagementService\Infrastructure\Persistence\Seeders;
 
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;

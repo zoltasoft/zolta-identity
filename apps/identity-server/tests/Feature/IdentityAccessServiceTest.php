@@ -109,6 +109,52 @@ final class IdentityAccessServiceTest extends TestCase
         ])->assertOk()->assertJsonPath('active', false);
     }
 
+    public function test_hosted_authentication_handoff_is_client_bound_and_single_use(): void
+    {
+        [$user, $project, $client, $secret] = $this->identityFixture();
+        $login = $this->login($user, $project, $client, $secret);
+        $callback = 'http://localhost:3000/api/auth/callback';
+
+        $code = $this->withToken($login['access_token'])
+            ->postJson('/api/v1/identity/auth/handoff', [
+                'client_id' => $client->id,
+                'client_secret' => $secret,
+                'redirect_uri' => $callback,
+            ])
+            ->assertCreated()
+            ->json('data.code');
+
+        $this->postJson('/api/v1/identity/auth/handoff/exchange', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'code' => $code,
+            'redirect_uri' => 'http://localhost:3000/a-different-callback',
+        ])->assertUnauthorized();
+
+        $exchange = $this->postJson('/api/v1/identity/auth/handoff/exchange', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'code' => $code,
+            'redirect_uri' => $callback,
+        ])->assertOk()->json('data');
+
+        $this->assertSame($user->id, $exchange['identity']['user']['id']);
+        $this->assertNotSame($login['access_token'], $exchange['access_token']);
+
+        $this->postJson('/api/v1/identity/auth/handoff/exchange', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'code' => $code,
+            'redirect_uri' => $callback,
+        ])->assertUnauthorized();
+
+        $this->postJson('/api/v1/identity/auth/introspect', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'token' => $login['access_token'],
+        ])->assertOk()->assertJsonPath('active', false);
+    }
+
     public function test_public_project_registration_assigns_the_default_role(): void
     {
         [, $project, $client, $secret] = $this->identityFixture();
@@ -224,7 +270,7 @@ final class IdentityAccessServiceTest extends TestCase
 
     public function test_registered_user_can_resend_and_verify_email(): void
     {
-        config()->set('identity.expose_development_tokens', true);
+        config()->set('zolta.identity.expose_development_tokens', true);
         [, $project, $client, $secret] = $this->identityFixture();
         $project->forceFill(['registration_mode' => 'public'])->save();
         $registration = $this->postJson('/api/v1/identity/auth/register', [
@@ -249,7 +295,7 @@ final class IdentityAccessServiceTest extends TestCase
 
     public function test_password_reset_revokes_existing_sessions(): void
     {
-        config()->set('identity.expose_development_tokens', true);
+        config()->set('zolta.identity.expose_development_tokens', true);
         [$user, $project, $client, $secret] = $this->identityFixture();
         $login = $this->login($user, $project, $client, $secret);
         $token = $this->postJson('/api/v1/identity/auth/password/forgot', [

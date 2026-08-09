@@ -13,6 +13,7 @@ final class IdentityAuthenticationOperationRequest extends IdentityOperationRequ
         'auth.logout',
         'auth.verification.resend',
         'auth.verification.verify',
+        'auth.handoff.create',
     ];
 
     public function authorize(): bool
@@ -54,6 +55,13 @@ final class IdentityAuthenticationOperationRequest extends IdentityOperationRequ
                 'password' => ['required', 'string', 'min:12', 'confirmed'],
             ]),
             'auth.introspect' => $this->clientRules(['token' => ['required', 'string']]),
+            'auth.handoff.create' => $this->clientRules([
+                'redirect_uri' => ['required', 'url:http,https', 'max:2048'],
+            ]),
+            'auth.handoff.exchange' => $this->clientRules([
+                'code' => ['required', 'string', 'min:64'],
+                'redirect_uri' => ['required', 'url:http,https', 'max:2048'],
+            ]),
             'auth.manifest.sync' => $this->clientRules($this->manifestRules()),
             'auth.invitation.accept' => [
                 'invitation_token' => ['required', 'string', 'min:64'],

@@ -23,7 +23,7 @@ final readonly class EloquentTemporaryAccountManager implements TemporaryAccount
 
     public function provision(): array
     {
-        if (! config('demo.accounts_enabled')) {
+        if (! config('zolta.demo.accounts_enabled')) {
             throw new RuntimeException('Temporary demo accounts are disabled.');
         }
 
@@ -36,7 +36,7 @@ final readonly class EloquentTemporaryAccountManager implements TemporaryAccount
             $id = (string) Str::uuid();
             $suffix = Str::lower(Str::random(8));
             $password = 'Demo!'.Str::random(20);
-            $expiresAt = now()->addMinutes((int) config('demo.account_lifetime_minutes'));
+            $expiresAt = now()->addMinutes((int) config('zolta.demo.account_lifetime_minutes'));
 
             User::query()->create([
                 'id' => $id,

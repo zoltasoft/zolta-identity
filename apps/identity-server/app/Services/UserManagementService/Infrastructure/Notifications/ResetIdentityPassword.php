@@ -12,7 +12,10 @@ final class ResetIdentityPassword extends Notification
 {
     use Queueable;
 
-    public function __construct(private readonly string $token) {}
+    public function __construct(
+        private readonly string $token,
+        private readonly ?string $clientId = null,
+    ) {}
 
     /** @return list<string> */
     public function via(object $notifiable): array
@@ -25,13 +28,14 @@ final class ResetIdentityPassword extends Notification
         $mail = (new MailMessage)
             ->subject('Reset your identity password')
             ->line('A password reset was requested for your identity account.');
-        $resetUrl = (string) config('identity.password_reset_url');
+        $resetUrl = (string) config('zolta.identity.password_reset_url');
         if ($resetUrl !== '') {
             $separator = str_contains($resetUrl, '?') ? '&' : '?';
-            $mail->action('Reset password', $resetUrl.$separator.http_build_query([
+            $mail->action('Reset password', $resetUrl.$separator.http_build_query(array_filter([
                 'email' => $notifiable->email,
                 'token' => $this->token,
-            ]));
+                'client_id' => $this->clientId,
+            ])));
         } else {
             $mail->line('Use this token in the application that requested the reset:')
                 ->line($this->token);

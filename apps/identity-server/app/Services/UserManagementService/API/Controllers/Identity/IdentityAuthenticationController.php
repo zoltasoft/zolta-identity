@@ -61,6 +61,16 @@ final class IdentityAuthenticationController extends Controller
         return response()->json(($this->readIdentity)($dto));
     }
 
+    #[Route('v1/identity/auth/handoff', methods: ['POST'], middleware: ['api', 'auth:sanctum', 'identity.token', 'throttle:30,1'], name: 'identity.auth.handoff.create')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Authorization handoff created.', 201)]
+    public function createHandoff(): void {}
+
+    #[Route('v1/identity/auth/handoff/exchange', methods: ['POST'], middleware: ['api', 'throttle:60,1'], name: 'identity.auth.handoff.exchange')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Authorization handoff exchanged.')]
+    public function exchangeHandoff(): void {}
+
     #[Route('v1/identity/clients/permission-manifest', methods: ['PUT'], middleware: ['api', 'throttle:60,1'], name: 'identity.auth.manifest.sync')]
     #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityAuthenticationService::class, 'Permission manifest synchronized.')]

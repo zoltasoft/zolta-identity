@@ -1,6 +1,6 @@
 <?php
 
-namespace Database\Factories\UserManagementService;
+namespace App\Services\UserManagementService\Infrastructure\Persistence\Factories;
 
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
 use Illuminate\Database\Eloquent\Factories\Factory;

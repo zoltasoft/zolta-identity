@@ -505,7 +505,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
             'email' => $email,
             'token_hash' => hash('sha256', $plainToken),
             'is_admin' => $isAdmin,
-            'expires_at' => now()->addHours((int) config('identity.invitation_ttl_hours', 72)),
+            'expires_at' => now()->addHours((int) config('zolta.identity.invitation_ttl_hours', 72)),
         ]);
         $this->audit->record(
             'invitation.created',

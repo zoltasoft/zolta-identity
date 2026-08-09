@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use Zolta\Http\Response\Laravel\Resources\GenericResource;
-
 return [
     'routes' => [
         'cache' => [
@@ -14,8 +12,33 @@ return [
                 'make:zolta-update-namespace',
             ],
         ],
-        'paths' => [app_path('Services/UserManagementService/API/Controllers')],
-        'documentation' => ['enabled' => false],
-        'default_response' => GenericResource::class,
+        'paths' => [
+            app_path('Services/*/API/Controllers'),
+            app_path('Http/Controllers'),
+        ],
+        'exclude_paths' => [],
+        'documentation' => [
+            'enabled' => env('ZOLTA_ROUTE_DOCS_ENABLED', true),
+            'output_dir' => env('ZOLTA_ROUTE_DOCS_OUTPUT_DIR', base_path('bootstrap/cache')),
+            'output_file' => env('ZOLTA_ROUTE_DOCS_OUTPUT_FILE', 'openapi.json'),
+            'manifest_file' => env('ZOLTA_ROUTE_DOCS_MANIFEST_FILE', 'openapi_manifest.php'),
+            'title' => env('ZOLTA_ROUTE_DOCS_TITLE', env('APP_NAME', 'Laravel').' API'),
+            'version' => env('ZOLTA_ROUTE_DOCS_VERSION', env('APP_VERSION', '1.0.0')),
+            'description' => env(
+                'ZOLTA_ROUTE_DOCS_DESCRIPTION',
+                'Auto-generated API documentation from Zolta HTTP route attributes.'
+            ),
+            'server_url' => env('ZOLTA_ROUTE_DOCS_SERVER_URL', env('APP_URL', 'http://localhost')),
+            'server_description' => env('ZOLTA_ROUTE_DOCS_SERVER_DESCRIPTION', 'Application server'),
+        ],
+        'default_response' => null,
+    ],
+
+    'sqlite' => [
+        'wsl_path' => database_path('database.sqlite'),
+        'wsl_windows_path' => env('ZOLTA_SQLITE_WSL_WINDOWS_PATH', '/mnt/c/Users/Public/zolta-sqlite/database.sqlite'),
+        'windows_path' => env('ZOLTA_SQLITE_WINDOWS_PATH', 'C:\\Users\\Public\\zolta-sqlite\\database.sqlite'),
+        'backup_dir' => env('ZOLTA_SQLITE_BACKUP_DIR', base_path('database/backups')),
+        'browser_executable' => env('ZOLTA_SQLITE_BROWSER_EXECUTABLE'),
     ],
 ];

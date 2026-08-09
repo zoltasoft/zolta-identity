@@ -6,6 +6,7 @@ namespace App\Services\UserManagementService\Infrastructure\Services;
 
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\AcceptIdentityInvitation;
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\IssueIdentityAccess;
+use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\ManageIdentityHandoffs;
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\ManageIdentitySessions;
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\ReadIdentityAccessContext;
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\ReadIdentitySessions;
@@ -19,6 +20,7 @@ use App\Services\UserManagementService\Domain\Aggregates\IdentityMembership as D
 use App\Services\UserManagementService\Domain\Repositories\IdentityMembershipRepository;
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityProjectId;
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityRoleId;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAuthorizationCode;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectInvitation;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityRefreshToken;
@@ -41,7 +43,7 @@ use Illuminate\Support\Str;
 use Laravel\Sanctum\PersonalAccessToken;
 use Zolta\Domain\ValueObjects\UserId;
 
-final readonly class EloquentIdentityAuthenticationService implements AcceptIdentityInvitation, IssueIdentityAccess, ManageIdentitySessions, ReadIdentityAccessContext, ReadIdentitySessions, RecoverIdentityPassword, SyncIdentityClientManifest, VerifyIdentityEmail
+final readonly class EloquentIdentityAuthenticationService implements AcceptIdentityInvitation, IssueIdentityAccess, ManageIdentityHandoffs, ManageIdentitySessions, ReadIdentityAccessContext, ReadIdentitySessions, RecoverIdentityPassword, SyncIdentityClientManifest, VerifyIdentityEmail
 {
     public function __construct(
         private EloquentIdentityProjectMembershipRepository $memberships,
@@ -144,6 +146,121 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
                 'name' => $client->name,
             ],
         ];
+    }
+
+    public function createHandoff(
+        string $userId,
+        string $accessToken,
+        array $input,
+        ?string $ipAddress = null,
+        ?string $userAgent = null,
+    ): array {
+        $client = $this->clients->authenticate(
+            (string) $input['client_id'],
+            (string) $input['client_secret'],
+        );
+        $token = PersonalAccessToken::findToken($accessToken);
+
+        if (! $token
+            || (string) $token->tokenable_id !== $userId
+            || (string) $token->identity_project_id !== (string) $client->project_id
+            || (string) $token->identity_client_id !== (string) $client->id) {
+            throw new IdentityAuthenticationException(
+                'The Identity session cannot authorize this client.',
+            );
+        }
+
+        $plainCode = Str::random(96);
+        IdentityAuthorizationCode::query()->create([
+            'user_id' => $userId,
+            'project_id' => $client->project_id,
+            'client_id' => $client->id,
+            'source_refresh_family_id' => $token->identity_refresh_family_id,
+            'code_hash' => hash('sha256', $plainCode),
+            'redirect_uri' => (string) $input['redirect_uri'],
+            'expires_at' => now()->addMinutes(2),
+        ]);
+        $this->audit->record(
+            'auth.handoff_created',
+            $client->project_id,
+            $client->id,
+            $userId,
+            'client',
+            $client->id,
+            [],
+            $ipAddress,
+            $userAgent,
+        );
+
+        return [
+            'code' => $plainCode,
+            'redirect_uri' => (string) $input['redirect_uri'],
+            'expires_in' => 120,
+        ];
+    }
+
+    public function exchangeHandoff(
+        array $input,
+        ?string $ipAddress = null,
+        ?string $userAgent = null,
+    ): array {
+        $client = $this->clients->authenticate(
+            (string) $input['client_id'],
+            (string) $input['client_secret'],
+        );
+
+        return DB::transaction(function () use ($client, $input, $ipAddress, $userAgent): array {
+            $authorizationCode = IdentityAuthorizationCode::query()
+                ->where('code_hash', hash('sha256', (string) $input['code']))
+                ->lockForUpdate()
+                ->first();
+
+            if (! $authorizationCode
+                || $authorizationCode->consumed_at !== null
+                || $authorizationCode->expires_at->isPast()
+                || (string) $authorizationCode->client_id !== (string) $client->id
+                || ! hash_equals(
+                    (string) $authorizationCode->redirect_uri,
+                    (string) $input['redirect_uri'],
+                )) {
+                throw new IdentityAuthenticationException(
+                    'The authorization handoff is invalid or expired.',
+                );
+            }
+
+            $user = User::query()->findOrFail($authorizationCode->user_id);
+            $project = IdentityProject::query()
+                ->where('status', 'active')
+                ->findOrFail($authorizationCode->project_id);
+            $membership = $this->memberships->findActiveForProjectUser(
+                $project->id,
+                $user->id,
+            );
+            if (! $membership) {
+                throw new IdentityAuthenticationException('Project access has been revoked.');
+            }
+
+            $authorizationCode->forceFill(['consumed_at' => now()])->save();
+            $tokens = $this->tokens->issuePair($user, $project, $client, $membership);
+            if ($authorizationCode->source_refresh_family_id !== null) {
+                $this->tokens->revokeFamily((string) $authorizationCode->source_refresh_family_id);
+            }
+            $this->audit->record(
+                'auth.handoff_exchanged',
+                $project->id,
+                $client->id,
+                $user->id,
+                'client',
+                $client->id,
+                [],
+                $ipAddress,
+                $userAgent,
+            );
+
+            return $tokens + [
+                'identity' => $this->payloads->identity($user, $project, $client, $membership),
+            ];
+        });
     }
 
     public function register(
@@ -326,7 +443,7 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
 
         $code = $this->issueEmailVerification($user);
         $result = ['message' => 'A new verification code was sent.'];
-        if ((bool) config('identity.expose_development_tokens', false)) {
+        if ((bool) config('zolta.identity.expose_development_tokens', false)) {
             $result['development_code'] = $code;
         }
 
@@ -384,9 +501,9 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             ['email' => $user->email],
             ['token' => $this->secretHash($token), 'created_at' => now()],
         );
-        $user->notify(new ResetIdentityPassword($token));
+        $user->notify(new ResetIdentityPassword($token, $clientId));
 
-        if ((bool) config('identity.expose_development_tokens', false)) {
+        if ((bool) config('zolta.identity.expose_development_tokens', false)) {
             $result['development_token'] = $token;
         }
 
@@ -407,7 +524,7 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             : null;
         $expiresAt = $reset?->created_at
             ? Carbon::parse($reset->created_at)->addMinutes(
-                (int) config('identity.password_reset_ttl_minutes', 60),
+                (int) config('zolta.identity.password_reset_ttl_minutes', 60),
             )
             : null;
 
@@ -777,7 +894,7 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
         $user->forceFill([
             'email_verification_code_hash' => $this->secretHash($code),
             'email_verification_expires_at' => now()->addMinutes(
-                (int) config('identity.email_verification_ttl_minutes', 15),
+                (int) config('zolta.identity.email_verification_ttl_minutes', 15),
             ),
         ])->save();
         $user->notify(new VerifyEmailCode($code));
