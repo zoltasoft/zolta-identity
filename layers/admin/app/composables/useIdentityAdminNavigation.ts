@@ -66,25 +66,24 @@ export function useIdentityAdminNavigation(
   })
 
   const secondaryLinks = computed<NavigationMenuItem[][]>(() => {
-    const accountPath = localePath('/admin/account')
-
-    return [[{
-      label: t('identityConsole.nav.account'),
-      icon: 'i-lucide-user-cog',
-      to: accountPath,
-      active: route.path === accountPath,
-      onSelect
-    }]]
+    return []
   })
 
   const searchGroups = computed<CommandPaletteGroup<CommandPaletteItem>[]>(() => [{
     id: 'identity-navigation',
     label: t('identityConsole.navigate'),
-    items: [...primaryLinks.value.flat(), ...secondaryLinks.value.flat()].map(item => ({
-      label: item.label,
-      icon: item.icon,
-      to: item.to
-    }))
+    items: [
+      ...primaryLinks.value.flat().map(item => ({
+        label: item.label,
+        icon: item.icon,
+        to: item.to
+      })),
+      {
+        label: t('identityConsole.nav.account'),
+        icon: 'i-lucide-user-cog',
+        to: localePath('/admin/account')
+      }
+    ]
   }])
 
   return { primaryLinks, secondaryLinks, searchGroups }

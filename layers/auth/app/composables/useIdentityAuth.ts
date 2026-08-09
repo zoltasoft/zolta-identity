@@ -7,23 +7,11 @@ import type {
   IdentityRegisterInput,
   IdentityResetPasswordInput
 } from '../../shared/types/identity-auth'
+import { useIdentityMutation } from './useIdentityMutation'
 
 export function useIdentityAuth() {
   const userSession = useUserSession()
-  const { csrf, headerName } = useCsrf()
-
-  const mutation = async <T>(
-    path: string,
-    options: {
-      method: 'POST' | 'DELETE'
-      body?: Record<string, unknown>
-    }
-  ): Promise<T> => await $fetch<T>(path, {
-    ...options,
-    headers: {
-      [headerName]: csrf
-    }
-  }) as T
+  const mutation = useIdentityMutation()
 
   const login = async (input: IdentityLoginInput) => {
     const identity = await mutation<IdentityBrowserSession>('/api/auth/login', {

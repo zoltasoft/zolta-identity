@@ -29,6 +29,23 @@ The headless entry provides:
 - `identity-auth` route middleware for protected pages
 - `@zoltasoft/identity-nuxt/types` for browser-safe identity types
 
+For a consumer that redirects to Identity-hosted pages, do not extend the full
+layer. Import server-only session and token helpers from
+`@zoltasoft/identity-nuxt/server`; this avoids mounting embedded credential
+pages and `/api/auth/login|register|reset` handlers in the consumer.
+
+The Identity host reads its server-only `IDENTITY_HOSTED_APPLICATIONS` JSON
+registry. Each entry supplies an application name and URL, exact callback URL,
+and the primary (plus optional sandbox) API URL, project, BFF client ID, and BFF
+client secret. See the repository `.env.example` for a complete shape.
+
+The default-pages entry also mounts `/account?application=<key>`. This hosted
+account portal signs the user in against that application's confidential BFF
+client and owns global profile, password, session, export, and deletion actions.
+The consumer only links to the portal, so account credentials and account-level
+security payloads never traverse the consumer BFF. The return destination comes
+from the registered `applicationUrl`, not from a browser-supplied URL.
+
 ## Server configuration
 
 ```dotenv
@@ -107,5 +124,9 @@ thin server adapter. The package preserves existing user and secure-session
 fields when it rotates identity tokens.
 
 This BFF package does not create cross-application SSO. Authorization code plus
-PKCE/OIDC remains the future protocol for shared sign-on between independently
-hosted applications.
+PKCE/OIDC remains a possible standards-based protocol for broader federation.
+The hosted authentication integration uses a confidential-client exchange of a
+short-lived, callback-bound, single-use handoff code; credentials and tokens
+remain inside Identity and the consumer BFF. Hosted account management uses a
+separate, one-hour encrypted HTTP-only Identity session and does not expose its
+access token to the browser or consumer application.

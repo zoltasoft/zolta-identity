@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useIdentityMutation } from '../../../../app/composables/useIdentityMutation'
+
 definePageMeta({
   layout: 'identity-auth',
   middleware: 'identity-live-auth'
@@ -6,6 +8,8 @@ definePageMeta({
 
 const route = useRoute()
 const { resetPassword } = useIdentityAuth()
+const mutateIdentity = useIdentityMutation()
+const hostedClientId = computed(() => typeof route.query.client_id === 'string' ? route.query.client_id : '')
 const form = reactive({
   email: typeof route.query.email === 'string' ? route.query.email : '',
   token: typeof route.query.token === 'string' ? route.query.token : '',
@@ -15,6 +19,7 @@ const form = reactive({
 const pending = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
+const applicationUrl = ref('')
 
 async function submit() {
   pending.value = true
@@ -22,7 +27,15 @@ async function submit() {
   successMessage.value = ''
 
   try {
-    await resetPassword(form)
+    if (hostedClientId.value) {
+      const result = await mutateIdentity<{ applicationUrl: string }>('/api/hosted-auth/password/reset', {
+        method: 'POST',
+        body: { clientId: hostedClientId.value, ...form }
+      })
+      applicationUrl.value = result.applicationUrl
+    } else {
+      await resetPassword(form)
+    }
     successMessage.value = 'Your password has been reset. You can now sign in.'
   } catch (error) {
     errorMessage.value = identityAuthErrorMessage(
@@ -104,7 +117,16 @@ async function submit() {
       </button>
     </form>
     <p class="identity-auth-links">
-      <NuxtLink to="/auth/login">
+      <a
+        v-if="applicationUrl"
+        :href="applicationUrl"
+      >
+        Return to your application
+      </a>
+      <NuxtLink
+        v-else
+        to="/auth/login"
+      >
         Continue to sign in
       </NuxtLink>
     </p>

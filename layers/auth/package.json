@@ -7,6 +7,7 @@
   "exports": {
     ".": "./nuxt.config.ts",
     "./default-pages": "./default-pages/nuxt.config.ts",
+    "./server": "./server/utils/identity-api.ts",
     "./types": "./shared/types/identity-auth.ts"
   },
 	"files": [

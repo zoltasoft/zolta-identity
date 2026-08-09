@@ -101,6 +101,7 @@
     "appearance": "Change appearance",
     "collapseSidebar": "Collapse sidebar",
     "expandSidebar": "Expand sidebar",
+    "toggleSidebar": "Toggle sidebar",
     "signOut": "Sign out",
     "navigate": "Navigate",
     "signIn": {

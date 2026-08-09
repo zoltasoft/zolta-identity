@@ -101,6 +101,7 @@
     "appearance": "Changer l’apparence",
     "collapseSidebar": "Réduire la barre latérale",
     "expandSidebar": "Développer la barre latérale",
+    "toggleSidebar": "Afficher ou masquer la barre latérale",
     "signOut": "Se déconnecter",
     "navigate": "Naviguer",
     "signIn": {

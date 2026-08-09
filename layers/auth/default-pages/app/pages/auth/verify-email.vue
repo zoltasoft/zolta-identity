@@ -1,11 +1,25 @@
 <script setup lang="ts">
+import { useIdentityMutation } from '../../../../app/composables/useIdentityMutation'
+
 definePageMeta({
   layout: 'identity-auth',
-  middleware: ['identity-live-auth', 'identity-auth']
+  middleware: ['identity-live-auth']
 })
 
 const config = useRuntimeConfig()
+const route = useRoute()
 const { verifyEmail, resendVerification, fetch } = useIdentityAuth()
+const mutateIdentity = useIdentityMutation()
+const hosted = computed(() => typeof route.query.application === 'string')
+if (hosted.value) {
+  await $fetch('/api/hosted-auth/flow')
+} else {
+  const session = useUserSession()
+  if (!session.loggedIn.value) await session.fetch()
+  if (!session.loggedIn.value) {
+    await navigateTo({ path: '/auth/login', query: { redirect: route.fullPath } })
+  }
+}
 const code = ref('')
 const pending = ref(false)
 const resending = ref(false)
@@ -18,6 +32,15 @@ async function submit() {
   successMessage.value = ''
 
   try {
+    if (hosted.value) {
+      const result = await mutateIdentity<{ redirectUrl: string }>('/api/hosted-auth/email/verification', {
+        method: 'POST',
+        body: { code: code.value }
+      })
+      await navigateTo(result.redirectUrl, { external: true })
+      return
+    }
+
     await verifyEmail(code.value)
     await fetch()
     successMessage.value = 'Your email address is verified.'
@@ -40,7 +63,11 @@ async function resend() {
   errorMessage.value = ''
 
   try {
-    await resendVerification()
+    if (hosted.value) {
+      await mutateIdentity('/api/hosted-auth/email/resend', { method: 'POST' })
+    } else {
+      await resendVerification()
+    }
     successMessage.value = 'A new verification code has been sent.'
   } catch (error) {
     errorMessage.value = identityAuthErrorMessage(

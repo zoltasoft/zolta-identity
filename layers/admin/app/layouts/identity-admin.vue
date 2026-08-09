@@ -1,5 +1,9 @@
 <script setup lang="ts">
 const open = ref(false)
+const sidebarCollapsed = useCookie<boolean>('identity-console-sidebar-collapsed', {
+  default: () => true,
+  sameSite: 'lax'
+})
 
 const localePath = useLocalePath()
 const { t } = useI18n()
@@ -22,8 +26,8 @@ const { primaryLinks, secondaryLinks, searchGroups }
 <template>
   <IdentityShellFrame
     v-model:open="open"
+    v-model:collapsed="sidebarCollapsed"
     sidebar-id="identity-console-admin"
-    :desktop-collapsed="true"
     :primary-links="primaryLinks"
     :secondary-links="secondaryLinks"
     :search-groups="searchGroups"

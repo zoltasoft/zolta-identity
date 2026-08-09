@@ -14,7 +14,14 @@ declare module '@nuxt/schema' {
       project: string
       clientId: string
       clientSecret: string
+      sandbox: {
+        apiUrl: string
+        project: string
+        clientId: string
+        clientSecret: string
+      }
     }
+    identityHostedApplications: Record<string, unknown>
   }
 }
 

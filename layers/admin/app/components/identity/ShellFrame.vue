@@ -42,11 +42,28 @@ const props = withDefaults(defineProps<{
 const open = defineModel<boolean>('open', {
   default: false
 })
+const collapsedModel = defineModel<boolean | undefined>('collapsed')
 
 const isDesktop = useMediaQuery('(min-width: 1024px)')
+const internalCollapsed = ref(props.desktopCollapsed)
+const collapsedPreference = computed({
+  get: () => collapsedModel.value ?? internalCollapsed.value,
+  set: (value: boolean) => {
+    if (collapsedModel.value === undefined) {
+      internalCollapsed.value = value
+      return
+    }
 
-const collapsed = computed(() => {
-  return isDesktop.value && props.desktopCollapsed
+    collapsedModel.value = value
+  }
+})
+const collapsed = computed({
+  get: () => isDesktop.value && collapsedPreference.value,
+  set: (value: boolean) => {
+    if (isDesktop.value) {
+      collapsedPreference.value = value
+    }
+  }
 })
 
 watch(isDesktop, (desktop) => {
@@ -61,8 +78,8 @@ watch(isDesktop, (desktop) => {
     <UDashboardSidebar
       :id="props.sidebarId"
       v-model:open="open"
+      v-model:collapsed="collapsed"
       :collapsible="props.collapsible"
-      :collapsed="collapsed"
       :collapsed-size="props.collapsedSize"
       :resizable="props.resizable"
       :ui="{ footer: 'lg:border-t lg:border-default' }"

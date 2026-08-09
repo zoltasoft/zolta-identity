@@ -186,8 +186,13 @@ export async function identityAuthenticationExperience(
   const runtimeConfig = useRuntimeConfig(event)
   const primary = await identityAuthenticationContext(event)
   const sandboxConfig = runtimeConfig.identity.sandbox
-  const shouldResolveSandbox = runtimeConfig.public.identityAuth.sandboxEnabled
-    && Boolean(sandboxConfig?.clientId && sandboxConfig?.clientSecret)
+  const publicConfig = runtimeConfig.public as {
+    identityAuth?: { sandboxEnabled?: boolean }
+    identitySandboxEnabled?: boolean
+  }
+  const shouldResolveSandbox = Boolean(
+    publicConfig.identityAuth?.sandboxEnabled ?? publicConfig.identitySandboxEnabled
+  ) && Boolean(sandboxConfig?.clientId && sandboxConfig?.clientSecret)
 
   if (!shouldResolveSandbox) {
     return { primary, sandbox: null }

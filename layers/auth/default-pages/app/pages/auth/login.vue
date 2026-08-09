@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import type { IdentityAuthenticationContext } from '../../../../shared/types/identity-auth'
+import { useIdentityMutation } from '../../../../app/composables/useIdentityMutation'
 
 definePageMeta({ layout: 'identity-auth' })
 
 const route = useRoute()
 const config = useRuntimeConfig()
 const auth = useIdentityAuth()
+const mutateIdentity = useIdentityMutation()
+const hostedApplication = computed(() => typeof route.query.application === 'string' ? route.query.application : '')
+const hostedState = computed(() => typeof route.query.state === 'string' ? route.query.state : '')
+const hosted = computed(() => Boolean(hostedApplication.value && hostedState.value))
 const form = reactive({ email: '', password: '' })
 const pending = ref(false)
 const errorMessage = ref('')
@@ -17,7 +22,10 @@ const {
   data: experience,
   error: experienceError,
   pending: experiencePending
-} = await useFetch('/api/auth/context')
+} = await useFetch(
+  () => hosted.value ? '/api/hosted-auth/context' : '/api/auth/context',
+  { query: computed(() => hosted.value ? { application: hostedApplication.value } : {}) }
+)
 
 const primary = computed(() => experience.value?.primary ?? null)
 const liveEnabled = computed(() => primary.value?.project.mode === 'live')
@@ -56,6 +64,19 @@ async function submit() {
   errorMessage.value = ''
 
   try {
+    if (hosted.value) {
+      const result = await mutateIdentity<{ redirectUrl: string }>('/api/hosted-auth/login', {
+        method: 'POST',
+        body: {
+          application: hostedApplication.value,
+          state: hostedState.value,
+          ...form
+        }
+      })
+      await navigateTo(result.redirectUrl, { external: true })
+      return
+    }
+
     await auth.login(form)
     await navigateTo(destination())
   } catch (error) {
@@ -80,6 +101,18 @@ async function provisionDemo() {
   demoErrorMessage.value = ''
 
   try {
+    if (hosted.value) {
+      const result = await mutateIdentity<{ redirectUrl: string }>('/api/hosted-auth/sandbox', {
+        method: 'POST',
+        body: {
+          application: hostedApplication.value,
+          state: hostedState.value
+        }
+      })
+      await navigateTo(result.redirectUrl, { external: true })
+      return
+    }
+
     await auth.createSandboxSession(demoContext.value.connection)
     demoReady.value = true
   } catch (error) {
@@ -228,12 +261,12 @@ onMounted(() => {
         v-if="liveEnabled"
         class="identity-auth-links"
       >
-        <NuxtLink to="/auth/forgot-password">
+        <NuxtLink :to="{ path: '/auth/forgot-password', query: hosted ? { application: hostedApplication, state: hostedState } : {} }">
           Forgot password?
         </NuxtLink>
         <NuxtLink
           v-if="registrationEnabled"
-          to="/auth/register"
+          :to="{ path: '/auth/register', query: hosted ? { application: hostedApplication, state: hostedState } : {} }"
         >
           Create account
         </NuxtLink>

@@ -12,7 +12,7 @@ The repository contains:
 - a Nuxt 4 Identity Console and confidential BFF on `http://127.0.0.1:3100`
 - a Laravel 13 identity API on `http://127.0.0.1:8100`
 - project-scoped users, memberships, roles, permissions, and confidential clients
-- short-lived Sanctum access tokens and rotating refresh-token families
+- short-lived access tokens and rotating refresh-token families
 - confidential-client token introspection for APIs
 - invitation-only or public onboarding per project
 - live and sandbox projects with credentialless, time-limited identities
@@ -34,8 +34,14 @@ The Nuxt package includes project-aware default authentication pages. Live
 projects receive the permanent-account login, registration, verification, and
 recovery experience. Sandbox projects receive an automatically provisioned,
 pre-verified temporary account with its generated identity and expiry displayed
-before continuing. Extend `@zoltasoft/identity-nuxt/default-pages` to use these
-pages or the headless `@zoltasoft/identity-nuxt` entry to keep custom pages.
+before continuing. The same pages can be hosted by Identity for other
+applications, which then receive a short-lived, callback-bound, single-use
+handoff code instead of collecting credentials themselves.
+
+Hosted consumers can also send users to `/account?application=<key>` for global
+profile and security management. Identity collects credentials and handles
+password changes, sessions, export, and deletion in its own encrypted BFF
+session; the consumer application never receives those sensitive payloads.
 
 ## Requirements
 
@@ -115,7 +121,10 @@ Create two clients for a typical Nuxt + Laravel application:
 - `<Application> Nuxt BFF` logs users in and stores its token pair server-side.
 - `<Application> Laravel API` introspects BFF access tokens and enforces permission keys.
 
-The BFF calls `POST /api/v1/identity/auth/login` or `POST /api/v1/identity/auth/register` with its own client credentials. The API calls `POST /api/v1/identity/auth/introspect` with the API client's credentials and the presented bearer token.
+For hosted authentication, the application redirects the browser to Identity,
+then its callback exchanges the returned handoff code using the BFF client
+secret. The API calls `POST /api/v1/identity/auth/introspect` with the API
+client's credentials and the presented bearer token.
 
 A successful introspection includes the global user ID, project, token-issuing client, roles, permissions, authorization version, email-verification state, session family, and expiration time. Consumer APIs must verify the required permission for every protected route.
 
@@ -135,7 +144,10 @@ The application's Nuxt BFF must use a separate confidential client. Do not put e
 The `@zoltasoft/identity-nuxt` workspace package is the supported Nuxt BFF
 integration. It owns the encrypted identity session, CSRF-protected
 `/api/auth/*` routes, token rotation, a route middleware, and
-`useIdentityAuth()`. It has two entries:
+`useIdentityAuth()`. It also exports `@zoltasoft/identity-nuxt/server` for an
+application that uses hosted Identity pages and wants only the server-side
+token/session adapter without composing embedded credential routes. It has two
+full-layer entries:
 
 - `@zoltasoft/identity-nuxt` is headless and lets an application keep fully
   custom login, signup, recovery, reset, and verification pages.
@@ -156,6 +168,22 @@ For custom pages, extend `@zoltasoft/identity-nuxt` instead and call
 `useIdentityAuth()`. Browser code always calls the consumer's local
 `/api/auth/*` BFF routes; it never sends the confidential client secret or
 bearer tokens to the browser.
+
+For the hosted approach, do not extend either full layer. Import the server
+adapter from `@zoltasoft/identity-nuxt/server`, redirect the browser to the
+Identity host, and expose only an authorize route and a callback route in the
+consumer BFF.
+
+Register hosted consumers in the Identity Nuxt environment. Keep this JSON
+server-only because it contains confidential client secrets:
+
+```dotenv
+IDENTITY_HOSTED_APPLICATIONS='{"job-tracker":{"name":"Job Tracker","applicationUrl":"http://localhost:3000/dashboard","callbackUrl":"http://localhost:3000/api/auth/callback","primary":{"apiUrl":"http://127.0.0.1:8100","project":"interviewlike-job-tracker","clientId":"<bff-client-id>","clientSecret":"<bff-client-secret>"}}}'
+```
+
+The consumer must use the same callback URL during handoff exchange. Configure
+an optional `sandbox` connection beside `primary` when the hosted page should
+offer an instant temporary demo account.
 
 Configure the consumer Nuxt server with its own BFF client:
 

@@ -1,11 +1,18 @@
 <script setup lang="ts">
+import { useIdentityMutation } from '../../../../app/composables/useIdentityMutation'
+
 definePageMeta({
   layout: 'identity-auth',
   middleware: 'identity-live-auth'
 })
 
 const config = useRuntimeConfig()
+const route = useRoute()
 const { register } = useIdentityAuth()
+const mutateIdentity = useIdentityMutation()
+const hostedApplication = computed(() => typeof route.query.application === 'string' ? route.query.application : '')
+const hostedState = computed(() => typeof route.query.state === 'string' ? route.query.state : '')
+const hosted = computed(() => Boolean(hostedApplication.value && hostedState.value))
 const form = reactive({
   username: '',
   email: '',
@@ -20,6 +27,22 @@ async function submit() {
   errorMessage.value = ''
 
   try {
+    if (hosted.value) {
+      await mutateIdentity('/api/hosted-auth/register', {
+        method: 'POST',
+        body: {
+          application: hostedApplication.value,
+          state: hostedState.value,
+          ...form
+        }
+      })
+      await navigateTo({
+        path: '/auth/verify-email',
+        query: { application: hostedApplication.value, state: hostedState.value }
+      })
+      return
+    }
+
     await register(form)
     await navigateTo(identitySafeRedirect(
       config.public.identityAuth.registerRedirect,
@@ -99,7 +122,7 @@ async function submit() {
       </button>
     </form>
     <p class="identity-auth-links">
-      <NuxtLink to="/auth/login">
+      <NuxtLink :to="{ path: '/auth/login', query: hosted ? { application: hostedApplication, state: hostedState } : {} }">
         Already have an account?
       </NuxtLink>
     </p>

@@ -28,16 +28,23 @@ const resolvedBackLabel = computed(() => {
     <template #header>
       <UDashboardNavbar>
         <template #title>
-          <PageTitle
-            :title="props.title"
-            :icon="props.icon"
-          />
+          <div class="flex min-w-0 items-center gap-2">
+            <UTooltip :text="t('identityConsole.toggleSidebar')">
+              <UDashboardSidebarCollapse
+                class="hidden lg:inline-flex"
+                :aria-label="t('identityConsole.toggleSidebar')"
+              />
+            </UTooltip>
+
+            <PageTitle
+              :title="props.title"
+              :icon="props.icon"
+            />
+          </div>
         </template>
 
         <template #right>
           <slot name="leading" />
-
-          <IdentityConsoleControls />
 
           <div
             v-if="props.backTo || $slots.actions"

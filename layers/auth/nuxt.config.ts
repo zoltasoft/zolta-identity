@@ -12,6 +12,11 @@ export default defineNuxtConfig({
       headers: {
         'cache-control': 'no-store'
       }
+    },
+    '/api/hosted-account/**': {
+      headers: {
+        'cache-control': 'no-store'
+      }
     }
   }
 })

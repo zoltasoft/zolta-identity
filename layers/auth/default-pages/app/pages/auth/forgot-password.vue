@@ -1,10 +1,15 @@
 <script setup lang="ts">
+import { useIdentityMutation } from '../../../../app/composables/useIdentityMutation'
+
 definePageMeta({
   layout: 'identity-auth',
   middleware: 'identity-live-auth'
 })
 
+const route = useRoute()
 const { forgotPassword } = useIdentityAuth()
+const mutateIdentity = useIdentityMutation()
+const hostedApplication = computed(() => typeof route.query.application === 'string' ? route.query.application : '')
 const email = ref('')
 const pending = ref(false)
 const errorMessage = ref('')
@@ -16,7 +21,14 @@ async function submit() {
   successMessage.value = ''
 
   try {
-    await forgotPassword(email.value)
+    if (hostedApplication.value) {
+      await mutateIdentity('/api/hosted-auth/password/forgot', {
+        method: 'POST',
+        body: { application: hostedApplication.value, email: email.value }
+      })
+    } else {
+      await forgotPassword(email.value)
+    }
     successMessage.value = 'If that account exists, password reset instructions have been sent.'
   } catch (error) {
     errorMessage.value = identityAuthErrorMessage(
@@ -68,7 +80,7 @@ async function submit() {
       </button>
     </form>
     <p class="identity-auth-links">
-      <NuxtLink to="/auth/login">
+      <NuxtLink :to="{ path: '/auth/login', query: hostedApplication ? { application: hostedApplication, state: route.query.state } : {} }">
         Return to sign in
       </NuxtLink>
     </p>
