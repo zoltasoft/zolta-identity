@@ -3,7 +3,7 @@
 	"version": "0.1.0",
 	"description": "Nuxt BFF authentication integration for Zolta Identity",
 	"type": "module",
-	"license": "MIT",
+	"license": "Apache-2.0",
   "exports": {
     ".": "./nuxt.config.ts",
     "./default-pages": "./default-pages/nuxt.config.ts",

@@ -1,0 +1,17 @@
+name: Developer Certificate of Origin
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  signoff:
+    name: Verify commit sign-offs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: ./scripts/check-dco.sh "origin/${{ github.base_ref }}"

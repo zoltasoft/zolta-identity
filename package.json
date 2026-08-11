@@ -4,7 +4,7 @@
   "description": "Standalone multi-project identity provider and administration console built with Nuxt and Laravel.",
   "type": "module",
   "private": true,
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": {
     "name": "Redouane Taleb",
     "url": "https://github.com/redouaneT"

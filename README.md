@@ -1,7 +1,7 @@
 # Laravel Zolta Identity
 
 [![CI](https://github.com/zoltasoft/zolta-identity/actions/workflows/ci.yml/badge.svg)](https://github.com/zoltasoft/zolta-identity/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: Apache--2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 Laravel Zolta Identity is an open-source, standalone identity provider and administration console maintained by [ZoltaSoft](https://github.com/zoltasoft). It gives multiple applications a shared account system while keeping each application's business data and preferences independent.
 
@@ -283,10 +283,14 @@ apps/identity-server/        Standalone Laravel identity API
 6. Run queue workers under a process supervisor when `QUEUE_CONNECTION` is asynchronous, and monitor authentication failures, token reuse, client rotation, and audit events.
 7. Verify the `/up` health endpoint, authentication flows, token refresh and introspection, queue processing, mail delivery, and database backups before directing production traffic.
 
+## Community core and Enterprise extensions
+
+This repository is the Apache-2.0 licensed community core. It is free to use, modify, and self-host. Future Enterprise extensions, if offered, will be separate commercial packages and are not included in this repository or covered by its Apache-2.0 license. See [COMMERCIAL.md](COMMERCIAL.md) and [TRADEMARKS.md](TRADEMARKS.md).
+
 ## Contributing and security
 
-Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), never through a public issue. Source, issues, and releases are hosted in the [ZoltaSoft repository](https://github.com/zoltasoft/zolta-identity).
+Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) and sign each contribution under the [Developer Certificate of Origin](DCO.md). Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), never through a public issue. Source, issues, and releases are hosted in the [ZoltaSoft repository](https://github.com/zoltasoft/zolta-identity).
 
 ## License
 
-Released under the [MIT License](LICENSE).
+Released under the [Apache License 2.0](LICENSE). Copyright and attribution notices are in [NOTICE](NOTICE).
