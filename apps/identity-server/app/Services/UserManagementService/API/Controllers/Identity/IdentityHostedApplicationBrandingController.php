@@ -7,6 +7,7 @@ namespace App\Services\UserManagementService\API\Controllers\Identity;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityHostedApplications;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use Zolta\Http\Controller\Controller;
 use Zolta\Http\Router\Attributes\Route;
 
@@ -19,9 +20,16 @@ final class IdentityHostedApplicationBrandingController extends Controller
     #[Route('v1/identity/projects/{project}/hosted-applications/{hosted_application}/logo', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.hosted_applications.logo.store')]
     public function store(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'logo' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,svg', 'max:2048'],
+        $validator = Validator::make($request->all(), [
+            'logo' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
         ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'The given data was invalid.',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+        $validated = $validator->validated();
         $actor = (string) $request->user('sanctum')?->getAuthIdentifier();
         $projectId = (string) $request->route('project');
         $applicationId = (string) $request->route('hosted_application');

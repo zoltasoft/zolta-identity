@@ -26,17 +26,50 @@ final class IdentityWebhookDestinationValidator
             return;
         }
 
-        $resolved = filter_var($host, FILTER_VALIDATE_IP) ? $host : gethostbyname($host);
         if ($host === 'localhost'
-            || str_ends_with($host, '.localhost')
-            || filter_var(
-                $resolved,
-                FILTER_VALIDATE_IP,
-                FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE,
-            ) === false) {
+            || str_ends_with($host, '.localhost')) {
             throw new IdentityAuthorizationException(
                 'Private webhook destinations are not allowed in production.',
             );
         }
+
+        $this->resolvePublicAddresses($host);
+    }
+
+    /** @return list<string> */
+    public function resolvePublicAddresses(string $host): array
+    {
+        $host = trim($host, '[]');
+        if (filter_var($host, FILTER_VALIDATE_IP)) {
+            $addresses = [$host];
+        } else {
+            $records = dns_get_record($host, DNS_A | DNS_AAAA) ?: [];
+            $addresses = collect($records)
+                ->map(static fn (array $record): ?string => $record['ip'] ?? $record['ipv6'] ?? null)
+                ->filter(static fn (?string $address): bool => $address !== null)
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        if ($addresses === []) {
+            throw new IdentityAuthorizationException('The webhook host could not be resolved.');
+        }
+
+        if (app()->environment('production')) {
+            foreach ($addresses as $address) {
+                if (filter_var(
+                    $address,
+                    FILTER_VALIDATE_IP,
+                    FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE,
+                ) === false) {
+                    throw new IdentityAuthorizationException(
+                        'Private webhook destinations are not allowed in production.',
+                    );
+                }
+            }
+        }
+
+        return $addresses;
     }
 }
