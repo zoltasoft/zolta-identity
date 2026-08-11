@@ -1,0 +1,190 @@
+name: zolta-identity
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:?set DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME:?set DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}
+    volumes:
+      - identity-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - identity-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/identity-server/Dockerfile
+    restart: unless-stopped
+    env_file: ${IDENTITY_ENV_FILE:-.env.production}
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: ${IDENTITY_API_PUBLIC_URL:?set IDENTITY_API_PUBLIC_URL}
+      IDENTITY_CONSOLE_URL: ${IDENTITY_CONSOLE_PUBLIC_URL:?set IDENTITY_CONSOLE_PUBLIC_URL}
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      REDIS_HOST: redis
+      FILESYSTEM_DISK: public
+      IDENTITY_BRANDING_DISK: public
+      IDENTITY_EXPOSE_DEVELOPMENT_TOKENS: "false"
+      IDENTITY_PASSWORD_RESET_URL: ${IDENTITY_PASSWORD_RESET_URL:?set IDENTITY_PASSWORD_RESET_URL}
+      TELESCOPE_ENABLED: "false"
+    volumes:
+      - identity-storage:/var/www/html/storage
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  queue:
+    build:
+      context: .
+      dockerfile: docker/identity-server/Dockerfile
+    restart: unless-stopped
+    env_file: ${IDENTITY_ENV_FILE:-.env.production}
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: ${IDENTITY_API_PUBLIC_URL:?set IDENTITY_API_PUBLIC_URL}
+      IDENTITY_CONSOLE_URL: ${IDENTITY_CONSOLE_PUBLIC_URL:?set IDENTITY_CONSOLE_PUBLIC_URL}
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      REDIS_HOST: redis
+      FILESYSTEM_DISK: public
+      IDENTITY_BRANDING_DISK: public
+      IDENTITY_EXPOSE_DEVELOPMENT_TOKENS: "false"
+      IDENTITY_PASSWORD_RESET_URL: ${IDENTITY_PASSWORD_RESET_URL:?set IDENTITY_PASSWORD_RESET_URL}
+      TELESCOPE_ENABLED: "false"
+    command: php artisan queue:work redis --sleep=3 --tries=5 --max-time=3600
+    volumes:
+      - identity-storage:/var/www/html/storage
+    depends_on:
+      api:
+        condition: service_started
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/identity-server/Dockerfile
+    restart: unless-stopped
+    env_file: ${IDENTITY_ENV_FILE:-.env.production}
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: ${IDENTITY_API_PUBLIC_URL:?set IDENTITY_API_PUBLIC_URL}
+      IDENTITY_CONSOLE_URL: ${IDENTITY_CONSOLE_PUBLIC_URL:?set IDENTITY_CONSOLE_PUBLIC_URL}
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      REDIS_HOST: redis
+      FILESYSTEM_DISK: public
+      IDENTITY_BRANDING_DISK: public
+      IDENTITY_EXPOSE_DEVELOPMENT_TOKENS: "false"
+      IDENTITY_PASSWORD_RESET_URL: ${IDENTITY_PASSWORD_RESET_URL:?set IDENTITY_PASSWORD_RESET_URL}
+      TELESCOPE_ENABLED: "false"
+    command: php artisan schedule:work
+    volumes:
+      - identity-storage:/var/www/html/storage
+    depends_on:
+      api:
+        condition: service_started
+
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/identity-server/nginx.Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${IDENTITY_API_PORT:-8100}:80"
+    volumes:
+      - identity-storage:/var/www/html/storage:ro
+    depends_on:
+      api:
+        condition: service_started
+
+  console:
+    build:
+      context: .
+      dockerfile: docker/identity-console/Dockerfile
+    restart: unless-stopped
+    env_file: ${IDENTITY_ENV_FILE:-.env.production}
+    environment:
+      NUXT_SESSION_PASSWORD: ${NUXT_SESSION_PASSWORD:?set NUXT_SESSION_PASSWORD}
+      NUXT_IDENTITY_API_URL: http://nginx
+      NUXT_IDENTITY_PROJECT: ${IDENTITY_PROJECT:?set IDENTITY_PROJECT}
+      NUXT_IDENTITY_CLIENT_ID: ${IDENTITY_CLIENT_ID:?set IDENTITY_CLIENT_ID}
+      NUXT_IDENTITY_CLIENT_SECRET: ${IDENTITY_CLIENT_SECRET:?set IDENTITY_CLIENT_SECRET}
+      NUXT_IDENTITY_HOSTED_APPLICATIONS_TOKEN: ${IDENTITY_HOSTED_APPLICATIONS_TOKEN:?set IDENTITY_HOSTED_APPLICATIONS_TOKEN}
+      NUXT_PUBLIC_IDENTITY_AUTH_PRODUCT_NAME: ${NUXT_PUBLIC_IDENTITY_AUTH_PRODUCT_NAME:-Identity Console}
+      NUXT_PUBLIC_IDENTITY_AUTH_LOGIN_REDIRECT: /admin/projects
+      NUXT_PUBLIC_IDENTITY_AUTH_LOGOUT_REDIRECT: /admin/sign-in
+      NUXT_PUBLIC_IDENTITY_AUTH_REGISTER_REDIRECT: /auth/verify-email
+    ports:
+      - "${IDENTITY_CONSOLE_PORT:-3100}:3000"
+    depends_on:
+      nginx:
+        condition: service_started
+
+  migrate:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: docker/identity-server/Dockerfile
+    env_file: ${IDENTITY_ENV_FILE:-.env.production}
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: ${IDENTITY_API_PUBLIC_URL:?set IDENTITY_API_PUBLIC_URL}
+      IDENTITY_CONSOLE_URL: ${IDENTITY_CONSOLE_PUBLIC_URL:?set IDENTITY_CONSOLE_PUBLIC_URL}
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      REDIS_HOST: redis
+      FILESYSTEM_DISK: public
+      IDENTITY_BRANDING_DISK: public
+      IDENTITY_EXPOSE_DEVELOPMENT_TOKENS: "false"
+      IDENTITY_PASSWORD_RESET_URL: ${IDENTITY_PASSWORD_RESET_URL:?set IDENTITY_PASSWORD_RESET_URL}
+      TELESCOPE_ENABLED: "false"
+    command: php artisan migrate --force
+    volumes:
+      - identity-storage:/var/www/html/storage
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  identity-mysql:
+  identity-redis:
+  identity-storage:

@@ -114,6 +114,10 @@ Copy both committed environment examples and keep the resulting `.env` files loc
 
 For production, set `APP_ENV=production`, `APP_DEBUG=false`, secure HTTPS URLs, persistent cache and queue backends, and a production database. Keep every client secret in the hosting platform's secret manager rather than a committed file.
 
+## Docker production stack
+
+The repository includes a production-oriented Compose stack with MySQL, Redis, the Laravel API, a queue worker, scheduler, Nginx, and the Nuxt SSR console. Copy `.env.production.example` to an untracked `.env.production`, replace every placeholder through your secret manager, and follow [the deployment guide](docs/deployment.md). The API and console must be placed behind HTTPS before accepting public traffic.
+
 ## Connect a consumer application
 
 Create two clients for a typical Nuxt + Laravel application:
