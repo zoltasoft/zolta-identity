@@ -3,6 +3,7 @@ import type { TableColumn } from '@nuxt/ui'
 import type {
   IdentityAuditEvent,
   IdentityClient,
+  IdentityHostedApplication,
   IdentityMembership,
   IdentityPermission,
   IdentityRole,
@@ -11,7 +12,7 @@ import type {
 
 definePageMeta({ layout: 'identity-admin', middleware: ['identity-admin'] })
 
-type ProjectTab = 'overview' | 'members' | 'access' | 'clients' | 'webhooks' | 'audit'
+type ProjectTab = 'overview' | 'members' | 'access' | 'clients' | 'hosted-applications' | 'webhooks' | 'audit'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,21 +23,46 @@ const { data: project, status, error, refresh } = await access.project(projectId
 const auditRequest = await access.audit(projectId, { immediate: false })
 const toast = useToast()
 const routeTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
-const validTabs: ProjectTab[] = ['overview', 'members', 'access', 'clients', 'webhooks', 'audit']
+const validTabs: ProjectTab[] = ['overview', 'members', 'access', 'clients', 'hosted-applications', 'webhooks', 'audit']
 const activeTab = ref<ProjectTab>(validTabs.includes(routeTab as ProjectTab) ? routeTab as ProjectTab : 'overview')
 const auditLoaded = ref(false)
 const auditVisibleCount = ref(20)
 const auditSentinel = ref<HTMLElement | null>(null)
 const clientModalOpen = ref(false)
+const hostedApplicationModalOpen = ref(false)
 const invitationModalOpen = ref(false)
 const roleModalOpen = ref(false)
 const permissionModalOpen = ref(false)
 const webhookModalOpen = ref(false)
 const clientName = ref('')
+const hostedApplicationBackgroundOptions = [
+  { label: 'Identity default', value: 'identity' },
+  { label: 'Slate', value: 'slate' },
+  { label: 'Indigo', value: 'indigo' },
+  { label: 'Emerald', value: 'emerald' },
+  { label: 'Sunset', value: 'sunset' }
+]
+const hostedApplication = reactive<{
+  id: string | null
+  name: string
+  key: string
+  primaryClientId: string
+  sandboxClientId: string
+  applicationUrl: string
+  callbackUrl: string
+  welcomeText: string
+  accentColor: string
+  backgroundPreset: 'identity' | 'slate' | 'indigo' | 'emerald' | 'sunset'
+  logoUrl: string | null
+  status: 'active' | 'disabled'
+}>({ id: null, name: '', key: '', primaryClientId: '', sandboxClientId: '', applicationUrl: '', callbackUrl: '', welcomeText: '', accentColor: '', backgroundPreset: 'identity', logoUrl: null, status: 'active' })
+const hostedApplicationLogo = ref<File | null>(null)
+const hostedApplicationLogoPreview = ref<string | null>(null)
+const removeHostedApplicationLogo = ref(false)
 const role = reactive({ name: '', slug: '', description: '' })
 const permissionForm = reactive({ key: '', name: '', description: '' })
 const invitation = reactive({ email: '', is_admin: false })
-const registration = reactive<{ mode: 'invite_only' | 'public', roleId: string | null }>({ mode: 'invite_only', roleId: null })
+const registration = reactive<{ mode: 'invite_only' | 'public', roleId: string | null, emailVerificationRequired: boolean }>({ mode: 'invite_only', roleId: null, emailVerificationRequired: true })
 const environment = reactive<{ mode: 'live' | 'sandbox', ttlMinutes: number }>({ mode: 'live', ttlMinutes: 60 })
 const webhookForm = reactive({
   url: '',
@@ -59,14 +85,32 @@ const tabs = computed(() => [
   { value: 'members', label: 'Members', icon: 'i-lucide-users', badge: project.value?.memberships.length ?? 0 },
   { value: 'access', label: 'Roles & permissions', icon: 'i-lucide-shield-check' },
   { value: 'clients', label: 'Clients', icon: 'i-lucide-server-cog', badge: project.value?.clients.length ?? 0 },
+  { value: 'hosted-applications', label: 'Hosted apps', icon: 'i-lucide-panel-top', badge: project.value?.hosted_applications.length ?? 0 },
   { value: 'webhooks', label: 'Webhooks', icon: 'i-lucide-webhook', badge: project.value?.webhooks.length ?? 0 },
   { value: 'audit', label: 'Audit', icon: 'i-lucide-scroll-text' }
 ])
 const projectRoleOptions = computed(() => (project.value?.roles ?? []).map(item => ({ label: item.name, value: item.id })))
 const projectPermissionOptions = computed(() => (project.value?.permissions ?? []).map(item => ({ label: item.key, value: item.id })))
+const primaryClientOptions = computed(() => (project.value?.clients ?? [])
+  .filter(item => item.status === 'active')
+  .map(item => ({ label: `${item.name} (${item.secret_prefix})`, value: item.id })))
 const auditEvents = computed(() => auditRequest.data.value ?? [])
 const visibleAuditEvents = computed(() => auditEvents.value.slice(0, auditVisibleCount.value))
 const hasMoreAuditEvents = computed(() => auditVisibleCount.value < auditEvents.value.length)
+const hostedApplicationPreviewStyle = computed(() => ({
+  'background': {
+    identity: 'linear-gradient(135deg, #f6f7fb, #e7ebf5)',
+    slate: 'linear-gradient(135deg, #e9eff7, #cad7e8)',
+    indigo: 'linear-gradient(135deg, #eef0ff, #d5dcff)',
+    emerald: 'linear-gradient(135deg, #e9f8f2, #c7ecdc)',
+    sunset: 'linear-gradient(135deg, #fff2ea, #ffd9cd)'
+  }[hostedApplication.backgroundPreset],
+  '--hosted-app-accent': hostedApplication.accentColor || '#3157d5'
+}))
+const hostedApplicationPreviewLogo = computed(() => {
+  if (removeHostedApplicationLogo.value) return null
+  return hostedApplicationLogoPreview.value || hostedApplication.logoUrl
+})
 
 const memberColumns: TableColumn<IdentityMembership>[] = [
   { accessorKey: 'user', header: 'Member' },
@@ -112,6 +156,7 @@ watch(project, (value) => {
   if (!value) return
   registration.mode = value.registration_mode
   registration.roleId = value.registration_role_id
+  registration.emailVerificationRequired = value.email_verification_required
   environment.mode = value.mode
   environment.ttlMinutes = value.sandbox_ttl_minutes
 }, { immediate: true })
@@ -151,6 +196,86 @@ async function rotateClient(clientId: string) {
   await refreshProjectAndAudit()
 }
 
+function openHostedApplication(application?: IdentityHostedApplication) {
+  Object.assign(hostedApplication, application
+    ? {
+        id: application.id,
+        name: application.name,
+        key: application.key,
+        primaryClientId: application.primary_client_id,
+        sandboxClientId: application.sandbox_client_id ?? '',
+        applicationUrl: application.application_url,
+        callbackUrl: application.callback_url,
+        welcomeText: application.appearance.welcome_text ?? '',
+        accentColor: application.appearance.accent_color ?? '',
+        backgroundPreset: application.appearance.background_preset,
+        logoUrl: application.appearance.logo_url,
+        status: application.status
+      }
+    : { id: null, name: '', key: '', primaryClientId: '', sandboxClientId: '', applicationUrl: '', callbackUrl: '', welcomeText: '', accentColor: '', backgroundPreset: 'identity', logoUrl: null, status: 'active' })
+  hostedApplicationLogo.value = null
+  hostedApplicationLogoPreview.value = null
+  removeHostedApplicationLogo.value = false
+  hostedApplicationModalOpen.value = true
+}
+
+function hostedApplicationAppearance() {
+  return {
+    welcome_text: hostedApplication.welcomeText.trim() || null,
+    accent_color: hostedApplication.accentColor || null,
+    background_preset: hostedApplication.backgroundPreset,
+    logo_url: hostedApplication.logoUrl
+  }
+}
+
+function chooseHostedApplicationLogo(event: Event) {
+  const input = event.target as HTMLInputElement
+  const logo = input.files?.[0] ?? null
+  if (hostedApplicationLogoPreview.value) URL.revokeObjectURL(hostedApplicationLogoPreview.value)
+  hostedApplicationLogo.value = logo
+  hostedApplicationLogoPreview.value = logo ? URL.createObjectURL(logo) : null
+  removeHostedApplicationLogo.value = false
+}
+
+async function saveHostedApplication() {
+  let applicationId = hostedApplication.id
+  if (hostedApplication.id) {
+    await access.updateHostedApplication(projectId.value, hostedApplication.id, {
+      name: hostedApplication.name,
+      primary_client_id: hostedApplication.primaryClientId,
+      sandbox_client_id: hostedApplication.sandboxClientId || null,
+      application_url: hostedApplication.applicationUrl,
+      callback_url: hostedApplication.callbackUrl,
+      status: hostedApplication.status,
+      appearance: hostedApplicationAppearance()
+    })
+  } else {
+    const created = await access.createHostedApplication(projectId.value, {
+      name: hostedApplication.name,
+      key: hostedApplication.key,
+      primary_client_id: hostedApplication.primaryClientId,
+      sandbox_client_id: hostedApplication.sandboxClientId || null,
+      application_url: hostedApplication.applicationUrl,
+      callback_url: hostedApplication.callbackUrl,
+      appearance: hostedApplicationAppearance()
+    })
+    applicationId = created.id
+  }
+
+  if (applicationId && hostedApplicationLogo.value) {
+    await access.uploadHostedApplicationLogo(projectId.value, applicationId, hostedApplicationLogo.value)
+  } else if (applicationId && removeHostedApplicationLogo.value) {
+    await access.removeHostedApplicationLogo(projectId.value, applicationId)
+  }
+  hostedApplicationModalOpen.value = false
+  await refreshProjectAndAudit()
+}
+
+async function deleteHostedApplication(applicationId: string) {
+  await access.removeHostedApplication(projectId.value, applicationId)
+  await refreshProjectAndAudit()
+}
+
 async function toggleClient(client: IdentityClient) {
   await access.setClientStatus(projectId.value, client.id, client.status === 'active' ? 'disabled' : 'active')
   await refreshProjectAndAudit()
@@ -185,7 +310,8 @@ async function sendInvitation() {
 async function saveRegistrationPolicy() {
   await access.updateProjectRegistration(projectId.value, {
     registration_mode: registration.mode,
-    registration_role_id: registration.mode === 'public' ? registration.roleId : null
+    registration_role_id: registration.mode === 'public' ? registration.roleId : null,
+    email_verification_required: registration.emailVerificationRequired
   })
   toast.add({ title: 'Registration policy saved', color: 'success' })
   await refreshProjectAndAudit()
@@ -435,12 +561,30 @@ function selectMembership(membership: IdentityMembership) {
                 />
               </UFormField>
 
+              <UFormField
+                label="Email verification"
+                description="Choose whether new public registrations must verify ownership of their email address."
+              >
+                <USelect
+                  v-model="registration.emailVerificationRequired"
+                  :items="[
+                    { label: 'Required', value: true },
+                    { label: 'Not required', value: false }
+                  ]"
+                  class="w-full"
+                />
+              </UFormField>
+
               <UAlert
                 :color="registration.mode === 'public' ? 'warning' : 'info'"
                 variant="soft"
                 icon="i-lucide-info"
                 :title="registration.mode === 'public' ? 'Public enrollment enabled' : 'Invitation required'"
-                :description="registration.mode === 'public' ? 'Anyone using an approved client can create a project membership.' : 'New members need a one-time invitation token.'"
+                :description="registration.mode === 'public'
+                  ? (registration.emailVerificationRequired
+                    ? 'Anyone using an approved client can create a project membership after verifying their email.'
+                    : 'Anyone using an approved client can create a verified project membership immediately.')
+                  : 'New members need a one-time invitation token.'"
               />
 
               <UButton
@@ -765,6 +909,165 @@ function selectMembership(membership: IdentityMembership) {
         </IdentityTableCard>
       </template>
 
+      <template v-else-if="activeTab === 'hosted-applications'">
+        <IdentityTableCard
+          title="Hosted applications"
+          description="Give every product a secure Identity flow, its own client binding, redirect policy, and hosted-page brand."
+          :count="project.hosted_applications.length"
+        >
+          <template #actions>
+            <UButton
+              label="New hosted app"
+              icon="i-lucide-plus"
+              @click="openHostedApplication()"
+            />
+          </template>
+          <div class="mb-5 flex gap-3 rounded-xl border border-default bg-elevated/40 p-4 text-sm">
+            <UIcon
+              name="i-lucide-shield-check"
+              class="mt-0.5 size-5 shrink-0 text-primary"
+            />
+            <div>
+              <p class="font-medium text-highlighted">
+                Identity hosts the sign-in experience; your application keeps its confidential client secret.
+              </p>
+              <p class="mt-1 text-muted">
+                Configure only the allowed landing and callback URLs here, then tailor the page users see during authentication.
+              </p>
+            </div>
+          </div>
+          <div
+            v-if="project.hosted_applications.length"
+            class="grid gap-4 xl:grid-cols-2"
+          >
+            <article
+              v-for="application in project.hosted_applications"
+              :key="application.id"
+              class="overflow-hidden rounded-xl border border-default bg-default shadow-sm"
+            >
+              <div class="flex items-start justify-between gap-4 border-b border-default p-5">
+                <div class="flex min-w-0 items-center gap-3">
+                  <div
+                    class="grid size-11 shrink-0 place-items-center rounded-xl bg-muted text-sm font-bold text-highlighted"
+                    :style="application.appearance.accent_color ? { borderColor: application.appearance.accent_color, borderWidth: '2px' } : {}"
+                  >
+                    <img
+                      v-if="application.appearance.logo_url"
+                      :src="application.appearance.logo_url"
+                      :alt="`${application.name} logo`"
+                      class="size-8 rounded object-contain"
+                    >
+                    <span v-else>{{ application.name.slice(0, 2).toUpperCase() }}</span>
+                  </div>
+                  <div class="min-w-0">
+                    <p class="truncate font-semibold text-highlighted">
+                      {{ application.name }}
+                    </p>
+                    <p class="truncate font-mono text-xs text-muted">
+                      {{ application.key }}
+                    </p>
+                  </div>
+                </div>
+                <UBadge
+                  :color="application.status === 'active' ? 'success' : 'neutral'"
+                  variant="soft"
+                  class="capitalize"
+                >
+                  {{ application.status }}
+                </UBadge>
+              </div>
+              <div class="grid gap-3 p-5 text-sm">
+                <div
+                  class="rounded-lg border border-default p-3"
+                  :style="{
+                    'background': {
+                      identity: 'linear-gradient(135deg, #f6f7fb, #e7ebf5)',
+                      slate: 'linear-gradient(135deg, #e9eff7, #cad7e8)',
+                      indigo: 'linear-gradient(135deg, #eef0ff, #d5dcff)',
+                      emerald: 'linear-gradient(135deg, #e9f8f2, #c7ecdc)',
+                      sunset: 'linear-gradient(135deg, #fff2ea, #ffd9cd)'
+                    }[application.appearance.background_preset],
+                    '--hosted-app-accent': application.appearance.accent_color || '#3157d5'
+                  }"
+                >
+                  <div class="rounded-md border border-white/70 bg-white/85 p-3 shadow-sm">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-muted">
+                      {{ application.name }} · Sign in
+                    </p>
+                    <div class="mt-3 h-2 w-3/5 rounded bg-muted" />
+                    <div class="mt-2 h-2 w-4/5 rounded bg-muted" />
+                    <div
+                      class="mt-3 h-7 rounded"
+                      style="background: var(--hosted-app-accent)"
+                    />
+                  </div>
+                </div>
+                <dl class="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-muted">
+                      Application URL
+                    </dt>
+                    <dd
+                      class="mt-1 truncate font-mono text-xs text-highlighted"
+                      :title="application.application_url"
+                    >
+                      {{ application.application_url }}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-muted">
+                      Callback URL
+                    </dt>
+                    <dd
+                      class="mt-1 truncate font-mono text-xs text-highlighted"
+                      :title="application.callback_url"
+                    >
+                      {{ application.callback_url }}
+                    </dd>
+                  </div>
+                </dl>
+                <div class="flex items-center justify-between gap-3 border-t border-default pt-3">
+                  <p
+                    class="truncate font-mono text-xs text-muted"
+                    :title="application.primary_client_id"
+                  >
+                    Client · {{ application.primary_client_id }}
+                  </p>
+                  <UBadge
+                    color="neutral"
+                    variant="subtle"
+                  >
+                    {{ application.appearance.background_preset }} theme
+                  </UBadge>
+                  <div class="flex gap-1">
+                    <UButton
+                      label="Configure"
+                      icon="i-lucide-settings-2"
+                      color="neutral"
+                      variant="outline"
+                      @click="openHostedApplication(application)"
+                    />
+                    <UButton
+                      icon="i-lucide-trash-2"
+                      color="error"
+                      variant="ghost"
+                      aria-label="Delete hosted application"
+                      @click="deleteHostedApplication(application.id)"
+                    />
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+          <p
+            v-else
+            class="py-8 text-center text-sm text-muted"
+          >
+            No hosted applications are configured for this project.
+          </p>
+        </IdentityTableCard>
+      </template>
+
       <template v-else-if="activeTab === 'webhooks'">
         <IdentityTableCard
           title="Cleanup webhooks"
@@ -947,6 +1250,328 @@ function selectMembership(membership: IdentityMembership) {
                 type="submit"
                 label="Create client"
                 icon="i-lucide-plus"
+              />
+            </div>
+          </form>
+        </template>
+      </UModal>
+      <UModal
+        v-model:open="hostedApplicationModalOpen"
+        :title="hostedApplication.id ? 'Configure hosted application' : 'Create hosted application'"
+        description="A hosted application defines the secure handoff between Identity and one product. Client secrets remain in that product's BFF."
+        :ui="{ content: 'sm:max-w-6xl' }"
+      >
+        <template #body>
+          <form
+            class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]"
+            @submit.prevent="saveHostedApplication"
+          >
+            <div class="space-y-5">
+              <section class="rounded-xl border border-default">
+                <div class="border-b border-default px-5 py-4">
+                  <div class="flex items-center gap-2">
+                    <UIcon
+                      name="i-lucide-app-window"
+                      class="size-4 text-primary"
+                    />
+                    <h3 class="font-semibold text-highlighted">
+                      Application identity
+                    </h3>
+                  </div>
+                  <p class="mt-1 text-sm text-muted">
+                    These values identify the product in hosted URLs and to its users.
+                  </p>
+                </div>
+                <div class="grid gap-4 p-5 sm:grid-cols-2">
+                  <UFormField
+                    label="Application name"
+                    required
+                    class="sm:col-span-2"
+                  >
+                    <UInput
+                      v-model="hostedApplication.name"
+                      autofocus
+                      placeholder="Job Tracker"
+                      class="w-full"
+                    />
+                  </UFormField>
+                  <UFormField
+                    label="Application key"
+                    description="Used by the consuming BFF to start hosted authentication."
+                    required
+                    class="sm:col-span-2"
+                  >
+                    <UInput
+                      v-model="hostedApplication.key"
+                      :disabled="Boolean(hostedApplication.id)"
+                      placeholder="job-tracker"
+                      class="w-full font-mono"
+                    />
+                  </UFormField>
+                </div>
+              </section>
+
+              <section class="rounded-xl border border-default">
+                <div class="border-b border-default px-5 py-4">
+                  <div class="flex items-center gap-2">
+                    <UIcon
+                      name="i-lucide-key-round"
+                      class="size-4 text-primary"
+                    />
+                    <h3 class="font-semibold text-highlighted">
+                      Client binding
+                    </h3>
+                  </div>
+                  <p class="mt-1 text-sm text-muted">
+                    Bind the confidential clients Identity uses internally. Their secrets never enter this form.
+                  </p>
+                </div>
+                <div class="grid gap-4 p-5">
+                  <UFormField
+                    label="Primary client"
+                    description="An active client from this project."
+                    required
+                  >
+                    <USelect
+                      v-model="hostedApplication.primaryClientId"
+                      :items="primaryClientOptions"
+                      placeholder="Select a client"
+                      class="w-full"
+                    />
+                  </UFormField>
+                  <UFormField
+                    label="Sandbox client ID"
+                    description="Optional active client ID from a sandbox project for demo access."
+                  >
+                    <UInput
+                      v-model="hostedApplication.sandboxClientId"
+                      placeholder="Optional sandbox client UUID"
+                      class="w-full font-mono"
+                    />
+                  </UFormField>
+                </div>
+              </section>
+
+              <section class="rounded-xl border border-default">
+                <div class="border-b border-default px-5 py-4">
+                  <div class="flex items-center gap-2">
+                    <UIcon
+                      name="i-lucide-route"
+                      class="size-4 text-primary"
+                    />
+                    <h3 class="font-semibold text-highlighted">
+                      Redirect policy
+                    </h3>
+                  </div>
+                  <p class="mt-1 text-sm text-muted">
+                    Identity redirects only to these approved product endpoints after authentication.
+                  </p>
+                </div>
+                <div class="grid gap-4 p-5">
+                  <UFormField
+                    label="Application URL"
+                    required
+                  >
+                    <UInput
+                      v-model="hostedApplication.applicationUrl"
+                      type="url"
+                      placeholder="https://app.example.com/dashboard"
+                      class="w-full font-mono"
+                    />
+                  </UFormField>
+                  <UFormField
+                    label="Callback URL"
+                    required
+                  >
+                    <UInput
+                      v-model="hostedApplication.callbackUrl"
+                      type="url"
+                      placeholder="https://app.example.com/api/auth/callback"
+                      class="w-full font-mono"
+                    />
+                  </UFormField>
+                </div>
+              </section>
+
+              <section class="rounded-xl border border-default">
+                <div class="border-b border-default px-5 py-4">
+                  <div class="flex items-center gap-2">
+                    <UIcon
+                      name="i-lucide-palette"
+                      class="size-4 text-primary"
+                    />
+                    <h3 class="font-semibold text-highlighted">
+                      Hosted page appearance
+                    </h3>
+                  </div>
+                  <p class="mt-1 text-sm text-muted">
+                    Make the secure Identity pages recognizably part of this product without custom HTML or CSS.
+                  </p>
+                </div>
+                <div class="space-y-4 p-5">
+                  <div class="flex items-center gap-3">
+                    <div class="grid size-12 shrink-0 place-items-center rounded-xl border border-default bg-muted">
+                      <img
+                        v-if="hostedApplicationPreviewLogo"
+                        :src="hostedApplicationPreviewLogo"
+                        :alt="`${hostedApplication.name || 'Application'} logo preview`"
+                        class="size-9 rounded object-contain"
+                      >
+                      <UIcon
+                        v-else
+                        name="i-lucide-image"
+                        class="size-5 text-muted"
+                      />
+                    </div>
+                    <div class="min-w-0 flex-1">
+                      <label class="block text-sm font-medium text-highlighted">
+                        Logo
+                      </label>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                        class="mt-1 block w-full text-sm"
+                        @change="chooseHostedApplicationLogo"
+                      >
+                      <p class="mt-1 text-xs text-muted">
+                        PNG, JPEG, WebP, or SVG up to 2 MB.
+                      </p>
+                    </div>
+                    <UButton
+                      v-if="hostedApplicationPreviewLogo"
+                      label="Remove"
+                      color="error"
+                      variant="ghost"
+                      @click="() => { hostedApplicationLogo = null; hostedApplicationLogoPreview = null; removeHostedApplicationLogo = true }"
+                    />
+                  </div>
+                  <UFormField
+                    label="Welcome text"
+                    description="Optional short message shown below the product-specific sign-in introduction."
+                  >
+                    <UTextarea
+                      v-model="hostedApplication.welcomeText"
+                      :rows="2"
+                      maxlength="280"
+                      class="w-full"
+                    />
+                  </UFormField>
+                  <div class="grid gap-4 sm:grid-cols-2">
+                    <UFormField label="Accent colour">
+                      <UInput
+                        v-model="hostedApplication.accentColor"
+                        type="color"
+                        class="w-full"
+                      />
+                    </UFormField>
+                    <UFormField label="Background">
+                      <USelect
+                        v-model="hostedApplication.backgroundPreset"
+                        :items="hostedApplicationBackgroundOptions"
+                        class="w-full"
+                      />
+                    </UFormField>
+                  </div>
+                </div>
+              </section>
+
+              <section
+                v-if="hostedApplication.id"
+                class="rounded-xl border border-default"
+              >
+                <div class="flex items-center justify-between gap-4 px-5 py-4">
+                  <div>
+                    <h3 class="font-semibold text-highlighted">
+                      Availability
+                    </h3>
+                    <p class="mt-1 text-sm text-muted">
+                      Disabled applications cannot begin a new hosted authentication flow.
+                    </p>
+                  </div>
+                  <USelect
+                    v-model="hostedApplication.status"
+                    :items="[{ label: 'Active', value: 'active' }, { label: 'Disabled', value: 'disabled' }]"
+                    class="w-32"
+                  />
+                </div>
+              </section>
+            </div>
+
+            <aside class="h-fit space-y-4 lg:sticky lg:top-4">
+              <div class="rounded-xl border border-default bg-elevated/40 p-4">
+                <p class="text-sm font-semibold text-highlighted">
+                  Hosted page preview
+                </p>
+                <p class="mt-1 text-xs text-muted">
+                  A live representation of the default Identity sign-in page.
+                </p>
+                <div
+                  class="mt-4 rounded-xl border border-default p-3"
+                  :style="hostedApplicationPreviewStyle"
+                >
+                  <div class="rounded-lg border border-white/70 bg-white/90 p-4 shadow-sm">
+                    <div class="flex items-center gap-2">
+                      <div class="grid size-7 place-items-center rounded bg-muted">
+                        <img
+                          v-if="hostedApplicationPreviewLogo"
+                          :src="hostedApplicationPreviewLogo"
+                          alt=""
+                          class="size-5 object-contain"
+                        >
+                        <span
+                          v-else
+                          class="text-[10px] font-bold text-muted"
+                        >{{ (hostedApplication.name || 'App').slice(0, 2).toUpperCase() }}</span>
+                      </div>
+                      <p class="truncate text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        {{ hostedApplication.name || 'Your application' }}
+                      </p>
+                    </div>
+                    <h4 class="mt-4 text-base font-semibold text-slate-900">
+                      Sign in
+                    </h4>
+                    <p class="mt-1 text-xs leading-5 text-slate-500">
+                      Use your {{ hostedApplication.name || 'application' }} account to continue.
+                    </p>
+                    <p
+                      v-if="hostedApplication.welcomeText"
+                      class="mt-2 text-xs leading-5 text-slate-500"
+                    >
+                      {{ hostedApplication.welcomeText }}
+                    </p>
+                    <div class="mt-4 h-8 rounded-md border border-slate-200 bg-white" />
+                    <div class="mt-2 h-8 rounded-md border border-slate-200 bg-white" />
+                    <div
+                      class="mt-3 h-8 rounded-md"
+                      style="background: var(--hosted-app-accent)"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div class="rounded-xl border border-default p-4 text-sm">
+                <div class="flex gap-2">
+                  <UIcon
+                    name="i-lucide-lock-keyhole"
+                    class="mt-0.5 size-4 shrink-0 text-primary"
+                  />
+                  <p class="text-muted">
+                    Identity controls the form, session, validation, and redirects. Appearance settings cannot inject custom code.
+                  </p>
+                </div>
+              </div>
+            </aside>
+
+            <div class="flex justify-end gap-2 border-t border-default pt-5 lg:col-span-2">
+              <UButton
+                label="Cancel"
+                color="neutral"
+                variant="ghost"
+                @click="() => { hostedApplicationModalOpen = false }"
+              />
+              <UButton
+                type="submit"
+                :label="hostedApplication.id ? 'Save application' : 'Create application'"
+                icon="i-lucide-save"
               />
             </div>
           </form>

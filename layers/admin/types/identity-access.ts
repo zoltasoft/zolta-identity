@@ -8,6 +8,7 @@ export type IdentityProject = {
   sandbox_ttl_minutes: number
   registration_mode: 'invite_only' | 'public'
   registration_role_id: string | null
+  email_verification_required: boolean
 }
 
 export type IdentityClient = {
@@ -51,6 +52,24 @@ export type IdentityWebhook = {
   secret?: string
 }
 
+export type IdentityHostedApplication = {
+  id: string
+  project_id: string
+  primary_client_id: string
+  sandbox_client_id: string | null
+  key: string
+  name: string
+  application_url: string
+  callback_url: string
+  appearance: {
+    welcome_text: string | null
+    accent_color: string | null
+    background_preset: 'identity' | 'slate' | 'indigo' | 'emerald' | 'sunset'
+    logo_url: string | null
+  }
+  status: 'active' | 'disabled'
+}
+
 export type IdentityMembership = {
   id: string
   project_id: string
@@ -70,6 +89,7 @@ export type IdentityProjectDetails = IdentityProject & {
   roles: IdentityRole[]
   permissions: IdentityPermission[]
   webhooks: IdentityWebhook[]
+  hosted_applications: IdentityHostedApplication[]
 }
 
 export type {

@@ -2,7 +2,8 @@ import { z } from 'zod'
 
 const bodySchema = z.object({
   registration_mode: z.enum(['invite_only', 'public']),
-  registration_role_id: z.string().uuid().nullable()
+  registration_role_id: z.string().uuid().nullable(),
+  email_verification_required: z.boolean()
 })
 
 export default defineEventHandler(async (event) => {

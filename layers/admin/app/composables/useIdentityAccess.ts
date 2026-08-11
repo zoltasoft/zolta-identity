@@ -3,6 +3,7 @@ import type {
   IdentityAccountSession,
   IdentityAuditEvent,
   IdentityClient,
+  IdentityHostedApplication,
   IdentityInstallationUser,
   IdentityGlobalPermission,
   IdentityGlobalRole,
@@ -37,7 +38,7 @@ export function useIdentityAccess() {
       mutation<IdentityProject>('/api/identity/projects', { method: 'POST', body }),
     updateProjectRegistration: (
       projectId: string,
-      body: { registration_mode: 'invite_only' | 'public', registration_role_id: string | null }
+      body: { registration_mode: 'invite_only' | 'public', registration_role_id: string | null, email_verification_required: boolean }
     ) => mutation(`/api/identity/projects/${projectId}/registration`, { method: 'PATCH', body }),
     updateProjectEnvironment: (
       projectId: string,
@@ -71,6 +72,24 @@ export function useIdentityAccess() {
       mutation(`/api/auth/sessions/${sessionId}`, { method: 'DELETE' }),
     createClient: (projectId: string, name: string) =>
       mutation<IdentityClient>(`/api/identity/projects/${projectId}/clients`, { method: 'POST', body: { name } }),
+    createHostedApplication: (
+      projectId: string,
+      body: { name: string, key: string, primary_client_id: string, sandbox_client_id: string | null, application_url: string, callback_url: string, appearance: IdentityHostedApplication['appearance'] }
+    ) => mutation<IdentityHostedApplication>(`/api/identity/projects/${projectId}/hosted-applications`, { method: 'POST', body }),
+    updateHostedApplication: (
+      projectId: string,
+      applicationId: string,
+      body: { name: string, primary_client_id: string, sandbox_client_id: string | null, application_url: string, callback_url: string, status: 'active' | 'disabled', appearance: IdentityHostedApplication['appearance'] }
+    ) => mutation(`/api/identity/projects/${projectId}/hosted-applications/${applicationId}`, { method: 'PATCH', body }),
+    uploadHostedApplicationLogo: (projectId: string, applicationId: string, logo: File) => {
+      const formData = new FormData()
+      formData.set('logo', logo)
+      return mutation<IdentityHostedApplication>(`/api/identity/projects/${projectId}/hosted-applications/${applicationId}/logo`, { method: 'POST', body: formData })
+    },
+    removeHostedApplicationLogo: (projectId: string, applicationId: string) =>
+      mutation(`/api/identity/projects/${projectId}/hosted-applications/${applicationId}/logo`, { method: 'DELETE' }),
+    removeHostedApplication: (projectId: string, applicationId: string) =>
+      mutation(`/api/identity/projects/${projectId}/hosted-applications/${applicationId}`, { method: 'DELETE' }),
     rotateClientSecret: (projectId: string, clientId: string) =>
       mutation<IdentityClient>(`/api/identity/projects/${projectId}/clients/${clientId}/rotate-secret`, { method: 'POST' }),
     setClientStatus: (projectId: string, clientId: string, status: 'active' | 'disabled') =>
