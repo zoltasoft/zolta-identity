@@ -11,5 +11,5 @@ interface ManageIdentitySessions
 
     public function logout(string $accessToken): void;
 
-    public function revokeSession(string $userId, string $familyId): void;
+    public function revokeSession(string $userId, string $familyId, string $accessToken): void;
 }

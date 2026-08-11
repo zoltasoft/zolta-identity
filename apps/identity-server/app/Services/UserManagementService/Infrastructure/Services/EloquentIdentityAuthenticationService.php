@@ -748,10 +748,12 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
 
     public function listSessions(string $userId, string $accessToken): array
     {
-        $currentFamily = PersonalAccessToken::findToken($accessToken)?->identity_refresh_family_id;
+        $currentToken = $this->identityAccessToken($accessToken);
+        $currentFamily = $currentToken->identity_refresh_family_id;
 
         return IdentityRefreshToken::query()
             ->where('user_id', $userId)
+            ->where('project_id', $currentToken->identity_project_id)
             ->whereNull('revoked_at')
             ->where('expires_at', '>', now())
             ->orderByDesc('created_at')
@@ -774,11 +776,13 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             })->values()->all();
     }
 
-    public function revokeSession(string $userId, string $familyId): void
+    public function revokeSession(string $userId, string $familyId, string $accessToken): void
     {
+        $currentToken = $this->identityAccessToken($accessToken);
         $owned = IdentityRefreshToken::query()
             ->where('user_id', $userId)
             ->where('family_id', $familyId)
+            ->where('project_id', $currentToken->identity_project_id)
             ->exists();
 
         if (! $owned) {
@@ -796,6 +800,16 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             'session',
             $familyId,
         );
+    }
+
+    private function identityAccessToken(string $accessToken): PersonalAccessToken
+    {
+        $token = PersonalAccessToken::findToken($accessToken);
+        if (! $token || ! $token->identity_project_id || ! $token->identity_client_id) {
+            throw new IdentityAuthenticationException('Invalid access token.');
+        }
+
+        return $token;
     }
 
     public function acceptInvitation(array $attributes): array

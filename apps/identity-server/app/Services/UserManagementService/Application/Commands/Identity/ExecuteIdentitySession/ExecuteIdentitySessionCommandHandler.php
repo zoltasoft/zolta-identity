@@ -49,6 +49,8 @@ final readonly class ExecuteIdentitySessionCommandHandler
         $this->sessions->revokeSession(
             $actorUserId,
             (string) $command->input['session'],
+            $command->accessToken
+                ?? throw new InvalidArgumentException('An Identity access token is required.'),
         );
 
         return ['message' => 'Session revoked.'];

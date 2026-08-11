@@ -19,6 +19,15 @@ final class RequireIdentityAccessToken
             return response()->json(['message' => 'A project-scoped identity token is required.'], 401);
         }
 
+        $routeProjectId = $request->route('project');
+        if ($routeProjectId !== null
+            && (string) $routeProjectId !== (string) $token->identity_project_id
+            && ! (bool) $request->user()?->is_system_admin) {
+            return response()->json([
+                'message' => 'The identity token is not authorized for this project.',
+            ], 403);
+        }
+
         return $next($request);
     }
 }

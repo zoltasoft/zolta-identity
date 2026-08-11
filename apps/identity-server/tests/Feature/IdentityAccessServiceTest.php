@@ -20,6 +20,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\PersonalAccessToken;
 use Tests\TestCase;
 
 final class IdentityAccessServiceTest extends TestCase
@@ -618,6 +619,11 @@ final class IdentityAccessServiceTest extends TestCase
             'logo_path' => 'identity/hosted-applications/'.$created['id'].'/'.basename(parse_url($uploaded['appearance']['logo_url'], PHP_URL_PATH)),
         ]);
         $this->withToken($accessToken)
+            ->post("/api/v1/identity/projects/{$project->id}/hosted-applications/{$created['id']}/logo", [
+                'logo' => UploadedFile::fake()->create('unsafe.svg', 16, 'image/svg+xml'),
+            ])
+            ->assertUnprocessable();
+        $this->withToken($accessToken)
             ->deleteJson("/api/v1/identity/projects/{$project->id}/hosted-applications/{$created['id']}/logo")
             ->assertOk();
         $this->assertDatabaseHas('identity_hosted_applications', [
@@ -921,6 +927,48 @@ final class IdentityAccessServiceTest extends TestCase
         $this->assertSame($otherProject->id, $otherRole->fresh()->project_id);
         $this->assertSame($otherProject->id, $otherMembership->fresh()->project_id);
         $this->assertSame($otherProject->id, $otherWebhook->fresh()->project_id);
+    }
+
+    public function test_a_project_scoped_token_cannot_access_another_project_even_when_the_user_administers_it(): void
+    {
+        [$user, $project, $client, $secret] = $this->identityFixture(true);
+        [, $otherProject] = $this->identityFixture();
+        IdentityProjectMembership::query()->create([
+            'project_id' => $otherProject->id,
+            'user_id' => $user->id,
+            'status' => 'active',
+            'is_admin' => true,
+        ]);
+        $accessToken = $this->login($user, $project, $client, $secret)['access_token'];
+
+        $this->withToken($accessToken)
+            ->getJson("/api/v1/identity/projects/{$otherProject->id}")
+            ->assertForbidden()
+            ->assertJsonPath('message', 'The identity token is not authorized for this project.');
+    }
+
+    public function test_identity_sessions_are_limited_to_the_access_token_project(): void
+    {
+        [$user, $project, $client, $secret] = $this->identityFixture();
+        [, $otherProject, $otherClient, $otherSecret] = $this->identityFixture();
+        IdentityProjectMembership::query()->create([
+            'project_id' => $otherProject->id,
+            'user_id' => $user->id,
+            'status' => 'active',
+            'is_admin' => false,
+        ]);
+        $projectSession = $this->login($user, $project, $client, $secret);
+        $otherSession = $this->login($user, $otherProject, $otherClient, $otherSecret);
+        $otherFamily = PersonalAccessToken::findToken($otherSession['access_token'])?->identity_refresh_family_id;
+
+        $this->withToken($projectSession['access_token'])
+            ->getJson('/api/v1/identity/auth/sessions')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.project.id', $project->id);
+        $this->withToken($projectSession['access_token'])
+            ->deleteJson("/api/v1/identity/auth/sessions/{$otherFamily}")
+            ->assertForbidden();
     }
 
     /** @return array{User, IdentityProject, IdentityProjectClient, string, IdentityProjectMembership} */
