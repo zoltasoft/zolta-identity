@@ -1,0 +1,10 @@
+.git
+.github
+node_modules
+.nuxt
+.output
+apps/identity-server/vendor
+apps/identity-server/.env
+.env
+.env.production
+*.log

@@ -46,7 +46,7 @@ final class IdentityArchitectureTest extends TestCase
         $routes = collect(app('router')->getRoutes()->getRoutes())
             ->filter(static fn (Route $route): bool => str_starts_with($route->uri(), 'api/v1/identity/'));
 
-        $this->assertCount(40, $routes);
+        $this->assertCount(55, $routes);
 
         $routes->each(function (Route $route): void {
             $this->assertSame(

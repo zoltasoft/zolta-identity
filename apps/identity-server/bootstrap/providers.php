@@ -1,7 +1,14 @@
 <?php
 
+use App\Providers\AppServiceProvider;
+use App\Providers\TelescopeServiceProvider;
+use App\Services\UserManagementService\Infrastructure\Providers\UserManagementServiceProvider;
+use Laravel\Telescope\TelescopeApplicationServiceProvider;
+
 return [
-    App\Providers\AppServiceProvider::class,
-    App\Providers\TelescopeServiceProvider::class,
-    App\Services\UserManagementService\Infrastructure\Providers\UserManagementServiceProvider::class,
+    AppServiceProvider::class,
+    UserManagementServiceProvider::class,
+    ...class_exists(TelescopeApplicationServiceProvider::class)
+        ? [TelescopeServiceProvider::class]
+        : [],
 ];

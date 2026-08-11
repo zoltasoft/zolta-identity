@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "d17f1de0c20d4090f431fffd347098d3",
+    "content-hash": "936216ffdef61bc0cd030383040262ba",
     "packages": [
         {
             "name": "brick/math",
@@ -7389,11 +7389,17 @@
         },
         {
             "name": "zolta/cqrs",
-            "version": "dev-main",
-            "dist": {
-                "type": "path",
-                "url": "../../../zolta-framework/packages/cqrs",
+            "version": "v2.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/zoltasoft/cqrs.git",
                 "reference": "f7ff404aa2be95ff1eb4791b7e3e5a8985017853"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/zoltasoft/cqrs/zipball/f7ff404aa2be95ff1eb4791b7e3e5a8985017853",
+                "reference": "f7ff404aa2be95ff1eb4791b7e3e5a8985017853",
+                "shasum": ""
             },
             "require": {
                 "php": "^8.2",
@@ -7402,7 +7408,7 @@
                 "symfony/property-access": "^7.3",
                 "symfony/property-info": "^7.3",
                 "symfony/serializer": "^7.3",
-                "zolta/forge": "dev-main"
+                "zolta/forge": "^1.0"
             },
             "require-dev": {
                 "larastan/larastan": "^3.8",
@@ -7426,59 +7432,16 @@
                 ]
             },
             "autoload": {
+                "files": [
+                    "src/Support/helpers.php"
+                ],
                 "psr-4": {
                     "Zolta\\Cqrs\\": "src/Core/",
                     "Zolta\\Cqrs\\Laravel\\": "src/Adapters/Laravel/",
                     "Zolta\\Cqrs\\Support\\": "src/Support/"
-                },
-                "files": [
-                    "src/Support/helpers.php"
-                ]
-            },
-            "autoload-dev": {
-                "psr-4": {
-                    "Zolta\\Tests\\": "tests/"
                 }
             },
-            "scripts": {
-                "cache-zolta-maps": [
-                    "@php artisan zolta:routes:cache --quiet || echo \"Zolta: routes cache skipped (Laravel app not fully set up yet)\""
-                ],
-                "test": [
-                    "APP_SERVICES_CACHE=/tmp/cqrs-services.php APP_PACKAGES_CACHE=/tmp/cqrs-packages.php APP_CONFIG_CACHE=/tmp/cqrs-config.php APP_ROUTES_CACHE=/tmp/cqrs-routes.php APP_EVENTS_CACHE=/tmp/cqrs-events.php PHPUNIT_RESULT_CACHE=/tmp/cqrs-phpunit.result.cache phpunit -c phpunit.xml"
-                ],
-                "test:unit": [
-                    "APP_SERVICES_CACHE=/tmp/cqrs-services.php APP_PACKAGES_CACHE=/tmp/cqrs-packages.php APP_CONFIG_CACHE=/tmp/cqrs-config.php APP_ROUTES_CACHE=/tmp/cqrs-routes.php APP_EVENTS_CACHE=/tmp/cqrs-events.php PHPUNIT_RESULT_CACHE=/tmp/cqrs-phpunit.result.cache phpunit -c phpunit.xml --testsuite Unit"
-                ],
-                "test:integration": [
-                    "APP_SERVICES_CACHE=/tmp/cqrs-services.php APP_PACKAGES_CACHE=/tmp/cqrs-packages.php APP_CONFIG_CACHE=/tmp/cqrs-config.php APP_ROUTES_CACHE=/tmp/cqrs-routes.php APP_EVENTS_CACHE=/tmp/cqrs-events.php PHPUNIT_RESULT_CACHE=/tmp/cqrs-phpunit.result.cache phpunit -c phpunit.xml --testsuite Integration"
-                ],
-                "lint": [
-                    "vendor/bin/pint"
-                ],
-                "lint:test": [
-                    "vendor/bin/pint --test"
-                ],
-                "analyse": [
-                    "APP_SERVICES_CACHE=/tmp/cqrs-services.php APP_PACKAGES_CACHE=/tmp/cqrs-packages.php APP_CONFIG_CACHE=/tmp/cqrs-config.php APP_ROUTES_CACHE=/tmp/cqrs-routes.php APP_EVENTS_CACHE=/tmp/cqrs-events.php vendor/bin/phpstan analyse"
-                ],
-                "rector": [
-                    "vendor/bin/rector process --dry-run"
-                ],
-                "rector:fix": [
-                    "vendor/bin/rector process"
-                ],
-                "md": [
-                    "HOME=/tmp PDEPEND_CACHE_DIR=/tmp/pdepend-cache vendor/bin/phpmd src text phpmd.xml --exclude 'src/Symfony/Console/Command/*'"
-                ],
-                "qa": [
-                    "@lint:test",
-                    "@analyse",
-                    "@md",
-                    "@rector",
-                    "@test"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
@@ -7504,18 +7467,25 @@
                 "transaction-management",
                 "zolta"
             ],
-            "transport-options": {
-                "symlink": true,
-                "relative": true
-            }
+            "support": {
+                "issues": "https://github.com/zoltasoft/cqrs/issues",
+                "source": "https://github.com/zoltasoft/cqrs/tree/v2.0.0"
+            },
+            "time": "2026-08-02T11:44:45+00:00"
         },
         {
             "name": "zolta/forge",
-            "version": "dev-main",
+            "version": "1.0.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/zoltasoft/forge.git",
+                "reference": "2211ffc1d9c0d2975952629dfed498904d989cab"
+            },
             "dist": {
-                "type": "path",
-                "url": "../../../zolta-framework/packages/forge",
-                "reference": "5b18105a145d8dcff2a3bb99d785876224fcb50d"
+                "type": "zip",
+                "url": "https://api.github.com/repos/zoltasoft/forge/zipball/2211ffc1d9c0d2975952629dfed498904d989cab",
+                "reference": "2211ffc1d9c0d2975952629dfed498904d989cab",
+                "shasum": ""
             },
             "require": {
                 "php": "^8.2",
@@ -7537,58 +7507,18 @@
             },
             "type": "library",
             "autoload": {
-                "psr-4": {
-                    "Zolta\\Framework\\": "src/Framework/",
-                    "Zolta\\Domain\\": "src/Domain/",
-                    "Zolta\\Exceptions\\": "src/Exceptions/",
-                    "Zolta\\Support\\": "src/Support/",
-                    "Zolta\\Serialization\\": "src/Serialization/"
-                },
                 "files": [
                     "src/Support/helpers.php"
-                ]
-            },
-            "autoload-dev": {
+                ],
                 "psr-4": {
-                    "Zolta\\Tests\\": "tests/"
+                    "Zolta\\Domain\\": "src/Domain/",
+                    "Zolta\\Support\\": "src/Support/",
+                    "Zolta\\Framework\\": "src/Framework/",
+                    "Zolta\\Exceptions\\": "src/Exceptions/",
+                    "Zolta\\Serialization\\": "src/Serialization/"
                 }
             },
-            "scripts": {
-                "test": [
-                    "APP_SERVICES_CACHE=/tmp/forge-services.php APP_PACKAGES_CACHE=/tmp/forge-packages.php APP_CONFIG_CACHE=/tmp/forge-config.php APP_ROUTES_CACHE=/tmp/forge-routes.php APP_EVENTS_CACHE=/tmp/forge-events.php PHPUNIT_RESULT_CACHE=/tmp/forge-phpunit.result.cache phpunit -c phpunit.xml"
-                ],
-                "test:unit": [
-                    "APP_SERVICES_CACHE=/tmp/forge-services.php APP_PACKAGES_CACHE=/tmp/forge-packages.php APP_CONFIG_CACHE=/tmp/forge-config.php APP_ROUTES_CACHE=/tmp/forge-routes.php APP_EVENTS_CACHE=/tmp/forge-events.php PHPUNIT_RESULT_CACHE=/tmp/forge-phpunit.result.cache phpunit -c phpunit.xml --testsuite Unit"
-                ],
-                "test:integration": [
-                    "APP_SERVICES_CACHE=/tmp/forge-services.php APP_PACKAGES_CACHE=/tmp/forge-packages.php APP_CONFIG_CACHE=/tmp/forge-config.php APP_ROUTES_CACHE=/tmp/forge-routes.php APP_EVENTS_CACHE=/tmp/forge-events.php PHPUNIT_RESULT_CACHE=/tmp/forge-phpunit.result.cache phpunit -c phpunit.xml --testsuite Integration"
-                ],
-                "lint": [
-                    "vendor/bin/pint"
-                ],
-                "lint:test": [
-                    "vendor/bin/pint --test"
-                ],
-                "analyse": [
-                    "APP_SERVICES_CACHE=/tmp/forge-services.php APP_PACKAGES_CACHE=/tmp/forge-packages.php APP_CONFIG_CACHE=/tmp/forge-config.php APP_ROUTES_CACHE=/tmp/forge-routes.php APP_EVENTS_CACHE=/tmp/forge-events.php vendor/bin/phpstan analyse"
-                ],
-                "rector": [
-                    "vendor/bin/rector process --dry-run"
-                ],
-                "rector:fix": [
-                    "vendor/bin/rector process"
-                ],
-                "md": [
-                    "HOME=/tmp PDEPEND_CACHE_DIR=/tmp/pdepend-cache vendor/bin/phpmd src text phpmd.xml --exclude 'src/Symfony/Console/Command/*'"
-                ],
-                "qa": [
-                    "@lint:test",
-                    "@analyse",
-                    "@md",
-                    "@rector",
-                    "@test"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
@@ -7616,42 +7546,38 @@
                 "value-object",
                 "zolta"
             ],
-            "transport-options": {
-                "symlink": true,
-                "relative": true
-            }
+            "support": {
+                "issues": "https://github.com/zoltasoft/forge/issues",
+                "source": "https://github.com/zoltasoft/forge/tree/1.0.2"
+            },
+            "time": "2026-07-06T16:31:44+00:00"
         },
         {
             "name": "zolta/framework",
-            "version": "dev-main",
-            "dist": {
-                "type": "path",
-                "url": "../../../zolta-framework",
+            "version": "v1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/zoltasoft/zolta-framework.git",
                 "reference": "e58660f330c40c3e2a6a130fbfa85300d5a5a963"
             },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/zoltasoft/zolta-framework/zipball/e58660f330c40c3e2a6a130fbfa85300d5a5a963",
+                "reference": "e58660f330c40c3e2a6a130fbfa85300d5a5a963",
+                "shasum": ""
+            },
             "require": {
-                "zolta/cqrs": "dev-main",
-                "zolta/forge": "dev-main",
-                "zolta/http": "dev-main"
+                "zolta/cqrs": "^2.0",
+                "zolta/forge": "^1.0",
+                "zolta/http": "^2.0"
             },
-            "type": "library",
-            "extra": {
-                "laravel": {
-                    "providers": [
-                        "Zolta\\Framework\\Providers\\ZoltaFrameworkServiceProvider"
-                    ]
-                }
-            },
+            "type": "metapackage",
             "autoload": {
                 "psr-4": {
                     "Zolta\\Framework\\": "src/"
                 }
             },
-            "scripts": {
-                "zolta:publish": [
-                    "@php artisan vendor:publish --tag=zolta-config"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
@@ -7662,24 +7588,27 @@
                     "role": "Founder & Lead Developer"
                 }
             ],
-            "description": "A Composer package for the Zolta framework, providing an umbrella installer and unified Laravel configuration.",
+            "description": "A Composer meta-package for the Zolta framework, providing an umbrella installer for Zolta packages.",
             "homepage": "https://github.com/zoltasoft/zolta-framework",
             "support": {
                 "issues": "https://github.com/zolta/framework/issues",
                 "source": "https://github.com/zolta/framework"
             },
-            "transport-options": {
-                "symlink": true,
-                "relative": true
-            }
+            "time": "2026-08-05T10:49:56+00:00"
         },
         {
             "name": "zolta/http",
-            "version": "dev-main",
+            "version": "v2.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/zoltasoft/http.git",
+                "reference": "00c749088d900168c76faf084a1c17d4562f13eb"
+            },
             "dist": {
-                "type": "path",
-                "url": "../../../zolta-framework/packages/http",
-                "reference": "71055f140d0213098c86501a06e1dcfcc445d2ba"
+                "type": "zip",
+                "url": "https://api.github.com/repos/zoltasoft/http/zipball/00c749088d900168c76faf084a1c17d4562f13eb",
+                "reference": "00c749088d900168c76faf084a1c17d4562f13eb",
+                "shasum": ""
             },
             "require": {
                 "php": "^8.2",
@@ -7688,7 +7617,7 @@
                 "symfony/property-access": "^7.3",
                 "symfony/property-info": "^7.3",
                 "symfony/serializer": "^7.3",
-                "zolta/forge": "dev-main"
+                "zolta/forge": "^1.0"
             },
             "require-dev": {
                 "larastan/larastan": "^3.8",
@@ -7707,85 +7636,39 @@
                         "Zolta\\Http\\Service\\Laravel\\Providers\\ZoltaHttpServiceProvider",
                         "Zolta\\Http\\Router\\Laravel\\Providers\\ZoltaRouterServiceProvider",
                         "Zolta\\Http\\Request\\Laravel\\Providers\\ZoltaRequestServiceProvider",
-                        "Zolta\\Http\\Authorization\\Laravel\\Providers\\ZoltaAuthorizationServiceProvider",
-                        "Zolta\\Http\\Identity\\Laravel\\Providers\\ZoltaIdentityServiceProvider"
+                        "Zolta\\Http\\Authorization\\Laravel\\Providers\\ZoltaAuthorizationServiceProvider"
                     ]
                 },
                 "zolta-framework-adapter": [
                     "Zolta\\Http\\Service\\Laravel\\LaravelHttpAdapter",
                     "Zolta\\Http\\Router\\Laravel\\LaravelRouterAdapter",
                     "Zolta\\Http\\Request\\Laravel\\LaravelRequestAdapter",
-                    "Zolta\\Http\\Response\\Laravel\\LaravelResponseAdapter",
-                    "Zolta\\Http\\Identity\\Laravel\\LaravelIdentityAdapter"
+                    "Zolta\\Http\\Response\\Laravel\\LaravelResponseAdapter"
                 ]
             },
             "autoload": {
-                "psr-4": {
-                    "Zolta\\Http\\Controller\\": "src/Controller/",
-                    "Zolta\\Http\\Controller\\Laravel\\": "src/Controller/Adapters/Laravel/",
-                    "Zolta\\Http\\Exceptions\\": "src/Exceptions/",
-                    "Zolta\\Http\\Exceptions\\Laravel\\": "src/Exceptions/Adapters/Laravel/",
-                    "Zolta\\Http\\Service\\": "src/Service/",
-                    "Zolta\\Http\\Service\\Laravel\\": "src/Service/Adapters/Laravel/",
-                    "Zolta\\Http\\Authorization\\": "src/Authorization/",
-                    "Zolta\\Http\\Authorization\\Laravel\\": "src/Authorization/Adapters/Laravel/",
-                    "Zolta\\Http\\Router\\": "src/Router/",
-                    "Zolta\\Http\\Router\\Laravel\\": "src/Router/Adapters/Laravel/",
-                    "Zolta\\Http\\Request\\": "src/Request/",
-                    "Zolta\\Http\\Request\\Laravel\\": "src/Request/Adapters/Laravel/",
-                    "Zolta\\Http\\Response\\": "src/Response/",
-                    "Zolta\\Http\\Response\\Laravel\\": "src/Response/Adapters/Laravel/",
-                    "Zolta\\Http\\Identity\\Laravel\\": "src/Identity/Adapters/Laravel/",
-                    "Zolta\\Http\\Support\\": "src/Support/"
-                },
                 "files": [
                     "src/Support/helpers.php"
-                ]
-            },
-            "autoload-dev": {
+                ],
                 "psr-4": {
-                    "Zolta\\Tests\\": "tests/"
+                    "Zolta\\Http\\Router\\": "src/Router/",
+                    "Zolta\\Http\\Request\\": "src/Request/",
+                    "Zolta\\Http\\Service\\": "src/Service/",
+                    "Zolta\\Http\\Support\\": "src/Support/",
+                    "Zolta\\Http\\Response\\": "src/Response/",
+                    "Zolta\\Http\\Controller\\": "src/Controller/",
+                    "Zolta\\Http\\Exceptions\\": "src/Exceptions/",
+                    "Zolta\\Http\\Authorization\\": "src/Authorization/",
+                    "Zolta\\Http\\Router\\Laravel\\": "src/Router/Adapters/Laravel/",
+                    "Zolta\\Http\\Request\\Laravel\\": "src/Request/Adapters/Laravel/",
+                    "Zolta\\Http\\Service\\Laravel\\": "src/Service/Adapters/Laravel/",
+                    "Zolta\\Http\\Response\\Laravel\\": "src/Response/Adapters/Laravel/",
+                    "Zolta\\Http\\Controller\\Laravel\\": "src/Controller/Adapters/Laravel/",
+                    "Zolta\\Http\\Exceptions\\Laravel\\": "src/Exceptions/Adapters/Laravel/",
+                    "Zolta\\Http\\Authorization\\Laravel\\": "src/Authorization/Adapters/Laravel/"
                 }
             },
-            "scripts": {
-                "cache-zolta-maps": [
-                    "@php artisan zolta:routes:cache --quiet || echo \"Zolta: routes cache skipped (Laravel app not fully set up yet)\""
-                ],
-                "test": [
-                    "APP_SERVICES_CACHE=/tmp/http-services.php APP_PACKAGES_CACHE=/tmp/http-packages.php APP_CONFIG_CACHE=/tmp/http-config.php APP_ROUTES_CACHE=/tmp/http-routes.php APP_EVENTS_CACHE=/tmp/http-events.php PHPUNIT_RESULT_CACHE=/tmp/http-phpunit.result.cache phpunit -c phpunit.xml"
-                ],
-                "test:unit": [
-                    "APP_SERVICES_CACHE=/tmp/http-services.php APP_PACKAGES_CACHE=/tmp/http-packages.php APP_CONFIG_CACHE=/tmp/http-config.php APP_ROUTES_CACHE=/tmp/http-routes.php APP_EVENTS_CACHE=/tmp/http-events.php PHPUNIT_RESULT_CACHE=/tmp/http-phpunit.result.cache phpunit -c phpunit.xml --testsuite Unit"
-                ],
-                "test:integration": [
-                    "APP_SERVICES_CACHE=/tmp/http-services.php APP_PACKAGES_CACHE=/tmp/http-packages.php APP_CONFIG_CACHE=/tmp/http-config.php APP_ROUTES_CACHE=/tmp/http-routes.php APP_EVENTS_CACHE=/tmp/http-events.php PHPUNIT_RESULT_CACHE=/tmp/http-phpunit.result.cache phpunit -c phpunit.xml --testsuite Integration"
-                ],
-                "lint": [
-                    "vendor/bin/pint"
-                ],
-                "lint:test": [
-                    "vendor/bin/pint --test"
-                ],
-                "analyse": [
-                    "APP_SERVICES_CACHE=/tmp/http-services.php APP_PACKAGES_CACHE=/tmp/http-packages.php APP_CONFIG_CACHE=/tmp/http-config.php APP_ROUTES_CACHE=/tmp/http-routes.php APP_EVENTS_CACHE=/tmp/http-events.php vendor/bin/phpstan analyse"
-                ],
-                "rector": [
-                    "vendor/bin/rector process --dry-run"
-                ],
-                "rector:fix": [
-                    "vendor/bin/rector process"
-                ],
-                "md": [
-                    "HOME=/tmp PDEPEND_CACHE_DIR=/tmp/pdepend-cache vendor/bin/phpmd src text phpmd.xml --exclude 'src/Adapters/Symfony/Console/Command/*'"
-                ],
-                "qa": [
-                    "@lint:test",
-                    "@analyse",
-                    "@md",
-                    "@rector",
-                    "@test"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
@@ -7812,10 +7695,11 @@
                 "symfony",
                 "zolta"
             ],
-            "transport-options": {
-                "symlink": true,
-                "relative": true
-            }
+            "support": {
+                "issues": "https://github.com/zoltasoft/http/issues",
+                "source": "https://github.com/zoltasoft/http/tree/v2.0.0"
+            },
+            "time": "2026-08-02T11:44:43+00:00"
         }
     ],
     "packages-dev": [
@@ -11090,12 +10974,7 @@
     ],
     "aliases": [],
     "minimum-stability": "dev",
-    "stability-flags": {
-        "zolta/framework": 20,
-        "zolta/forge": 20,
-        "zolta/cqrs": 20,
-        "zolta/http": 20
-    },
+    "stability-flags": [],
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {

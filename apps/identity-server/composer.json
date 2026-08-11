@@ -33,41 +33,11 @@
         "laravel/sanctum": "^4.0",
         "laravel/socialite": "^5.21",
         "laravel/tinker": "^3.0",
-        "zolta/framework": "dev-main",
-        "zolta/forge": "dev-main",
-        "zolta/cqrs": "dev-main",
-        "zolta/http": "dev-main"
+        "zolta/framework": "^1.0",
+        "zolta/forge": "^1.0",
+        "zolta/cqrs": "^2.0",
+        "zolta/http": "^2.0"
     },
-    "repositories": [
-        {
-            "type": "path",
-            "url": "../../../zolta-framework",
-            "options": {
-                "symlink": true
-            }
-        },
-        {
-            "type": "path",
-            "url": "../../../zolta-framework/packages/forge",
-            "options": {
-                "symlink": true
-            }
-        },
-        {
-            "type": "path",
-            "url": "../../../zolta-framework/packages/cqrs",
-            "options": {
-                "symlink": true
-            }
-        },
-        {
-            "type": "path",
-            "url": "../../../zolta-framework/packages/http",
-            "options": {
-                "symlink": true
-            }
-        }
-    ],
     "require-dev": {
         "fakerphp/faker": "^1.23",
         "laravel/boost": "^2.2",
