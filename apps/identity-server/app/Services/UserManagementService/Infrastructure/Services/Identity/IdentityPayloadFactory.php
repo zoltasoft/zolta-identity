@@ -11,7 +11,6 @@ use App\Services\UserManagementService\Domain\Aggregates\IdentityProject as Doma
 use App\Services\UserManagementService\Domain\Aggregates\IdentityRole as DomainIdentityRole;
 use App\Services\UserManagementService\Domain\Aggregates\IdentityWebhook as DomainIdentityWebhook;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHostedApplication;
-use Illuminate\Support\Facades\Storage;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectClient;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectMembership;
@@ -19,6 +18,7 @@ use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityPr
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectRole;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityWebhookEndpoint;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
+use Illuminate\Support\Facades\Storage;
 
 final class IdentityPayloadFactory
 {
@@ -194,13 +194,24 @@ final class IdentityPayloadFactory
     {
         $appearance = $application->appearance ?? [];
         $disk = (string) config('zolta.identity.hosted_applications.branding_disk', 'public');
+        $logoPath = $application->logo_path;
 
         return [
             'welcome_text' => $appearance['welcome_text'] ?? null,
             'accent_color' => $appearance['accent_color'] ?? null,
             'background_preset' => $appearance['background_preset'] ?? 'identity',
-            'logo_url' => $application->logo_path === null ? null : Storage::disk($disk)->url($application->logo_path),
+            'logo_url' => $this->safeHostedApplicationLogoUrl($disk, $logoPath),
         ];
+    }
+
+    private function safeHostedApplicationLogoUrl(string $disk, ?string $logoPath): ?string
+    {
+        if ($logoPath === null
+            || ! in_array(strtolower(pathinfo($logoPath, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'webp'], true)) {
+            return null;
+        }
+
+        return Storage::disk($disk)->url($logoPath);
     }
 
     /** @return array<string, mixed> */

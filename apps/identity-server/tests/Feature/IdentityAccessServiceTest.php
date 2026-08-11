@@ -618,6 +618,13 @@ final class IdentityAccessServiceTest extends TestCase
             'id' => $created['id'],
             'logo_path' => 'identity/hosted-applications/'.$created['id'].'/'.basename(parse_url($uploaded['appearance']['logo_url'], PHP_URL_PATH)),
         ]);
+        IdentityHostedApplication::query()->whereKey($created['id'])->update([
+            'logo_path' => 'identity/hosted-applications/'.$created['id'].'/legacy.svg',
+        ]);
+        $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->getJson('/api/v1/identity/hosted-applications/job-tracker/configuration')
+            ->assertOk()
+            ->assertJsonPath('data.appearance.logo_url', null);
         $this->withToken($accessToken)
             ->post("/api/v1/identity/projects/{$project->id}/hosted-applications/{$created['id']}/logo", [
                 'logo' => UploadedFile::fake()->create('unsafe.svg', 16, 'image/svg+xml'),
