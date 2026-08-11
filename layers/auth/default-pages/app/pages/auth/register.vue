@@ -28,7 +28,7 @@ async function submit() {
 
   try {
     if (hosted.value) {
-      await mutateIdentity('/api/hosted-auth/register', {
+      const result = await mutateIdentity<{ redirectUrl?: string }>('/api/hosted-auth/register', {
         method: 'POST',
         body: {
           application: hostedApplication.value,
@@ -36,6 +36,10 @@ async function submit() {
           ...form
         }
       })
+      if (result.redirectUrl) {
+        await navigateTo(result.redirectUrl, { external: true })
+        return
+      }
       await navigateTo({
         path: '/auth/verify-email',
         query: { application: hostedApplication.value, state: hostedState.value }

@@ -21,7 +21,7 @@ declare module '@nuxt/schema' {
         clientSecret: string
       }
     }
-    identityHostedApplications: Record<string, unknown>
+    identityHostedApplicationsToken: string
   }
 }
 

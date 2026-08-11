@@ -1,5 +1,45 @@
+<script setup lang="ts">
+type HostedAppearance = {
+  welcome_text: string | null
+  accent_color: string | null
+  background_preset: 'identity' | 'slate' | 'indigo' | 'emerald' | 'sunset'
+  logo_url: string | null
+}
+
+type HostedBrand = {
+  key: string
+  name: string
+  appearance: HostedAppearance
+}
+
+const route = useRoute()
+const applicationKey = computed(() => typeof route.query.application === 'string' ? route.query.application : '')
+const { data: experience } = await useAsyncData<HostedBrand | null>(
+  'identity-auth-brand',
+  async () => {
+    if (!applicationKey.value) return null
+    const response = await $fetch<{ application: HostedBrand }>('/api/hosted-auth/context', {
+      query: { application: applicationKey.value }
+    })
+    return response.application
+  },
+  { watch: [applicationKey] }
+)
+const brand = computed(() => experience.value)
+const backgroundPreset = computed(() => brand.value?.appearance.background_preset ?? 'identity')
+const brandStyle = computed(() => brand.value?.appearance.accent_color
+  ? { '--identity-auth-accent': brand.value.appearance.accent_color }
+  : {})
+
+provide('identity-auth-brand', brand)
+</script>
+
 <template>
-  <main class="identity-auth-layout">
+  <main
+    class="identity-auth-layout"
+    :class="`identity-auth-layout--${backgroundPreset}`"
+    :style="brandStyle"
+  >
     <div class="identity-auth-controls">
       <IdentityConsoleControls />
     </div>
@@ -16,6 +56,7 @@
   --identity-auth-border: #e1e5ee;
   --identity-auth-input-border: #cdd3df;
   --identity-auth-status: #f1f4fb;
+  --identity-auth-accent: #3157d5;
   color-scheme: light;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -52,6 +93,11 @@ body {
   position: relative;
 }
 
+.identity-auth-layout--slate { --identity-auth-bg: #e9eff7; background: linear-gradient(135deg, #e9eff7, #cad7e8); }
+.identity-auth-layout--indigo { --identity-auth-bg: #eef0ff; background: linear-gradient(135deg, #eef0ff, #d5dcff); }
+.identity-auth-layout--emerald { --identity-auth-bg: #e9f8f2; background: linear-gradient(135deg, #e9f8f2, #c7ecdc); }
+.identity-auth-layout--sunset { --identity-auth-bg: #fff2ea; background: linear-gradient(135deg, #fff2ea, #ffd9cd); }
+
 .identity-auth-card {
   box-sizing: border-box;
   width: min(100%, 28rem);
@@ -71,6 +117,22 @@ body {
   text-transform: uppercase;
 }
 
+.identity-auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.5rem;
+}
+
+.identity-auth-brand .identity-auth-eyebrow { margin: 0; }
+
+.identity-auth-logo {
+  width: 2rem;
+  height: 2rem;
+  object-fit: contain;
+  border-radius: 0.45rem;
+}
+
 .identity-auth-card h1 {
   margin: 0;
   font-size: 1.75rem;
@@ -80,6 +142,13 @@ body {
   margin: 0.75rem 0 1.5rem;
   color: var(--identity-auth-muted);
   line-height: 1.5;
+}
+
+.identity-auth-welcome {
+  margin: -0.85rem 0 1.5rem;
+  color: var(--identity-auth-muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 .identity-auth-form {
@@ -107,15 +176,15 @@ body {
 }
 
 .identity-auth-field input:focus {
-  border-color: #3157d5;
-  outline: 3px solid rgba(49, 87, 213, 0.14);
+  border-color: var(--identity-auth-accent);
+  outline: 3px solid color-mix(in srgb, var(--identity-auth-accent) 18%, transparent);
 }
 
 .identity-auth-button {
   min-height: 2.75rem;
   border: 0;
   border-radius: 0.65rem;
-  background: #3157d5;
+  background: var(--identity-auth-accent);
   color: #fff;
   cursor: pointer;
   font: inherit;

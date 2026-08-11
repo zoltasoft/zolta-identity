@@ -14,15 +14,23 @@ type HostedConnection = {
   apiUrl: string
   project: string
   clientId: string
-  clientSecret: string
 }
 
 type HostedApplication = {
+  key: string
   name: string
   callbackUrl: string
   applicationUrl?: string
+  appearance: HostedApplicationAppearance
   primary: HostedConnection
   sandbox?: HostedConnection
+}
+
+type HostedApplicationAppearance = {
+  welcomeText: string | null
+  accentColor: string | null
+  backgroundPreset: 'identity' | 'slate' | 'indigo' | 'emerald' | 'sunset'
+  logoUrl: string | null
 }
 
 type HostedFlow = {
@@ -41,12 +49,26 @@ type IdentityEnvelope<T> = { data: T }
 
 const identityPrefix = '/api/v1/identity'
 
-function hostedApplications(event: H3Event): Record<string, HostedApplication> {
-  return (useRuntimeConfig(event).identityHostedApplications ?? {}) as Record<string, HostedApplication>
+type HostedApplicationConfiguration = {
+  key: string
+  name: string
+  application_url: string
+  callback_url: string
+  appearance?: {
+    welcome_text?: string | null
+    accent_color?: string | null
+    background_preset?: HostedApplicationAppearance['backgroundPreset']
+    logo_url?: string | null
+  }
+  primary: {
+    project: string
+    client_id: string
+  }
+  sandbox: { project: string, client_id: string } | null
 }
 
 function assertConnection(connection: HostedConnection | undefined): HostedConnection {
-  if (!connection?.apiUrl || !connection.project || !connection.clientId || !connection.clientSecret) {
+  if (!connection?.apiUrl || !connection.project || !connection.clientId) {
     throw createError({
       statusCode: 503,
       statusMessage: 'This hosted Identity application is not fully configured.'
@@ -56,34 +78,61 @@ function assertConnection(connection: HostedConnection | undefined): HostedConne
   return connection
 }
 
-export function identityHostedApplication(
+async function resolveHostedApplication(
   event: H3Event,
-  application: string
-): HostedApplication {
-  const configured = hostedApplications(event)[application]
-  if (!configured?.name || !configured.callbackUrl) {
-    throw createError({ statusCode: 404, statusMessage: 'Hosted Identity application not found.' })
+  path: string
+): Promise<HostedApplication> {
+  const config = useRuntimeConfig(event)
+  const apiUrl = String(config.identity?.apiUrl ?? '')
+  const token = String(config.identityHostedApplicationsToken ?? '')
+  if (!apiUrl || !token) {
+    throw createError({ statusCode: 503, statusMessage: 'Hosted Identity resolution is not configured.' })
+  }
+
+  const target = requestTarget({ apiUrl } as HostedConnection, path)
+  const response = await $fetch<IdentityEnvelope<HostedApplicationConfiguration>>(target.path, {
+    baseURL: target.baseURL,
+    headers: { 'X-Internal-Token': token }
+  })
+  const application = response.data
+  if (!application?.name || !application.callback_url || !application.primary) {
+    throw createError({ statusCode: 502, statusMessage: 'Identity returned an invalid hosted application configuration.' })
   }
 
   return {
-    ...configured,
-    primary: assertConnection(configured.primary),
-    ...(configured.sandbox ? { sandbox: assertConnection(configured.sandbox) } : {})
+    key: application.key,
+    name: application.name,
+    applicationUrl: application.application_url,
+    callbackUrl: application.callback_url,
+    appearance: {
+      welcomeText: application.appearance?.welcome_text ?? null,
+      accentColor: application.appearance?.accent_color ?? null,
+      backgroundPreset: application.appearance?.background_preset ?? 'identity',
+      logoUrl: application.appearance?.logo_url ?? null
+    },
+    primary: assertConnection({
+      apiUrl,
+      project: application.primary.project,
+      clientId: application.primary.client_id
+    }),
+    sandbox: application.sandbox
+      ? assertConnection({ apiUrl, project: application.sandbox.project, clientId: application.sandbox.client_id })
+      : undefined
   }
 }
 
-export function identityHostedApplicationByClient(
+export async function identityHostedApplication(
+  event: H3Event,
+  application: string
+): Promise<HostedApplication> {
+  return await resolveHostedApplication(event, `/hosted-applications/${encodeURIComponent(application)}/configuration`)
+}
+
+export async function identityHostedApplicationByClient(
   event: H3Event,
   clientId: string
-): { key: string, application: HostedApplication } {
-  const match = Object.entries(hostedApplications(event)).find(([, application]) => (
-    application.primary?.clientId === clientId || application.sandbox?.clientId === clientId
-  ))
-  if (!match) {
-    throw createError({ statusCode: 404, statusMessage: 'Hosted Identity application not found.' })
-  }
-
-  return { key: match[0], application: identityHostedApplication(event, match[0]) }
+): Promise<HostedApplication> {
+  return await resolveHostedApplication(event, `/hosted-clients/${encodeURIComponent(clientId)}/configuration`)
 }
 
 function requestTarget(connection: HostedConnection, path: string) {
@@ -160,12 +209,31 @@ function accountSession(event: H3Event) {
   })
 }
 
-function credentials(connection: HostedConnection) {
-  return {
-    project: connection.project,
-    client_id: connection.clientId,
-    client_secret: connection.clientSecret
+async function hostedRequest<T>(
+  event: H3Event,
+  application: HostedApplication,
+  path: string,
+  body: Record<string, unknown> = {},
+  accessToken?: string
+): Promise<T> {
+  const config = useRuntimeConfig(event)
+  const apiUrl = String(config.identity?.apiUrl ?? '')
+  const token = String(config.identityHostedApplicationsToken ?? '')
+  if (!apiUrl || !token) {
+    throw createError({ statusCode: 503, statusMessage: 'Hosted Identity authentication is not configured.' })
   }
+  const target = requestTarget({ apiUrl, project: '', clientId: '' }, `/hosted-applications/${encodeURIComponent(application.key)}/auth${path}`)
+  const response = await $fetch<IdentityEnvelope<T>>(target.path, {
+    baseURL: target.baseURL,
+    method: 'POST',
+    body,
+    headers: {
+      'X-Internal-Token': token,
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+    }
+  })
+
+  return response.data
 }
 
 function assertState(state: string): string {
@@ -177,19 +245,16 @@ function assertState(state: string): string {
 }
 
 async function handoff(
-  connection: HostedConnection,
+  event: H3Event,
   application: HostedApplication,
   identity: IdentityLoginData,
   state: string
 ): Promise<{ redirectUrl: string }> {
-  const result = await clientRequest<{ code: string, redirect_uri: string }>(
-    connection,
-    '/auth/handoff',
-    {
-      client_id: connection.clientId,
-      client_secret: connection.clientSecret,
-      redirect_uri: application.callbackUrl
-    },
+  const result = await hostedRequest<{ code: string, redirect_uri: string }>(
+    event,
+    application,
+    '/handoff',
+    {},
     identity.access_token
   )
   const redirect = new URL(result.redirect_uri)
@@ -219,11 +284,9 @@ function flowSession(event: H3Event) {
   })
 }
 
-async function context(connection: HostedConnection, name: 'primary' | 'sandbox') {
-  const value = await clientRequest<Omit<IdentityAuthenticationContext, 'connection'>>(
-    connection,
-    '/auth/context',
-    credentials(connection)
+async function context(event: H3Event, application: HostedApplication, name: 'primary' | 'sandbox') {
+  const value = await hostedRequest<Omit<IdentityAuthenticationContext, 'connection'>>(
+    event, application, '/context', { connection: name }
   )
 
   return { ...value, connection: name }
@@ -232,12 +295,12 @@ async function context(connection: HostedConnection, name: 'primary' | 'sandbox'
 export async function identityHostedExperience(
   event: H3Event,
   applicationKey: string
-): Promise<IdentityAuthenticationExperience & { application: { key: string, name: string } }> {
-  const application = identityHostedApplication(event, applicationKey)
+): Promise<IdentityAuthenticationExperience & { application: { key: string, name: string, appearance: HostedApplicationAppearance } }> {
+  const application = await identityHostedApplication(event, applicationKey)
   return {
-    application: { key: applicationKey, name: application.name },
-    primary: await context(application.primary, 'primary'),
-    sandbox: application.sandbox ? await context(application.sandbox, 'sandbox') : null
+    application: { key: applicationKey, name: application.name, appearance: application.appearance },
+    primary: await context(event, application, 'primary'),
+    sandbox: application.sandbox ? await context(event, application, 'sandbox') : null
   }
 }
 
@@ -245,11 +308,11 @@ export async function identityHostedAccountContext(
   event: H3Event,
   applicationKey: string
 ) {
-  const application = identityHostedApplication(event, applicationKey)
+  const application = await identityHostedApplication(event, applicationKey)
   const session = await accountSession(event)
   const account = session.data
   const authenticated = account.application === applicationKey && Boolean(account.identity)
-  const primary = await context(application.primary, 'primary')
+  const primary = await context(event, application, 'primary')
 
   return {
     application: {
@@ -268,11 +331,8 @@ export async function identityHostedAccountLogin(
   applicationKey: string,
   input: IdentityLoginInput
 ) {
-  const application = identityHostedApplication(event, applicationKey)
-  const identity = await clientRequest<IdentityLoginData>(application.primary, '/auth/login', {
-    ...credentials(application.primary),
-    ...input
-  })
+  const application = await identityHostedApplication(event, applicationKey)
+  const identity = await hostedRequest<IdentityLoginData>(event, application, '/login', input)
 
   if (!identity.identity.user.email_verified) {
     throw createError({
@@ -292,7 +352,7 @@ export async function identityHostedAccountLogout(event: H3Event): Promise<void>
   const account = session.data
   try {
     if (account.application && account.identity?.access_token) {
-      const application = identityHostedApplication(event, account.application)
+      const application = await identityHostedApplication(event, account.application)
       const connection = account.connection === 'sandbox'
         ? assertConnection(application.sandbox)
         : application.primary
@@ -314,7 +374,7 @@ export async function identityHostedAccountRequest<T>(
   path: string,
   options: FetchOptions<'json'> = {}
 ): Promise<T> {
-  const application = identityHostedApplication(event, applicationKey)
+  const application = await identityHostedApplication(event, applicationKey)
   const session = await accountSession(event)
   const account = session.data
 
@@ -333,9 +393,7 @@ export async function identityHostedAccountRequest<T>(
     }
   })
   const refresh = async () => {
-    const identity = await clientRequest<IdentityLoginData>(connection, '/auth/refresh', {
-      client_id: connection.clientId,
-      client_secret: connection.clientSecret,
+    const identity = await hostedRequest<IdentityLoginData>(event, application, '/refresh', {
       refresh_token: account.identity.refresh_token
     })
     await session.update({ ...account, identity })
@@ -367,11 +425,8 @@ export async function identityHostedLogin(
   state: string,
   input: IdentityLoginInput
 ) {
-  const application = identityHostedApplication(event, applicationKey)
-  const identity = await clientRequest<IdentityLoginData>(application.primary, '/auth/login', {
-    ...credentials(application.primary),
-    ...input
-  })
+  const application = await identityHostedApplication(event, applicationKey)
+  const identity = await hostedRequest<IdentityLoginData>(event, application, '/login', input)
 
   if (!identity.identity.user.email_verified) {
     const session = await flowSession(event)
@@ -383,7 +438,7 @@ export async function identityHostedLogin(
     return { redirectUrl: verificationUrl.toString() }
   }
 
-  return await handoff(application.primary, application, identity, state)
+  return await handoff(event, application, identity, state)
 }
 
 export async function identityHostedSandbox(
@@ -391,14 +446,11 @@ export async function identityHostedSandbox(
   applicationKey: string,
   state: string
 ) {
-  const application = identityHostedApplication(event, applicationKey)
-  const connection = assertConnection(application.sandbox)
-  const identity = await clientRequest<IdentityLoginData>(connection, '/auth/sandbox-session', {
-    client_id: connection.clientId,
-    client_secret: connection.clientSecret
-  })
+  const application = await identityHostedApplication(event, applicationKey)
+  assertConnection(application.sandbox)
+  const identity = await hostedRequest<IdentityLoginData>(event, application, '/sandbox-session')
 
-  return await handoff(connection, application, identity, state)
+  return await handoff(event, application, identity, state)
 }
 
 export async function identityHostedRegister(
@@ -407,18 +459,22 @@ export async function identityHostedRegister(
   state: string,
   input: IdentityRegisterInput
 ) {
-  const application = identityHostedApplication(event, applicationKey)
-  const identity = await clientRequest<IdentityLoginData>(application.primary, '/auth/register', {
-    ...credentials(application.primary),
+  const application = await identityHostedApplication(event, applicationKey)
+  const identity = await hostedRequest<IdentityLoginData>(event, application, '/register', {
     username: input.username,
     email: input.email,
     password: input.password,
     password_confirmation: input.passwordConfirmation
   })
+
+  if (identity.identity.user.email_verified) {
+    return await handoff(event, application, identity, state)
+  }
+
   const session = await flowSession(event)
   await session.update({ application: applicationKey, state: assertState(state), identity })
 
-  return { verificationRequired: !identity.identity.user.email_verified }
+  return { verificationRequired: true }
 }
 
 export async function identityHostedResendVerification(event: H3Event) {
@@ -427,7 +483,7 @@ export async function identityHostedResendVerification(event: H3Event) {
   if (!flow.application || !flow.identity) {
     throw createError({ statusCode: 401, statusMessage: 'The hosted verification flow has expired.' })
   }
-  const application = identityHostedApplication(event, flow.application)
+  const application = await identityHostedApplication(event, flow.application)
 
   return await clientRequest<Record<string, unknown>>(
     application.primary,
@@ -457,14 +513,14 @@ export async function identityHostedVerifyEmail(event: H3Event, code: string) {
   if (!flow.application || !flow.state || !flow.identity) {
     throw createError({ statusCode: 401, statusMessage: 'The hosted verification flow has expired.' })
   }
-  const application = identityHostedApplication(event, flow.application)
+  const application = await identityHostedApplication(event, flow.application)
   await clientRequest<Record<string, unknown>>(
     application.primary,
     '/auth/email/verification',
     { code },
     flow.identity.access_token
   )
-  const result = await handoff(application.primary, application, flow.identity, flow.state)
+  const result = await handoff(event, application, flow.identity, flow.state)
   await session.clear()
 
   return result
@@ -475,11 +531,8 @@ export async function identityHostedForgotPassword(
   applicationKey: string,
   email: string
 ) {
-  const application = identityHostedApplication(event, applicationKey)
-  return await clientRequest<Record<string, unknown>>(application.primary, '/auth/password/forgot', {
-    ...credentials(application.primary),
-    email
-  })
+  const application = await identityHostedApplication(event, applicationKey)
+  return await hostedRequest<Record<string, unknown>>(event, application, '/password/forgot', { email })
 }
 
 export async function identityHostedResetPassword(
@@ -487,9 +540,8 @@ export async function identityHostedResetPassword(
   clientId: string,
   input: IdentityResetPasswordInput
 ) {
-  const { application } = identityHostedApplicationByClient(event, clientId)
-  const result = await clientRequest<Record<string, unknown>>(application.primary, '/auth/password/reset', {
-    ...credentials(application.primary),
+  const application = await identityHostedApplicationByClient(event, clientId)
+  const result = await hostedRequest<Record<string, unknown>>(event, application, '/password/reset', {
     email: input.email,
     token: input.token,
     password: input.password,

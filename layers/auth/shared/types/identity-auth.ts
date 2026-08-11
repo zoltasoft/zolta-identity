@@ -28,6 +28,7 @@ export type IdentityAuthenticationContext = {
     sandbox_ttl_minutes: number
     registration_mode: 'invite_only' | 'public'
     registration_role_id: string | null
+    email_verification_required: boolean
   }
   client: {
     id: string

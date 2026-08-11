@@ -25,7 +25,7 @@ export function createAuthRuntimeConfig(
         clientSecret: env.IDENTITY_SANDBOX_CLIENT_SECRET ?? ''
       }
     },
-    identityHostedApplications: parseHostedApplications(env.IDENTITY_HOSTED_APPLICATIONS),
+    identityHostedApplicationsToken: env.IDENTITY_HOSTED_APPLICATIONS_TOKEN ?? '',
     public: {
       identityAuth: {
         productName: env.NUXT_PUBLIC_IDENTITY_AUTH_PRODUCT_NAME ?? 'Identity',
@@ -35,25 +35,6 @@ export function createAuthRuntimeConfig(
         sandboxEnabled: env.NUXT_PUBLIC_IDENTITY_SANDBOX_ENABLED === 'true'
       }
     }
-  }
-}
-
-export function parseHostedApplications(value: string | undefined): Record<string, unknown> {
-  if (!value) return {}
-
-  try {
-    // Quoted dotenv values may span physical lines. Normalize line wrapping so
-    // URLs, UUIDs, and secrets are not broken by a newline inside a JSON string.
-    const normalized = value
-      .split(/\r?\n/)
-      .map(line => line.trim())
-      .join('')
-    const parsed = JSON.parse(normalized)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : {}
-  } catch {
-    return {}
   }
 }
 
