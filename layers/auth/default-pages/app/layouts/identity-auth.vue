@@ -1,9 +1,9 @@
 <script setup lang="ts">
 type HostedAppearance = {
-  welcome_text: string | null
-  accent_color: string | null
-  background_preset: 'identity' | 'slate' | 'indigo' | 'emerald' | 'sunset'
-  logo_url: string | null
+  welcomeText: string | null
+  accentColor: string | null
+  backgroundPreset: 'identity' | 'slate' | 'indigo' | 'emerald' | 'sunset'
+  logoUrl: string | null
 }
 
 type HostedBrand = {
@@ -26,9 +26,9 @@ const { data: experience } = await useAsyncData<HostedBrand | null>(
   { watch: [applicationKey] }
 )
 const brand = computed(() => experience.value)
-const backgroundPreset = computed(() => brand.value?.appearance.background_preset ?? 'identity')
-const brandStyle = computed(() => brand.value?.appearance.accent_color
-  ? { '--identity-auth-accent': brand.value.appearance.accent_color }
+const backgroundPreset = computed(() => brand.value?.appearance.backgroundPreset ?? 'identity')
+const brandStyle = computed(() => brand.value?.appearance.accentColor
+  ? { '--identity-auth-accent': brand.value.appearance.accentColor }
   : {})
 
 provide('identity-auth-brand', brand)

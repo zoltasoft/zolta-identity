@@ -9,7 +9,7 @@ defineProps<{
 const config = useRuntimeConfig()
 const brand = inject<ComputedRef<{
   name: string
-  appearance: { welcome_text: string | null, logo_url: string | null }
+  appearance: { welcomeText: string | null, logoUrl: string | null }
 } | null>>('identity-auth-brand', computed(() => null))
 const productName = computed(() => brand.value?.name ?? config.public.identityAuth.productName)
 </script>
@@ -18,8 +18,8 @@ const productName = computed(() => brand.value?.name ?? config.public.identityAu
   <section class="identity-auth-card">
     <div class="identity-auth-brand">
       <img
-        v-if="brand?.appearance.logo_url"
-        :src="brand.appearance.logo_url"
+        v-if="brand?.appearance.logoUrl"
+        :src="brand.appearance.logoUrl"
         :alt="`${productName} logo`"
         class="identity-auth-logo"
       >
@@ -32,10 +32,10 @@ const productName = computed(() => brand.value?.name ?? config.public.identityAu
       {{ description }}
     </p>
     <p
-      v-if="brand?.appearance.welcome_text"
+      v-if="brand?.appearance.welcomeText"
       class="identity-auth-welcome"
     >
-      {{ brand.appearance.welcome_text }}
+      {{ brand.appearance.welcomeText }}
     </p>
     <slot />
   </section>
