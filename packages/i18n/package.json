@@ -4,7 +4,7 @@
 	"type": "module",
 	"scripts": {},
 	"dependencies": {
-		"@nuxtjs/i18n": "^10.2.3"
+		"@nuxtjs/i18n": "^10.6.0"
 	},
   "packageManager": "pnpm@10.30.3"
 }
