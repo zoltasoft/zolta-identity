@@ -8,10 +8,12 @@ use App\Services\UserManagementService\Application\Commands\Identity\ConfigureId
 use App\Services\UserManagementService\Application\Commands\Identity\ConfigureIdentityProjectRegistration\ConfigureIdentityProjectRegistrationCommand;
 use App\Services\UserManagementService\Application\Commands\Identity\CreateIdentityProject\CreateIdentityProjectCommand;
 use App\Services\UserManagementService\Application\Commands\Identity\ExecuteIdentityClient\ExecuteIdentityClientCommand;
+use App\Services\UserManagementService\Application\Commands\Identity\ExecuteIdentityHostedApplication\ExecuteIdentityHostedApplicationCommand;
 use App\Services\UserManagementService\Application\Commands\Identity\ExecuteIdentityProjectAccess\ExecuteIdentityProjectAccessCommand;
 use App\Services\UserManagementService\Application\Commands\Identity\ExecuteIdentityWebhook\ExecuteIdentityWebhookCommand;
 use App\Services\UserManagementService\Application\DTOs\Input\IdentityOperationDTO;
 use App\Services\UserManagementService\Application\Enums\Identity\IdentityClientOperation;
+use App\Services\UserManagementService\Application\Enums\Identity\IdentityHostedApplicationOperation;
 use App\Services\UserManagementService\Application\Enums\Identity\IdentityProjectAccessOperation;
 use App\Services\UserManagementService\Application\Enums\Identity\IdentityWebhookOperation;
 use App\Services\UserManagementService\Domain\Enums\IdentityProjectMode;
@@ -52,6 +54,7 @@ final readonly class ExecuteIdentityProjectService
                 'roleId' => isset($dto->input['registration_role_id'])
                     ? (string) $dto->input['registration_role_id']
                     : null,
+                'emailVerificationRequired' => (bool) $dto->input['email_verification_required'],
             ]);
         }
 
@@ -72,6 +75,10 @@ final readonly class ExecuteIdentityProjectService
             IdentityClientOperation::tryFrom($dto->operation) !== null => [
                 ExecuteIdentityClientCommand::class,
                 IdentityClientOperation::from($dto->operation),
+            ],
+            IdentityHostedApplicationOperation::tryFrom($dto->operation) !== null => [
+                ExecuteIdentityHostedApplicationCommand::class,
+                IdentityHostedApplicationOperation::from($dto->operation),
             ],
             IdentityProjectAccessOperation::tryFrom($dto->operation) !== null => [
                 ExecuteIdentityProjectAccessCommand::class,

@@ -10,6 +10,8 @@ use App\Services\UserManagementService\Domain\Aggregates\IdentityPermission as D
 use App\Services\UserManagementService\Domain\Aggregates\IdentityProject as DomainIdentityProject;
 use App\Services\UserManagementService\Domain\Aggregates\IdentityRole as DomainIdentityRole;
 use App\Services\UserManagementService\Domain\Aggregates\IdentityWebhook as DomainIdentityWebhook;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHostedApplication;
+use Illuminate\Support\Facades\Storage;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectClient;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectMembership;
@@ -112,6 +114,7 @@ final class IdentityPayloadFactory
             'sandbox_ttl_minutes' => $project->sandboxTtlMinutes(),
             'registration_mode' => $project->registrationMode()->value,
             'registration_role_id' => $project->registrationRoleId(),
+            'email_verification_required' => $project->emailVerificationRequired(),
         ];
     }
 
@@ -152,6 +155,7 @@ final class IdentityPayloadFactory
             'sandbox_ttl_minutes' => $project->sandbox_ttl_minutes,
             'registration_mode' => $project->registration_mode,
             'registration_role_id' => $project->registration_role_id,
+            'email_verification_required' => $project->email_verification_required,
         ];
     }
 
@@ -165,6 +169,37 @@ final class IdentityPayloadFactory
             'secret_prefix' => $client->secret_prefix,
             'status' => $client->status,
             'last_used_at' => $client->last_used_at?->toIso8601String(),
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    public function hostedApplication(IdentityHostedApplication $application): array
+    {
+        return [
+            'id' => $application->id,
+            'project_id' => $application->project_id,
+            'primary_client_id' => $application->primary_client_id,
+            'sandbox_client_id' => $application->sandbox_client_id,
+            'key' => $application->key,
+            'name' => $application->name,
+            'application_url' => $application->application_url,
+            'callback_url' => $application->callback_url,
+            'appearance' => $this->hostedApplicationAppearance($application),
+            'status' => $application->status,
+        ];
+    }
+
+    /** @return array{welcome_text: string|null, accent_color: string|null, background_preset: string, logo_url: string|null} */
+    private function hostedApplicationAppearance(IdentityHostedApplication $application): array
+    {
+        $appearance = $application->appearance ?? [];
+        $disk = (string) config('zolta.identity.hosted_applications.branding_disk', 'public');
+
+        return [
+            'welcome_text' => $appearance['welcome_text'] ?? null,
+            'accent_color' => $appearance['accent_color'] ?? null,
+            'background_preset' => $appearance['background_preset'] ?? 'identity',
+            'logo_url' => $application->logo_path === null ? null : Storage::disk($disk)->url($application->logo_path),
         ];
     }
 

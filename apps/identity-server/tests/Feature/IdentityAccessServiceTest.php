@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Services\UserManagementService\Infrastructure\Jobs\DeliverIdentityWebhook;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHostedApplication;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectClient;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectMembership;
@@ -15,7 +16,9 @@ use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityWe
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
 use App\Services\UserManagementService\Infrastructure\Webhooks\IdentityWebhookPublisher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -166,6 +169,7 @@ final class IdentityAccessServiceTest extends TestCase
         $project->forceFill([
             'registration_mode' => 'public',
             'registration_role_id' => $role->id,
+            'email_verification_required' => true,
         ])->save();
 
         $this->postJson('/api/v1/identity/auth/register', [
@@ -193,6 +197,26 @@ final class IdentityAccessServiceTest extends TestCase
             'password' => 'a-strong-password',
             'password_confirmation' => 'a-strong-password',
         ])->assertForbidden();
+    }
+
+    public function test_project_can_allow_public_registration_without_email_verification(): void
+    {
+        [, $project, $client, $secret] = $this->identityFixture();
+        $project->forceFill([
+            'registration_mode' => 'public',
+            'email_verification_required' => false,
+        ])->save();
+
+        $this->postJson('/api/v1/identity/auth/register', [
+            'project' => $project->slug,
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'username' => 'Verified member',
+            'email' => 'verified-member@example.com',
+            'password' => 'a-strong-password',
+            'password_confirmation' => 'a-strong-password',
+        ])->assertCreated()
+            ->assertJsonPath('data.identity.user.email_verified', true);
     }
 
     public function test_sandbox_client_creates_a_temporary_identity_without_credentials(): void
@@ -422,6 +446,7 @@ final class IdentityAccessServiceTest extends TestCase
             ->patchJson("/api/v1/identity/projects/{$createdProjectId}/registration", [
                 'registration_mode' => 'public',
                 'registration_role_id' => null,
+                'email_verification_required' => false,
             ])
             ->assertOk();
 
@@ -434,6 +459,7 @@ final class IdentityAccessServiceTest extends TestCase
 
         $created = IdentityProject::query()->findOrFail($createdProjectId);
         $this->assertSame('public', $created->registration_mode);
+        $this->assertFalse($created->email_verification_required);
         $this->assertSame('sandbox', $created->mode);
         $this->assertSame(120, $created->sandbox_ttl_minutes);
         $this->assertDatabaseHas('identity_project_memberships', [
@@ -528,6 +554,175 @@ final class IdentityAccessServiceTest extends TestCase
         $this->assertDatabaseMissing('identity_webhook_endpoints', [
             'id' => $createdWebhook['id'],
         ]);
+    }
+
+    public function test_project_administrator_can_manage_a_hosted_application_and_the_nuxt_host_can_resolve_it(): void
+    {
+        [$administrator, $project, $client, $secret] = $this->identityFixture(true);
+        $accessToken = $this->login($administrator, $project, $client, $secret)['access_token'];
+        $created = $this->withToken($accessToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/hosted-applications", [
+                'name' => 'Job Tracker',
+                'key' => 'job-tracker',
+                'primary_client_id' => $client->id,
+                'application_url' => 'https://job-tracker.example.test/dashboard',
+                'callback_url' => 'https://job-tracker.example.test/api/auth/callback',
+                'appearance' => [
+                    'welcome_text' => 'Manage your next opportunity.',
+                    'accent_color' => '#3157D5',
+                    'background_preset' => 'indigo',
+                ],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.key', 'job-tracker')
+            ->assertJsonPath('data.status', 'active')
+            ->assertJsonPath('data.appearance.background_preset', 'indigo')
+            ->json('data');
+
+        $this->assertDatabaseHas('identity_hosted_applications', [
+            'id' => $created['id'],
+            'project_id' => $project->id,
+            'primary_client_id' => $client->id,
+            'key' => 'job-tracker',
+        ]);
+
+        $this->withToken($accessToken)
+            ->getJson("/api/v1/identity/projects/{$project->id}")
+            ->assertOk()
+            ->assertJsonCount(1, 'data.hosted_applications')
+            ->assertJsonPath('data.hosted_applications.0.id', $created['id']);
+
+        config()->set('identity.hosted_applications.internal_token', 'hosted-application-test-token');
+        $this->getJson('/api/v1/identity/hosted-applications/job-tracker/configuration')
+            ->assertUnauthorized();
+        $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->getJson('/api/v1/identity/hosted-applications/job-tracker/configuration')
+            ->assertOk()
+            ->assertJsonPath('data.primary.project', $project->slug)
+            ->assertJsonPath('data.primary.client_id', $client->id)
+            ->assertJsonPath('data.appearance.welcome_text', 'Manage your next opportunity.')
+            ->assertJsonPath('data.appearance.accent_color', '#3157D5')
+            ->assertJsonMissingPath('data.primary.client_secret');
+
+        Storage::fake('public');
+        config()->set('zolta.identity.hosted_applications.branding_disk', 'public');
+        $logo = UploadedFile::fake()->image('job-tracker.png', 128, 128);
+        $uploaded = $this->withToken($accessToken)
+            ->post("/api/v1/identity/projects/{$project->id}/hosted-applications/{$created['id']}/logo", ['logo' => $logo])
+            ->assertCreated()
+            ->json('data');
+        $this->assertIsString($uploaded['appearance']['logo_url']);
+        $this->assertStringContainsString('identity/hosted-applications/', $uploaded['appearance']['logo_url']);
+        $this->assertDatabaseHas('identity_hosted_applications', [
+            'id' => $created['id'],
+            'logo_path' => 'identity/hosted-applications/'.$created['id'].'/'.basename(parse_url($uploaded['appearance']['logo_url'], PHP_URL_PATH)),
+        ]);
+        $this->withToken($accessToken)
+            ->deleteJson("/api/v1/identity/projects/{$project->id}/hosted-applications/{$created['id']}/logo")
+            ->assertOk();
+        $this->assertDatabaseHas('identity_hosted_applications', [
+            'id' => $created['id'],
+            'logo_path' => null,
+        ]);
+        $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->postJson('/api/v1/identity/hosted-applications/job-tracker/auth/context')
+            ->assertOk()
+            ->assertJsonPath('data.client.id', $client->id);
+
+        $documentStudioClient = $this->withToken($accessToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/clients", ['name' => 'Document Studio BFF'])
+            ->assertCreated()
+            ->json('data');
+        $this->withToken($accessToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/hosted-applications", [
+                'name' => 'Document Studio',
+                'key' => 'document-studio',
+                'primary_client_id' => $documentStudioClient['id'],
+                'application_url' => 'https://document-studio.example.test',
+                'callback_url' => 'https://document-studio.example.test/api/identity/document-studio/auth/callback',
+                'appearance' => [
+                    'welcome_text' => 'A focused writing space.',
+                    'accent_color' => '#16806B',
+                    'background_preset' => 'emerald',
+                ],
+            ])
+            ->assertCreated();
+        $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->getJson('/api/v1/identity/hosted-applications/document-studio/configuration')
+            ->assertOk()
+            ->assertJsonPath('data.name', 'Document Studio')
+            ->assertJsonPath('data.primary.client_id', $documentStudioClient['id'])
+            ->assertJsonPath('data.callback_url', 'https://document-studio.example.test/api/identity/document-studio/auth/callback')
+            ->assertJsonPath('data.appearance.background_preset', 'emerald');
+        $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->getJson('/api/v1/identity/hosted-applications/job-tracker/configuration')
+            ->assertOk()
+            ->assertJsonPath('data.primary.client_id', $client->id)
+            ->assertJsonPath('data.appearance.background_preset', 'indigo');
+
+        $this->withToken($accessToken)
+            ->patchJson("/api/v1/identity/projects/{$project->id}/hosted-applications/{$created['id']}", [
+                'name' => 'Job Tracker',
+                'primary_client_id' => $client->id,
+                'application_url' => 'https://job-tracker.example.test/dashboard',
+                'callback_url' => 'https://job-tracker.example.test/api/auth/callback',
+                'appearance' => [
+                    'welcome_text' => null,
+                    'accent_color' => null,
+                    'background_preset' => 'identity',
+                ],
+                'status' => 'disabled',
+            ])
+            ->assertOk();
+        $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->getJson('/api/v1/identity/hosted-applications/job-tracker/configuration')
+            ->assertNotFound();
+    }
+
+    public function test_hosted_login_throttle_is_scoped_to_each_hosted_application(): void
+    {
+        [$user, $project, $client] = $this->identityFixture();
+        $jobTracker = 'job-tracker-rate-limit-'.Str::lower(Str::random(6));
+        $documentStudio = 'document-studio-rate-limit-'.Str::lower(Str::random(6));
+        $documentStudioClient = IdentityProjectClient::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Document Studio BFF',
+            'secret_hash' => hash('sha256', Str::random(64)),
+            'secret_prefix' => 'document',
+            'status' => 'active',
+        ]);
+
+        foreach ([$jobTracker => $client, $documentStudio => $documentStudioClient] as $key => $hostedClient) {
+            IdentityHostedApplication::query()->create([
+                'project_id' => $project->id,
+                'primary_client_id' => $hostedClient->id,
+                'key' => $key,
+                'name' => $key,
+                'application_url' => 'https://'.$key.'.example.test',
+                'callback_url' => 'https://'.$key.'.example.test/auth/callback',
+                'status' => 'active',
+            ]);
+        }
+
+        config()->set('identity.hosted_applications.internal_token', 'hosted-application-test-token');
+        $payload = [
+            'email' => $user->email,
+            'password' => 'incorrect-password',
+        ];
+
+        for ($attempt = 0; $attempt < 20; $attempt++) {
+            $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+                ->postJson("/api/v1/identity/hosted-applications/{$jobTracker}/auth/login", $payload)
+                ->assertUnauthorized();
+        }
+
+        $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->postJson("/api/v1/identity/hosted-applications/{$documentStudio}/auth/login", $payload)
+            ->assertUnauthorized();
+
+        $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->postJson("/api/v1/identity/hosted-applications/{$jobTracker}/auth/login", $payload)
+            ->assertTooManyRequests();
     }
 
     public function test_role_permission_and_membership_writes_preserve_the_public_api_contract(): void

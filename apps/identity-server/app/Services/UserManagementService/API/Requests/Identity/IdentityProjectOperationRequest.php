@@ -17,7 +17,7 @@ final class IdentityProjectOperationRequest extends IdentityOperationRequest
     public function routeParams(): array
     {
         $params = [];
-        foreach (['project', 'client', 'webhook', 'role', 'membership'] as $parameter) {
+        foreach (['project', 'client', 'webhook', 'role', 'membership', 'hosted_application'] as $parameter) {
             if ($this->route($parameter) !== null) {
                 $params[$parameter] = ['type' => 'string', 'required' => true];
             }
@@ -39,6 +39,7 @@ final class IdentityProjectOperationRequest extends IdentityOperationRequest
             'projects.registration.update' => [
                 'registration_mode' => ['required', Rule::in(['invite_only', 'public'])],
                 'registration_role_id' => ['nullable', 'uuid'],
+                'email_verification_required' => ['required', 'boolean'],
             ],
             'projects.environment.update' => [
                 'mode' => ['required', Rule::in(['live', 'sandbox'])],
@@ -52,6 +53,24 @@ final class IdentityProjectOperationRequest extends IdentityOperationRequest
             'projects.clients.store' => ['name' => ['required', 'string', 'max:255']],
             'projects.clients.status' => ['status' => ['required', Rule::in(['active', 'disabled'])]],
             'projects.clients.manifest' => $this->manifestRules(),
+            'projects.hosted_applications.store' => [
+                'name' => ['required', 'string', 'max:200'],
+                'key' => ['required', 'alpha_dash:ascii', 'max:100', Rule::unique('identity_hosted_applications', 'key')],
+                'primary_client_id' => ['required', 'uuid'],
+                'sandbox_client_id' => ['nullable', 'uuid'],
+                'application_url' => ['required', 'url:http,https', 'max:2048'],
+                'callback_url' => ['required', 'url:http,https', 'max:2048'],
+                ...$this->hostedApplicationAppearanceRules(),
+            ],
+            'projects.hosted_applications.update' => [
+                'name' => ['required', 'string', 'max:200'],
+                'primary_client_id' => ['required', 'uuid'],
+                'sandbox_client_id' => ['nullable', 'uuid'],
+                'application_url' => ['required', 'url:http,https', 'max:2048'],
+                'callback_url' => ['required', 'url:http,https', 'max:2048'],
+                'status' => ['required', Rule::in(['active', 'disabled'])],
+                ...$this->hostedApplicationAppearanceRules(),
+            ],
             'projects.roles.store' => [
                 'name' => ['required', 'string', 'max:255'],
                 'slug' => ['required', 'alpha_dash:ascii', 'max:100', Rule::unique('identity_project_roles', 'slug')->where('project_id', (string) $this->route('project'))],
@@ -92,6 +111,17 @@ final class IdentityProjectOperationRequest extends IdentityOperationRequest
             'url' => ['required', 'url:http,https', 'max:2048'],
             'events' => ['required', 'array', 'min:1'],
             'events.*' => ['required', Rule::in(['identity.user.expired', 'identity.user.deletion_requested'])],
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function hostedApplicationAppearanceRules(): array
+    {
+        return [
+            'appearance' => ['sometimes', 'array'],
+            'appearance.welcome_text' => ['nullable', 'string', 'max:280'],
+            'appearance.accent_color' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+            'appearance.background_preset' => ['nullable', Rule::in(['identity', 'slate', 'indigo', 'emerald', 'sunset'])],
         ];
     }
 

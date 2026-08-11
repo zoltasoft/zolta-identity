@@ -26,6 +26,7 @@ final class IdentityProjectMapper
             (int) $model->sandbox_ttl_minutes,
             IdentityProjectRegistrationMode::from((string) $model->registration_mode),
             $model->registration_role_id !== null ? (string) $model->registration_role_id : null,
+            (bool) $model->email_verification_required,
             DateTimeImmutable::createFromInterface($model->created_at),
             DateTimeImmutable::createFromInterface($model->updated_at),
         );
@@ -45,6 +46,7 @@ final class IdentityProjectMapper
             'sandbox_ttl_minutes' => $project->sandboxTtlMinutes(),
             'registration_mode' => $project->registrationMode()->value,
             'registration_role_id' => $project->registrationRoleId(),
+            'email_verification_required' => $project->emailVerificationRequired(),
             'created_at' => $project->createdAt(),
             'updated_at' => $project->updatedAt(),
         ]);

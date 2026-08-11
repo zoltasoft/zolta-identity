@@ -11,5 +11,6 @@ interface ConfigureIdentityProjectRegistration
         string $projectId,
         string $mode,
         ?string $roleId,
+        bool $emailVerificationRequired,
     ): void;
 }

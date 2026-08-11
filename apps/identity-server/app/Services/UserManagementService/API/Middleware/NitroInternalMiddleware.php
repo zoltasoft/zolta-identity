@@ -8,35 +8,25 @@ use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-/**
- * Validates the X-Internal-Token header that the Nuxt Nitro BFF attaches to
- * every server-to-server request.  Rejects anything that does not carry the
- * correct shared secret, effectively making this Laravel API inaccessible
- * to anyone other than the trusted Nitro server.
- *
- * Configuration:  set NITRO_INTERNAL_TOKEN in .env.
- */
 final class NitroInternalMiddleware
 {
     public function handle(Request $request, Closure $next): Response
     {
-        // $expectedToken = env('NITRO_INTERNAL_TOKEN', '');
+        $expectedToken = (string) config('identity.hosted_applications.internal_token', '');
 
-        // if (empty($expectedToken)) {
-        //     return response()->json([
-        //         'success' => false,
-        //         'message' => 'Internal service token is not configured on this server.',
-        //     ], 503);
-        // }
+        if ($expectedToken === '') {
+            return response()->json([
+                'message' => 'Hosted application resolution is not configured.',
+            ], 503);
+        }
 
-        // $provided = (string) $request->header('X-Internal-Token', '');
+        $providedToken = (string) $request->header('X-Internal-Token', '');
 
-        // if (!hash_equals($expectedToken, $provided)) {
-        //     return response()->json([
-        //         'success' => false,
-        //         'message' => 'Unauthorized.',
-        //     ], 401);
-        // }
+        if (! hash_equals($expectedToken, $providedToken)) {
+            return response()->json(['message' => 'Unauthorized.'], 401);
+        }
+
+        $request->attributes->set('identity_hosted_internal', true);
 
         return $next($request);
     }

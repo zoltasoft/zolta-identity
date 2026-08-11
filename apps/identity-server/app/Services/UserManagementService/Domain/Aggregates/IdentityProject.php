@@ -24,6 +24,7 @@ final class IdentityProject extends AggregateRoot
         private int $sandboxTtlMinutes,
         private IdentityProjectRegistrationMode $registrationMode,
         private ?string $registrationRoleId,
+        private bool $emailVerificationRequired,
         private readonly DateTimeImmutable $createdAt,
         private DateTimeImmutable $updatedAt,
     ) {
@@ -44,6 +45,7 @@ final class IdentityProject extends AggregateRoot
             60,
             IdentityProjectRegistrationMode::InviteOnly,
             null,
+            true,
             $now,
             $now,
         );
@@ -59,6 +61,7 @@ final class IdentityProject extends AggregateRoot
         int $sandboxTtlMinutes,
         IdentityProjectRegistrationMode $registrationMode,
         ?string $registrationRoleId,
+        bool $emailVerificationRequired,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt,
     ): self {
@@ -72,6 +75,7 @@ final class IdentityProject extends AggregateRoot
             $sandboxTtlMinutes,
             $registrationMode,
             $registrationRoleId,
+            $emailVerificationRequired,
             $createdAt,
             $updatedAt,
         );
@@ -80,13 +84,17 @@ final class IdentityProject extends AggregateRoot
     public function configureRegistration(
         IdentityProjectRegistrationMode $mode,
         ?string $roleId,
+        bool $emailVerificationRequired,
     ): void {
-        if ($mode === $this->registrationMode && $roleId === $this->registrationRoleId) {
+        if ($mode === $this->registrationMode
+            && $roleId === $this->registrationRoleId
+            && $emailVerificationRequired === $this->emailVerificationRequired) {
             return;
         }
 
         $this->registrationMode = $mode;
         $this->registrationRoleId = $roleId;
+        $this->emailVerificationRequired = $emailVerificationRequired;
         $this->touch();
     }
 
@@ -146,6 +154,11 @@ final class IdentityProject extends AggregateRoot
     public function registrationRoleId(): ?string
     {
         return $this->registrationRoleId;
+    }
+
+    public function emailVerificationRequired(): bool
+    {
+        return $this->emailVerificationRequired;
     }
 
     public function createdAt(): DateTimeImmutable

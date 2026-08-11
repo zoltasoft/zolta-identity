@@ -8,9 +8,11 @@ use App\Services\UserManagementService\Application\Contracts\Identity\Projects\C
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ConfigureIdentityProjectRegistration;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\CreateIdentityProject;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityClients;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityHostedApplications;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityProjectAccess;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityWebhooks;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ReadIdentityProjects;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ResolveIdentityHostedApplications;
 use App\Services\UserManagementService\Application\Exceptions\IdentityAuthorizationException;
 use App\Services\UserManagementService\Application\Exceptions\IdentityResourceNotFoundException;
 use App\Services\UserManagementService\Domain\Aggregates\IdentityClient as DomainIdentityClient;
@@ -38,7 +40,9 @@ use App\Services\UserManagementService\Domain\ValueObjects\IdentityProjectId;
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityRoleId;
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityWebhookId;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAuditEvent;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHostedApplication;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectClient;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectInvitation;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
 use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityAuditEventRepository;
@@ -54,11 +58,13 @@ use App\Services\UserManagementService\Infrastructure\Services\Identity\Identity
 use App\Services\UserManagementService\Infrastructure\Services\Identity\IdentityTokenManager;
 use App\Services\UserManagementService\Infrastructure\Services\Identity\IdentityWebhookDestinationValidator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Zolta\Domain\ValueObjects\UserId;
 
-final readonly class EloquentIdentityProjectService implements ConfigureIdentityProjectEnvironment, ConfigureIdentityProjectRegistration, CreateIdentityProject, ManageIdentityClients, ManageIdentityProjectAccess, ManageIdentityWebhooks, ReadIdentityProjects
+final readonly class EloquentIdentityProjectService implements ConfigureIdentityProjectEnvironment, ConfigureIdentityProjectRegistration, CreateIdentityProject, ManageIdentityClients, ManageIdentityHostedApplications, ManageIdentityProjectAccess, ManageIdentityWebhooks, ReadIdentityProjects, ResolveIdentityHostedApplications
 {
     public function __construct(
         private EloquentIdentityProjectMembershipRepository $memberships,
@@ -138,6 +144,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
         string $projectId,
         string $mode,
         ?string $roleId,
+        bool $emailVerificationRequired,
     ): void {
         $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
 
@@ -149,7 +156,11 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
 
         $project = $this->projects->find(IdentityProjectId::fromString($projectId))
             ?? throw new IdentityResourceNotFoundException('Identity project');
-        $project->configureRegistration(IdentityProjectRegistrationMode::from($mode), $roleId);
+        $project->configureRegistration(
+            IdentityProjectRegistrationMode::from($mode),
+            $roleId,
+            $emailVerificationRequired,
+        );
         $this->projects->save($project);
         $this->audit->record(
             'project.registration_updated',
@@ -161,6 +172,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
             [
                 'registration_mode' => $mode,
                 'registration_role_id' => $roleId,
+                'email_verification_required' => $emailVerificationRequired,
             ],
         );
     }
@@ -306,7 +318,180 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
                 ->listForProject($projectId, sort: ['url'])
                 ->map(fn ($endpoint) => $this->payloads->webhook($endpoint))
                 ->all(),
+            'hosted_applications' => IdentityHostedApplication::query()
+                ->where('project_id', $projectId)
+                ->orderBy('name')
+                ->get()
+                ->map(fn (IdentityHostedApplication $application) => $this->payloads->hostedApplication($application))
+                ->all(),
         ];
+    }
+
+    public function createHostedApplication(
+        string $actorUserId,
+        string $projectId,
+        array $attributes,
+    ): array {
+        $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
+
+        return DB::transaction(function () use ($actorUserId, $attributes, $projectId): array {
+            $this->validateHostedApplicationClients($actorUserId, $projectId, $attributes);
+            $application = IdentityHostedApplication::query()->create([
+                'project_id' => $projectId,
+                'primary_client_id' => $attributes['primary_client_id'],
+                'sandbox_client_id' => $attributes['sandbox_client_id'] ?? null,
+                'key' => $attributes['key'],
+                'name' => $attributes['name'],
+                'application_url' => $attributes['application_url'],
+                'callback_url' => $attributes['callback_url'],
+                'appearance' => $this->hostedApplicationAppearance($attributes),
+                'status' => 'active',
+            ]);
+            $this->audit->record(
+                'hosted_application.created',
+                $projectId,
+                $application->primary_client_id,
+                $actorUserId,
+                'hosted_application',
+                $application->id,
+                ['key' => $application->key],
+            );
+
+            return $this->payloads->hostedApplication($application);
+        });
+    }
+
+    public function updateHostedApplication(
+        string $actorUserId,
+        string $projectId,
+        string $applicationId,
+        array $attributes,
+    ): void {
+        $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
+        $application = $this->findHostedApplication($projectId, $applicationId);
+        $this->validateHostedApplicationClients($actorUserId, $projectId, $attributes);
+        $application->fill([
+            'name' => $attributes['name'],
+            'primary_client_id' => $attributes['primary_client_id'],
+            'sandbox_client_id' => $attributes['sandbox_client_id'] ?? null,
+            'application_url' => $attributes['application_url'],
+            'callback_url' => $attributes['callback_url'],
+            'appearance' => $this->hostedApplicationAppearance($attributes),
+            'status' => $attributes['status'],
+        ])->save();
+        $this->audit->record(
+            'hosted_application.updated',
+            $projectId,
+            $application->primary_client_id,
+            $actorUserId,
+            'hosted_application',
+            $application->id,
+            ['key' => $application->key, 'status' => $application->status],
+        );
+    }
+
+    public function removeHostedApplication(
+        string $actorUserId,
+        string $projectId,
+        string $applicationId,
+    ): void {
+        $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
+        $application = $this->findHostedApplication($projectId, $applicationId);
+        $this->audit->record(
+            'hosted_application.deleted',
+            $projectId,
+            $application->primary_client_id,
+            $actorUserId,
+            'hosted_application',
+            $application->id,
+            ['key' => $application->key],
+        );
+        if ($application->logo_path !== null) {
+            Storage::disk((string) config('zolta.identity.hosted_applications.branding_disk', 'public'))
+                ->delete($application->logo_path);
+        }
+        $application->delete();
+    }
+
+    public function uploadHostedApplicationLogo(
+        string $actorUserId,
+        string $projectId,
+        string $applicationId,
+        UploadedFile $logo,
+    ): array {
+        $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
+        $application = $this->findHostedApplication($projectId, $applicationId);
+        $disk = (string) config('zolta.identity.hosted_applications.branding_disk', 'public');
+        $extension = $logo->extension() ?: 'png';
+        $path = "identity/hosted-applications/{$application->id}/".Str::uuid().".{$extension}";
+
+        Storage::disk($disk)->putFileAs(
+            dirname($path),
+            $logo,
+            basename($path),
+            ['visibility' => 'public'],
+        );
+
+        $previousPath = $application->logo_path;
+        $application->forceFill(['logo_path' => $path])->save();
+        if ($previousPath !== null) {
+            Storage::disk($disk)->delete($previousPath);
+        }
+
+        $this->audit->record(
+            'hosted_application.logo_uploaded',
+            $projectId,
+            $application->primary_client_id,
+            $actorUserId,
+            'hosted_application',
+            $application->id,
+            ['key' => $application->key],
+        );
+
+        return $this->payloads->hostedApplication($application);
+    }
+
+    public function removeHostedApplicationLogo(
+        string $actorUserId,
+        string $projectId,
+        string $applicationId,
+    ): void {
+        $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
+        $application = $this->findHostedApplication($projectId, $applicationId);
+        $path = $application->logo_path;
+        $application->forceFill(['logo_path' => null])->save();
+
+        if ($path !== null) {
+            Storage::disk((string) config('zolta.identity.hosted_applications.branding_disk', 'public'))->delete($path);
+        }
+
+        $this->audit->record(
+            'hosted_application.logo_removed',
+            $projectId,
+            $application->primary_client_id,
+            $actorUserId,
+            'hosted_application',
+            $application->id,
+            ['key' => $application->key],
+        );
+    }
+
+    public function resolveHostedApplication(string $key): array
+    {
+        return $this->resolvedHostedApplication(
+            IdentityHostedApplication::query()
+                ->where('key', $key)
+                ->first(),
+        );
+    }
+
+    public function resolveHostedApplicationByClient(string $clientId): array
+    {
+        return $this->resolvedHostedApplication(
+            IdentityHostedApplication::query()
+                ->where('primary_client_id', $clientId)
+                ->first(),
+        );
     }
 
     public function createClient(string $actorUserId, string $projectId, string $name): array
@@ -643,6 +828,87 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
             IdentityProjectId::fromString($projectId),
             IdentityClientId::fromString($clientId),
         ) ?? throw new IdentityResourceNotFoundException('Identity project client');
+    }
+
+    private function findHostedApplication(string $projectId, string $applicationId): IdentityHostedApplication
+    {
+        return IdentityHostedApplication::query()
+            ->where('project_id', $projectId)
+            ->find($applicationId)
+            ?? throw new IdentityResourceNotFoundException('Identity hosted application');
+    }
+
+    /** @return array<string, mixed> */
+    private function resolvedHostedApplication(?IdentityHostedApplication $application): array
+    {
+        if ($application === null || $application->status !== 'active') {
+            throw new IdentityResourceNotFoundException('Identity hosted application');
+        }
+
+        $application->loadMissing(['project', 'primaryClient', 'sandboxClient.project']);
+        $client = $application->primaryClient;
+        if ($client === null || $client->status !== 'active') {
+            throw new IdentityResourceNotFoundException('Identity hosted application');
+        }
+
+        return [
+            'key' => $application->key,
+            'name' => $application->name,
+            'application_url' => $application->application_url,
+            'callback_url' => $application->callback_url,
+            'appearance' => $this->payloads->hostedApplication($application)['appearance'],
+            'primary' => [
+                'project' => $application->project->slug,
+                'client_id' => $client->id,
+            ],
+            'sandbox' => $application->sandboxClient === null ? null : [
+                'project' => $application->sandboxClient->project->slug,
+                'client_id' => $application->sandboxClient->id,
+            ],
+        ];
+    }
+
+    /** @param array<string, mixed> $attributes @return array{welcome_text: string|null, accent_color: string|null, background_preset: string} */
+    private function hostedApplicationAppearance(array $attributes): array
+    {
+        $appearance = is_array($attributes['appearance'] ?? null) ? $attributes['appearance'] : [];
+
+        return [
+            'welcome_text' => isset($appearance['welcome_text']) && $appearance['welcome_text'] !== ''
+                ? (string) $appearance['welcome_text']
+                : null,
+            'accent_color' => isset($appearance['accent_color']) && $appearance['accent_color'] !== ''
+                ? (string) $appearance['accent_color']
+                : null,
+            'background_preset' => (string) ($appearance['background_preset'] ?? 'identity'),
+        ];
+    }
+
+    /** @param array<string, mixed> $attributes */
+    private function validateHostedApplicationClients(
+        string $actorUserId,
+        string $projectId,
+        array $attributes,
+    ): void {
+        $primary = IdentityProjectClient::query()
+            ->with('project')
+            ->where('project_id', $projectId)
+            ->find($attributes['primary_client_id']);
+        if ($primary === null || $primary->status !== 'active' || $primary->project->mode === 'sandbox') {
+            throw new IdentityAuthorizationException('The primary client must be active and belong to this non-sandbox project.');
+        }
+
+        $sandboxClientId = $attributes['sandbox_client_id'] ?? null;
+        if ($sandboxClientId === null) {
+            return;
+        }
+
+        $sandbox = IdentityProjectClient::query()->with('project')->find($sandboxClientId);
+        if ($sandbox === null || $sandbox->status !== 'active' || $sandbox->project->mode !== 'sandbox') {
+            throw new IdentityAuthorizationException('The sandbox client must be active and belong to a sandbox project.');
+        }
+
+        $this->authorization->assertProjectAdministrator($actorUserId, $sandbox->project_id);
     }
 
     private function findMembership(

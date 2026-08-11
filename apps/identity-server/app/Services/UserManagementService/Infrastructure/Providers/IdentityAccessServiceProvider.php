@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\UserManagementService\Infrastructure\Providers;
 
 use App\Services\UserManagementService\API\Middleware\IdentityIntrospectionMiddleware;
+use App\Services\UserManagementService\API\Middleware\NitroInternalMiddleware;
 use App\Services\UserManagementService\API\Middleware\RequireIdentityAccessToken;
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\AcceptIdentityInvitation;
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\IssueIdentityAccess;
@@ -19,9 +20,11 @@ use App\Services\UserManagementService\Application\Contracts\Identity\Projects\C
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ConfigureIdentityProjectRegistration;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\CreateIdentityProject;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityClients;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityHostedApplications;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityProjectAccess;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityWebhooks;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ReadIdentityProjects;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ResolveIdentityHostedApplications;
 use App\Services\UserManagementService\Application\Contracts\IdentityInstallationServiceInterface;
 use App\Services\UserManagementService\Application\Contracts\IdentityLifecyclePublisherInterface;
 use App\Services\UserManagementService\Infrastructure\Services\EloquentIdentityAuthenticationService;
@@ -50,8 +53,10 @@ final class IdentityAccessServiceProvider extends ServiceProvider
         $this->app->bind(ConfigureIdentityProjectEnvironment::class, EloquentIdentityProjectService::class);
         $this->app->bind(ManageIdentityWebhooks::class, EloquentIdentityProjectService::class);
         $this->app->bind(ManageIdentityClients::class, EloquentIdentityProjectService::class);
+        $this->app->bind(ManageIdentityHostedApplications::class, EloquentIdentityProjectService::class);
         $this->app->bind(ManageIdentityProjectAccess::class, EloquentIdentityProjectService::class);
         $this->app->bind(ReadIdentityProjects::class, EloquentIdentityProjectService::class);
+        $this->app->bind(ResolveIdentityHostedApplications::class, EloquentIdentityProjectService::class);
         $this->app->bind(IdentityLifecyclePublisherInterface::class, IdentityWebhookPublisher::class);
 
         $configPath = config_path('zolta.php');
@@ -76,5 +81,6 @@ final class IdentityAccessServiceProvider extends ServiceProvider
     {
         $this->app->make(Router::class)->aliasMiddleware('identity.introspect', IdentityIntrospectionMiddleware::class);
         $this->app->make(Router::class)->aliasMiddleware('identity.token', RequireIdentityAccessToken::class);
+        $this->app->make(Router::class)->aliasMiddleware('identity.hosted-internal', NitroInternalMiddleware::class);
     }
 }

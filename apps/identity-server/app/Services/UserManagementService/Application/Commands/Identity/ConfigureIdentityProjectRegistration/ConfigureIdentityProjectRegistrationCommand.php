@@ -15,5 +15,6 @@ final class ConfigureIdentityProjectRegistrationCommand extends Command
         public readonly IdentityProjectId $projectId,
         public readonly IdentityProjectRegistrationMode $mode,
         public readonly ?string $roleId = null,
+        public readonly bool $emailVerificationRequired = true,
     ) {}
 }

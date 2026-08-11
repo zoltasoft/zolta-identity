@@ -82,6 +82,21 @@ final class IdentityProjectController extends Controller
     #[Service(ExecuteIdentityProjectService::class, 'Permission manifest synchronized.')]
     public function syncManifest(): void {}
 
+    #[Route('v1/identity/projects/{project}/hosted-applications', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.hosted_applications.store')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Hosted application created.', 201)]
+    public function storeHostedApplication(): void {}
+
+    #[Route('v1/identity/projects/{project}/hosted-applications/{hosted_application}', methods: ['PATCH'], middleware: self::MIDDLEWARE, name: 'identity.projects.hosted_applications.update')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Hosted application updated.')]
+    public function updateHostedApplication(): void {}
+
+    #[Route('v1/identity/projects/{project}/hosted-applications/{hosted_application}', methods: ['DELETE'], middleware: self::MIDDLEWARE, name: 'identity.projects.hosted_applications.destroy')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Hosted application removed.')]
+    public function destroyHostedApplication(): void {}
+
     #[Route('v1/identity/projects/{project}/roles', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.roles.store')]
     #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityProjectService::class, 'Role created.', 201)]

@@ -110,6 +110,10 @@ return [
         'password_reset_ttl_minutes' => (int) env('IDENTITY_PASSWORD_RESET_TTL_MINUTES', 60),
         'expose_development_tokens' => (bool) env('IDENTITY_EXPOSE_DEVELOPMENT_TOKENS', false),
         'password_reset_url' => env('IDENTITY_PASSWORD_RESET_URL'),
+        'hosted_applications' => [
+            'internal_token' => env('IDENTITY_HOSTED_APPLICATIONS_TOKEN'),
+            'branding_disk' => env('IDENTITY_BRANDING_DISK', 'public'),
+        ],
     ],
 
     'identity_consumer' => [

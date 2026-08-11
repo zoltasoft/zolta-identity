@@ -21,6 +21,7 @@ final readonly class ConfigureIdentityProjectRegistrationCommandHandler
             $command->projectId->toString(),
             $command->mode->value,
             $command->roleId,
+            $command->emailVerificationRequired,
         );
 
         return Result::success(new IdentityOperationPayload([

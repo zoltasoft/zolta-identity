@@ -315,6 +315,7 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
                     ['description' => 'Default global identity role'],
                 )->id,
                 'terms' => 'accepted',
+                'email_verified_at' => $project->email_verification_required ? null : now(),
             ]);
             $roleIds = [];
             if ($project->registration_role_id !== null
@@ -336,7 +337,9 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             );
 
             $tokens = $this->tokens->issuePair($user, $project, $client, $membership);
-            $this->issueEmailVerification($user);
+            if ($project->email_verification_required) {
+                $this->issueEmailVerification($user);
+            }
             $this->audit->record(
                 'auth.registered',
                 $project->id,

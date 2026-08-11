@@ -27,17 +27,19 @@ final class IdentityProjectTest extends TestCase
             $project->registrationMode(),
         );
         $this->assertNull($project->registrationRoleId());
+        $this->assertTrue($project->emailVerificationRequired());
     }
 
     public function test_registration_and_environment_are_changed_through_domain_behavior(): void
     {
         $project = IdentityProject::create('Job Tracker', 'job-tracker');
 
-        $project->configureRegistration(IdentityProjectRegistrationMode::Public, 'role-id');
+        $project->configureRegistration(IdentityProjectRegistrationMode::Public, 'role-id', false);
         $project->configureEnvironment(IdentityProjectMode::Sandbox, 90);
 
         $this->assertSame(IdentityProjectRegistrationMode::Public, $project->registrationMode());
         $this->assertSame('role-id', $project->registrationRoleId());
+        $this->assertFalse($project->emailVerificationRequired());
         $this->assertSame(IdentityProjectMode::Sandbox, $project->mode());
         $this->assertSame(90, $project->sandboxTtlMinutes());
     }
