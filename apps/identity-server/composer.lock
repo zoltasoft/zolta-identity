@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "936216ffdef61bc0cd030383040262ba",
+    "content-hash": "2d02c7054b7d0b6bc44b80bb093202d5",
     "packages": [
         {
             "name": "brick/math",
@@ -1205,20 +1205,20 @@
         },
         {
             "name": "laravel/framework",
-            "version": "v13.24.0",
+            "version": "v13.25.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/framework.git",
-                "reference": "6d481710375d2aa67656922ef760cdd2b18bcfe0"
+                "reference": "ed36fe882bd4eed4e6ff75343cbad8dbda03fdba"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/framework/zipball/6d481710375d2aa67656922ef760cdd2b18bcfe0",
-                "reference": "6d481710375d2aa67656922ef760cdd2b18bcfe0",
+                "url": "https://api.github.com/repos/laravel/framework/zipball/ed36fe882bd4eed4e6ff75343cbad8dbda03fdba",
+                "reference": "ed36fe882bd4eed4e6ff75343cbad8dbda03fdba",
                 "shasum": ""
             },
             "require": {
-                "brick/math": "^0.14.2 || ^0.15 || ^0.16 || ^0.17 || ^0.18",
+                "brick/math": "^0.14.2 || ^0.15 || ^0.16 || ^0.17 || ^0.18 || ^0.19",
                 "composer-runtime-api": "^2.2",
                 "doctrine/inflector": "^2.0.5",
                 "dragonmantank/cron-expression": "^3.4",
@@ -1428,7 +1428,7 @@
                 "issues": "https://github.com/laravel/framework/issues",
                 "source": "https://github.com/laravel/framework"
             },
-            "time": "2026-08-04T15:54:59+00:00"
+            "time": "2026-08-11T13:56:22+00:00"
         },
         {
             "name": "laravel/prompts",
@@ -1756,16 +1756,16 @@
         },
         {
             "name": "league/commonmark",
-            "version": "2.9.0",
+            "version": "2.10.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/thephpleague/commonmark.git",
-                "reference": "5703d83ba3da3b2e356a5fedc848ed6d8ffb6529"
+                "reference": "d2d1aa8b35e072966c89bc0c66cf926e56767dc4"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/thephpleague/commonmark/zipball/5703d83ba3da3b2e356a5fedc848ed6d8ffb6529",
-                "reference": "5703d83ba3da3b2e356a5fedc848ed6d8ffb6529",
+                "url": "https://api.github.com/repos/thephpleague/commonmark/zipball/d2d1aa8b35e072966c89bc0c66cf926e56767dc4",
+                "reference": "d2d1aa8b35e072966c89bc0c66cf926e56767dc4",
                 "shasum": ""
             },
             "require": {
@@ -1802,7 +1802,7 @@
             "type": "library",
             "extra": {
                 "branch-alias": {
-                    "dev-main": "2.10-dev"
+                    "dev-main": "2.11-dev"
                 }
             },
             "autoload": {
@@ -1859,7 +1859,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-08-03T13:42:31+00:00"
+            "time": "2026-08-11T16:06:25+00:00"
         },
         {
             "name": "league/config",
@@ -4003,16 +4003,16 @@
         },
         {
             "name": "swagger-api/swagger-ui",
-            "version": "v5.32.12",
+            "version": "v5.32.13",
             "source": {
                 "type": "git",
                 "url": "https://github.com/swagger-api/swagger-ui.git",
-                "reference": "9b5acf38723108ac816dcb7303897e87f933ac4e"
+                "reference": "2a33d7805eb5fff693952cebb9203ee113ab4663"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/swagger-api/swagger-ui/zipball/9b5acf38723108ac816dcb7303897e87f933ac4e",
-                "reference": "9b5acf38723108ac816dcb7303897e87f933ac4e",
+                "url": "https://api.github.com/repos/swagger-api/swagger-ui/zipball/2a33d7805eb5fff693952cebb9203ee113ab4663",
+                "reference": "2a33d7805eb5fff693952cebb9203ee113ab4663",
                 "shasum": ""
             },
             "type": "library",
@@ -4058,9 +4058,9 @@
             ],
             "support": {
                 "issues": "https://github.com/swagger-api/swagger-ui/issues",
-                "source": "https://github.com/swagger-api/swagger-ui/tree/v5.32.12"
+                "source": "https://github.com/swagger-api/swagger-ui/tree/v5.32.13"
             },
-            "time": "2026-08-03T08:38:55+00:00"
+            "time": "2026-08-11T12:38:19+00:00"
         },
         {
             "name": "symfony/clock",
@@ -7389,16 +7389,16 @@
         },
         {
             "name": "zolta/cqrs",
-            "version": "v2.0.0",
+            "version": "v2.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/zoltasoft/cqrs.git",
-                "reference": "f7ff404aa2be95ff1eb4791b7e3e5a8985017853"
+                "reference": "59f0c0a0a0feeeb20693298b5fce84e9db57e447"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/zoltasoft/cqrs/zipball/f7ff404aa2be95ff1eb4791b7e3e5a8985017853",
-                "reference": "f7ff404aa2be95ff1eb4791b7e3e5a8985017853",
+                "url": "https://api.github.com/repos/zoltasoft/cqrs/zipball/59f0c0a0a0feeeb20693298b5fce84e9db57e447",
+                "reference": "59f0c0a0a0feeeb20693298b5fce84e9db57e447",
                 "shasum": ""
             },
             "require": {
@@ -7469,9 +7469,9 @@
             ],
             "support": {
                 "issues": "https://github.com/zoltasoft/cqrs/issues",
-                "source": "https://github.com/zoltasoft/cqrs/tree/v2.0.0"
+                "source": "https://github.com/zoltasoft/cqrs/tree/v2.1.0"
             },
-            "time": "2026-08-02T11:44:45+00:00"
+            "time": "2026-08-11T20:36:56+00:00"
         },
         {
             "name": "zolta/forge",
@@ -7554,24 +7554,35 @@
         },
         {
             "name": "zolta/framework",
-            "version": "v1.0.0",
+            "version": "v1.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/zoltasoft/zolta-framework.git",
-                "reference": "e58660f330c40c3e2a6a130fbfa85300d5a5a963"
+                "reference": "c54c4efd6bff4ac66269d1967317110c42a5ad6c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/zoltasoft/zolta-framework/zipball/e58660f330c40c3e2a6a130fbfa85300d5a5a963",
-                "reference": "e58660f330c40c3e2a6a130fbfa85300d5a5a963",
+                "url": "https://api.github.com/repos/zoltasoft/zolta-framework/zipball/c54c4efd6bff4ac66269d1967317110c42a5ad6c",
+                "reference": "c54c4efd6bff4ac66269d1967317110c42a5ad6c",
                 "shasum": ""
             },
             "require": {
-                "zolta/cqrs": "^2.0",
+                "zolta/cqrs": "^2.1",
                 "zolta/forge": "^1.0",
-                "zolta/http": "^2.0"
+                "zolta/http": "^2.1"
             },
-            "type": "metapackage",
+            "require-dev": {
+                "orchestra/testbench": "^10.6",
+                "phpunit/phpunit": "^11.5"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Zolta\\Framework\\Providers\\ZoltaFrameworkServiceProvider"
+                    ]
+                }
+            },
             "autoload": {
                 "psr-4": {
                     "Zolta\\Framework\\": "src/"
@@ -7588,26 +7599,26 @@
                     "role": "Founder & Lead Developer"
                 }
             ],
-            "description": "A Composer meta-package for the Zolta framework, providing an umbrella installer for Zolta packages.",
+            "description": "A Composer package for the Zolta framework, providing an umbrella installer and unified Laravel configuration.",
             "homepage": "https://github.com/zoltasoft/zolta-framework",
             "support": {
                 "issues": "https://github.com/zolta/framework/issues",
                 "source": "https://github.com/zolta/framework"
             },
-            "time": "2026-08-05T10:49:56+00:00"
+            "time": "2026-08-11T20:54:21+00:00"
         },
         {
             "name": "zolta/http",
-            "version": "v2.0.0",
+            "version": "v2.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/zoltasoft/http.git",
-                "reference": "00c749088d900168c76faf084a1c17d4562f13eb"
+                "reference": "71ad09d3868ff8280803fa7df6ff3a1b699a0902"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/zoltasoft/http/zipball/00c749088d900168c76faf084a1c17d4562f13eb",
-                "reference": "00c749088d900168c76faf084a1c17d4562f13eb",
+                "url": "https://api.github.com/repos/zoltasoft/http/zipball/71ad09d3868ff8280803fa7df6ff3a1b699a0902",
+                "reference": "71ad09d3868ff8280803fa7df6ff3a1b699a0902",
                 "shasum": ""
             },
             "require": {
@@ -7636,14 +7647,16 @@
                         "Zolta\\Http\\Service\\Laravel\\Providers\\ZoltaHttpServiceProvider",
                         "Zolta\\Http\\Router\\Laravel\\Providers\\ZoltaRouterServiceProvider",
                         "Zolta\\Http\\Request\\Laravel\\Providers\\ZoltaRequestServiceProvider",
-                        "Zolta\\Http\\Authorization\\Laravel\\Providers\\ZoltaAuthorizationServiceProvider"
+                        "Zolta\\Http\\Authorization\\Laravel\\Providers\\ZoltaAuthorizationServiceProvider",
+                        "Zolta\\Http\\Identity\\Laravel\\Providers\\ZoltaIdentityServiceProvider"
                     ]
                 },
                 "zolta-framework-adapter": [
                     "Zolta\\Http\\Service\\Laravel\\LaravelHttpAdapter",
                     "Zolta\\Http\\Router\\Laravel\\LaravelRouterAdapter",
                     "Zolta\\Http\\Request\\Laravel\\LaravelRequestAdapter",
-                    "Zolta\\Http\\Response\\Laravel\\LaravelResponseAdapter"
+                    "Zolta\\Http\\Response\\Laravel\\LaravelResponseAdapter",
+                    "Zolta\\Http\\Identity\\Laravel\\LaravelIdentityAdapter"
                 ]
             },
             "autoload": {
@@ -7662,6 +7675,7 @@
                     "Zolta\\Http\\Router\\Laravel\\": "src/Router/Adapters/Laravel/",
                     "Zolta\\Http\\Request\\Laravel\\": "src/Request/Adapters/Laravel/",
                     "Zolta\\Http\\Service\\Laravel\\": "src/Service/Adapters/Laravel/",
+                    "Zolta\\Http\\Identity\\Laravel\\": "src/Identity/Adapters/Laravel/",
                     "Zolta\\Http\\Response\\Laravel\\": "src/Response/Adapters/Laravel/",
                     "Zolta\\Http\\Controller\\Laravel\\": "src/Controller/Adapters/Laravel/",
                     "Zolta\\Http\\Exceptions\\Laravel\\": "src/Exceptions/Adapters/Laravel/",
@@ -7697,9 +7711,9 @@
             ],
             "support": {
                 "issues": "https://github.com/zoltasoft/http/issues",
-                "source": "https://github.com/zoltasoft/http/tree/v2.0.0"
+                "source": "https://github.com/zoltasoft/http/tree/v2.1.0"
             },
-            "time": "2026-08-02T11:44:43+00:00"
+            "time": "2026-08-11T20:20:54+00:00"
         }
     ],
     "packages-dev": [
@@ -8175,16 +8189,16 @@
         },
         {
             "name": "laravel/mcp",
-            "version": "v0.9.2",
+            "version": "v0.9.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/mcp.git",
-                "reference": "2bb70c3662dfc2e2ff55c38a10ddf55bed2443b3"
+                "reference": "534b29f18418673033ec918c5a840b6ce9c08327"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/mcp/zipball/2bb70c3662dfc2e2ff55c38a10ddf55bed2443b3",
-                "reference": "2bb70c3662dfc2e2ff55c38a10ddf55bed2443b3",
+                "url": "https://api.github.com/repos/laravel/mcp/zipball/534b29f18418673033ec918c5a840b6ce9c08327",
+                "reference": "534b29f18418673033ec918c5a840b6ce9c08327",
                 "shasum": ""
             },
             "require": {
@@ -8245,7 +8259,7 @@
                 "issues": "https://github.com/laravel/mcp/issues",
                 "source": "https://github.com/laravel/mcp"
             },
-            "time": "2026-08-06T15:59:47+00:00"
+            "time": "2026-08-10T18:01:31+00:00"
         },
         {
             "name": "laravel/pail",
@@ -8329,16 +8343,16 @@
         },
         {
             "name": "laravel/pint",
-            "version": "v1.30.4",
+            "version": "v1.30.5",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/pint.git",
-                "reference": "a96cb6eee2961905d2fce7207aefb80945bf6b28"
+                "reference": "fe4148c503a0e266353d61396b79bbf7f35122df"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/pint/zipball/a96cb6eee2961905d2fce7207aefb80945bf6b28",
-                "reference": "a96cb6eee2961905d2fce7207aefb80945bf6b28",
+                "url": "https://api.github.com/repos/laravel/pint/zipball/fe4148c503a0e266353d61396b79bbf7f35122df",
+                "reference": "fe4148c503a0e266353d61396b79bbf7f35122df",
                 "shasum": ""
             },
             "require": {
@@ -8346,19 +8360,19 @@
                 "ext-mbstring": "*",
                 "ext-tokenizer": "*",
                 "ext-xml": "*",
-                "php": "^8.2.0"
+                "php": "^8.3.0"
             },
             "require-dev": {
                 "composer/semver": "^3.4.4",
                 "friendsofphp/php-cs-fixer": "^3.95.18",
-                "illuminate/view": "^12.65.0",
+                "illuminate/view": "^13.24.0",
                 "larastan/larastan": "^3.10.0",
-                "laravel-zero/framework": "^12.1.0",
+                "laravel-zero/framework": "^13.0.0",
                 "laravel/agent-detector": "^2.0.2",
                 "laravel/prompts": "^0.3.22",
                 "mockery/mockery": "^1.6.12",
                 "nunomaduro/termwind": "^2.4.0",
-                "pestphp/pest": "^3.8.7"
+                "pestphp/pest": "^4.7.8"
             },
             "bin": [
                 "builds/pint"
@@ -8395,7 +8409,7 @@
                 "issues": "https://github.com/laravel/pint/issues",
                 "source": "https://github.com/laravel/pint"
             },
-            "time": "2026-08-05T16:47:22+00:00"
+            "time": "2026-08-10T15:35:50+00:00"
         },
         {
             "name": "laravel/roster",
@@ -8517,16 +8531,16 @@
         },
         {
             "name": "laravel/telescope",
-            "version": "v5.22.0",
+            "version": "v5.22.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/telescope.git",
-                "reference": "571b08633d86086da3899474378050b16c4c6680"
+                "reference": "67edf6caba0f6f9421a92c38bf97e369af268a56"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/telescope/zipball/571b08633d86086da3899474378050b16c4c6680",
-                "reference": "571b08633d86086da3899474378050b16c4c6680",
+                "url": "https://api.github.com/repos/laravel/telescope/zipball/67edf6caba0f6f9421a92c38bf97e369af268a56",
+                "reference": "67edf6caba0f6f9421a92c38bf97e369af268a56",
                 "shasum": ""
             },
             "require": {
@@ -8580,9 +8594,9 @@
             ],
             "support": {
                 "issues": "https://github.com/laravel/telescope/issues",
-                "source": "https://github.com/laravel/telescope/tree/v5.22.0"
+                "source": "https://github.com/laravel/telescope/tree/v5.22.1"
             },
-            "time": "2026-07-29T14:10:20+00:00"
+            "time": "2026-08-05T13:51:24+00:00"
         },
         {
             "name": "mockery/mockery",
@@ -8669,20 +8683,20 @@
         },
         {
             "name": "myclabs/deep-copy",
-            "version": "1.13.4",
+            "version": "1.14.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/myclabs/DeepCopy.git",
-                "reference": "07d290f0c47959fd5eed98c95ee5602db07e0b6a"
+                "reference": "8680aa248f8e07bc8fb43f56f0f5fc77a0c96aae"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/myclabs/DeepCopy/zipball/07d290f0c47959fd5eed98c95ee5602db07e0b6a",
-                "reference": "07d290f0c47959fd5eed98c95ee5602db07e0b6a",
+                "url": "https://api.github.com/repos/myclabs/DeepCopy/zipball/8680aa248f8e07bc8fb43f56f0f5fc77a0c96aae",
+                "reference": "8680aa248f8e07bc8fb43f56f0f5fc77a0c96aae",
                 "shasum": ""
             },
             "require": {
-                "php": "^7.1 || ^8.0"
+                "php": "^8.0"
             },
             "conflict": {
                 "doctrine/collections": "<1.6.8",
@@ -8717,15 +8731,15 @@
             ],
             "support": {
                 "issues": "https://github.com/myclabs/DeepCopy/issues",
-                "source": "https://github.com/myclabs/DeepCopy/tree/1.13.4"
+                "source": "https://github.com/myclabs/DeepCopy/tree/1.14.0"
             },
             "funding": [
                 {
-                    "url": "https://tidelift.com/funding/github/packagist/myclabs/deep-copy",
-                    "type": "tidelift"
+                    "url": "https://github.com/mnapoli",
+                    "type": "github"
                 }
             ],
-            "time": "2025-08-01T08:46:24+00:00"
+            "time": "2026-08-11T10:17:44+00:00"
         },
         {
             "name": "nunomaduro/collision",
