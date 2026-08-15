@@ -10,26 +10,48 @@ type HostedBrand = {
   key: string
   name: string
   appearance: HostedAppearance
+  authentication: {
+    termsUrl: string | null
+    privacyUrl: string | null
+  }
 }
 
 const route = useRoute()
-const applicationKey = computed(() => typeof route.query.application === 'string' ? route.query.application : '')
+const applicationKey = computed(() =>
+  typeof route.query.application === 'string' ? route.query.application : ''
+)
+const clientId = computed(() =>
+  typeof route.query.client_id === 'string' ? route.query.client_id : ''
+)
 const { data: experience } = await useAsyncData<HostedBrand | null>(
   'identity-auth-brand',
   async () => {
-    if (!applicationKey.value) return null
-    const response = await $fetch<{ application: HostedBrand }>('/api/hosted-auth/context', {
-      query: { application: applicationKey.value }
-    })
+    if (!applicationKey.value && !clientId.value) return null
+    const response = await $fetch<{ application: HostedBrand }>(
+      '/api/hosted-auth/context',
+      {
+        query: applicationKey.value
+          ? { application: applicationKey.value }
+          : { clientId: clientId.value }
+      }
+    )
     return response.application
   },
-  { watch: [applicationKey] }
+  { watch: [applicationKey, clientId] }
 )
 const brand = computed(() => experience.value)
-const backgroundPreset = computed(() => brand.value?.appearance.backgroundPreset ?? 'identity')
-const brandStyle = computed(() => brand.value?.appearance.accentColor
-  ? { '--identity-auth-accent': brand.value.appearance.accentColor }
-  : {})
+const config = useRuntimeConfig()
+const productName = computed(
+  () => brand.value?.name ?? config.public.identityAuth.productName
+)
+const backgroundPreset = computed(
+  () => brand.value?.appearance.backgroundPreset ?? 'identity'
+)
+const brandStyle = computed(() =>
+  brand.value?.appearance.accentColor
+    ? { '--identity-auth-accent': brand.value.appearance.accentColor }
+    : {}
+)
 
 provide('identity-auth-brand', brand)
 </script>
@@ -40,10 +62,41 @@ provide('identity-auth-brand', brand)
     :class="`identity-auth-layout--${backgroundPreset}`"
     :style="brandStyle"
   >
-    <div class="identity-auth-controls">
-      <IdentityConsoleControls />
+    <UHeader class="identity-auth-header">
+      <template #left>
+        <div class="identity-auth-header-brand">
+          <span class="identity-auth-header-logo">
+            <img
+              v-if="brand?.appearance.logoUrl"
+              :src="brand.appearance.logoUrl"
+              :alt="`${productName} logo`"
+            >
+            <UIcon
+              v-else
+              name="i-lucide-app-window"
+              class="size-5 text-muted"
+            />
+          </span>
+          <span class="identity-auth-header-name">
+            {{ productName }}
+          </span>
+        </div>
+      </template>
+
+      <template #right>
+        <div class="identity-auth-header-controls">
+          <IdentityConsoleControls compact />
+        </div>
+      </template>
+    </UHeader>
+
+    <div class="identity-auth-content">
+      <slot />
+      <IdentityAttribution
+        :terms-url="brand?.authentication.termsUrl"
+        :privacy-url="brand?.authentication.privacyUrl"
+      />
     </div>
-    <slot />
   </main>
 </template>
 
@@ -58,7 +111,14 @@ provide('identity-auth-brand', brand)
   --identity-auth-status: #f1f4fb;
   --identity-auth-accent: #3157d5;
   color-scheme: light;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
 }
 
 .dark {
@@ -78,25 +138,189 @@ body {
   color: var(--identity-auth-text);
 }
 
-.identity-auth-controls {
-  position: absolute;
-  inset-block-start: 1rem;
-  inset-inline-end: 1rem;
-}
-
 .identity-auth-layout {
   box-sizing: border-box;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
-  place-items: center;
-  padding: 2rem 1rem;
   position: relative;
 }
 
-.identity-auth-layout--slate { --identity-auth-bg: #e9eff7; background: linear-gradient(135deg, #e9eff7, #cad7e8); }
-.identity-auth-layout--indigo { --identity-auth-bg: #eef0ff; background: linear-gradient(135deg, #eef0ff, #d5dcff); }
-.identity-auth-layout--emerald { --identity-auth-bg: #e9f8f2; background: linear-gradient(135deg, #e9f8f2, #c7ecdc); }
-.identity-auth-layout--sunset { --identity-auth-bg: #fff2ea; background: linear-gradient(135deg, #fff2ea, #ffd9cd); }
+.identity-auth-header {
+  background: color-mix(
+    in srgb,
+    var(--identity-auth-card) 88%,
+    transparent
+  );
+  border-bottom-color: var(--identity-auth-border);
+  flex: none;
+  width: 100%;
+}
+
+.identity-auth-header-brand {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  max-width: min(70vw, 32rem);
+  min-width: 0;
+}
+
+.identity-auth-header-logo {
+  align-items: center;
+  background: color-mix(in srgb, var(--identity-auth-card) 75%, transparent);
+  border: 1px solid var(--identity-auth-border);
+  border-radius: 0.75rem;
+  display: inline-flex;
+  flex: none;
+  height: 2.5rem;
+  justify-content: center;
+  overflow: hidden;
+  width: 2.5rem;
+}
+
+.identity-auth-header-logo img {
+  border-radius: 9999px;
+  height: 1.75rem;
+  object-fit: contain;
+  width: 1.75rem;
+}
+
+.identity-auth-header-name {
+  color: var(--identity-auth-text);
+  font-size: 1rem;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.identity-auth-header-controls {
+  align-items: center;
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+}
+
+.identity-auth-layout--slate {
+  --identity-auth-bg: #e9eff7;
+  background: linear-gradient(135deg, #e9eff7, #cad7e8);
+}
+.identity-auth-layout--indigo {
+  --identity-auth-bg: #eef0ff;
+  background: linear-gradient(135deg, #eef0ff, #d5dcff);
+}
+.identity-auth-layout--emerald {
+  --identity-auth-bg: #e9f8f2;
+  background: linear-gradient(135deg, #e9f8f2, #c7ecdc);
+}
+.identity-auth-layout--sunset {
+  --identity-auth-bg: #fff2ea;
+  background: linear-gradient(135deg, #fff2ea, #ffd9cd);
+}
+
+.identity-auth-page,
+.identity-auth-form-shell {
+  box-sizing: border-box;
+  width: min(100%, 26rem);
+}
+
+.identity-auth-content {
+  align-items: center;
+  box-sizing: border-box;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  margin-inline: auto;
+  padding: 2rem 1rem;
+  width: min(100%, 28rem);
+}
+
+.identity-auth-content > * {
+  margin-inline: auto;
+}
+
+.identity-auth-step-enter-active,
+.identity-auth-step-leave-active {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.identity-auth-step-enter-from {
+  opacity: 0;
+  transform: translateX(1.25rem);
+}
+
+.identity-auth-step-leave-to {
+  opacity: 0;
+  transform: translateX(-1.25rem);
+}
+
+.identity-auth-form-shell {
+  background: color-mix(
+    in srgb,
+    var(--identity-auth-card) 94%,
+    var(--identity-auth-bg)
+  );
+  border: 1px solid color-mix(in srgb, var(--identity-auth-border) 78%, #fff);
+  border-radius: 1rem;
+  box-shadow: 0 0.75rem 2rem
+    color-mix(in srgb, var(--identity-auth-text) 8%, transparent);
+  padding: 1.75rem;
+}
+
+.identity-auth-form-logo {
+  align-items: center;
+  display: inline-flex;
+  height: 2rem;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 9999px;
+  width: 2rem;
+}
+
+.identity-auth-form-logo img {
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+.identity-auth-form-header {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+}
+
+.identity-auth-form-header h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0.5rem 0 0;
+}
+
+.identity-auth-form-header > p {
+  color: var(--identity-auth-text);
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0.5rem 0 0;
+}
+
+.identity-auth-form-header .identity-auth-form-header-description {
+  color: var(--identity-auth-muted);
+  font-size: 0.9rem;
+  font-weight: 400;
+  line-height: 1.5;
+  margin-top: 0.25rem;
+}
+
+.identity-auth-form-header .identity-auth-form-header-link {
+  color: var(--identity-auth-muted);
+  font-size: 0.9rem;
+  font-weight: 400;
+  margin: 0.75rem 0 0;
+}
 
 .identity-auth-card {
   box-sizing: border-box;
@@ -106,49 +330,6 @@ body {
   background: var(--identity-auth-card);
   box-shadow: 0 1rem 3rem rgba(23, 32, 51, 0.08);
   padding: 2rem;
-}
-
-.identity-auth-eyebrow {
-  margin: 0 0 0.5rem;
-  color: var(--identity-auth-muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.identity-auth-brand {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  margin-bottom: 0.5rem;
-}
-
-.identity-auth-brand .identity-auth-eyebrow { margin: 0; }
-
-.identity-auth-logo {
-  width: 2rem;
-  height: 2rem;
-  object-fit: contain;
-  border-radius: 0.45rem;
-}
-
-.identity-auth-card h1 {
-  margin: 0;
-  font-size: 1.75rem;
-}
-
-.identity-auth-intro {
-  margin: 0.75rem 0 1.5rem;
-  color: var(--identity-auth-muted);
-  line-height: 1.5;
-}
-
-.identity-auth-welcome {
-  margin: -0.85rem 0 1.5rem;
-  color: var(--identity-auth-muted);
-  font-size: 0.9rem;
-  line-height: 1.45;
 }
 
 .identity-auth-form {
@@ -177,7 +358,8 @@ body {
 
 .identity-auth-field input:focus {
   border-color: var(--identity-auth-accent);
-  outline: 3px solid color-mix(in srgb, var(--identity-auth-accent) 18%, transparent);
+  outline: 3px solid
+    color-mix(in srgb, var(--identity-auth-accent) 18%, transparent);
 }
 
 .identity-auth-button {
@@ -235,6 +417,34 @@ body {
 
 .identity-auth-button--secondary {
   background: #172033;
+}
+
+.identity-auth-button--google {
+  background: var(--identity-auth-card);
+  border: 1px solid var(--identity-auth-input-border);
+  color: var(--identity-auth-text);
+}
+
+.identity-auth-divider {
+  color: var(--identity-auth-muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.identity-auth-checkbox {
+  align-items: flex-start;
+  color: var(--identity-auth-muted);
+  display: flex;
+  font-size: 0.85rem;
+  gap: 0.6rem;
+  line-height: 1.45;
+}
+
+.identity-auth-checkbox input {
+  margin-top: 0.2rem;
+}
+.identity-auth-checkbox a {
+  color: var(--identity-auth-accent);
 }
 
 .identity-auth-expiry {

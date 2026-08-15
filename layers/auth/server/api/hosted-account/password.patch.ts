@@ -13,6 +13,7 @@ const schema = z.object({
 
 export default defineEventHandler(async (event) => {
   const { application, ...body } = await readValidatedBody(event, schema.parse)
+  await requireIdentityHostedAccountPasswordAuthentication(event, application)
   const response = await identityHostedAccountRequest<{
     data: { message: string }
   }>(event, application, '/api/auth/password', {

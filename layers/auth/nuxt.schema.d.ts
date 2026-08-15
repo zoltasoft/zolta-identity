@@ -5,6 +5,8 @@ declare module '@nuxt/schema' {
       loginRedirect: string
       logoutRedirect: string
       registerRedirect: string
+      sandboxEnabled: boolean
+      portfolioProductsUrl: string
     }
   }
 
@@ -22,6 +24,7 @@ declare module '@nuxt/schema' {
       }
     }
     identityHostedApplicationsToken: string
+    identityGoogle: { clientId: string, clientSecret: string }
   }
 }
 

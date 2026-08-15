@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import * as z from 'zod/v4'
+import type { FormSubmitEvent } from '@nuxt/ui'
 import { useIdentityMutation } from '../../../../app/composables/useIdentityMutation'
 
 definePageMeta({
@@ -7,41 +9,54 @@ definePageMeta({
 })
 
 const route = useRoute()
+const toast = useToast()
 const { resetPassword } = useIdentityAuth()
 const mutateIdentity = useIdentityMutation()
 const hostedClientId = computed(() => typeof route.query.client_id === 'string' ? route.query.client_id : '')
-const form = reactive({
-  email: typeof route.query.email === 'string' ? route.query.email : '',
-  token: typeof route.query.token === 'string' ? route.query.token : '',
-  password: '',
-  passwordConfirmation: ''
+const schema = z.object({
+  email: z.email('Enter a valid email address.'),
+  token: z.string().min(64, 'Enter the reset token.'),
+  password: z.string().min(12, 'Use at least 12 characters.'),
+  passwordConfirmation: z.string().min(12, 'Confirm your password.')
+}).refine(data => data.password === data.passwordConfirmation, {
+  message: 'The password confirmation does not match.',
+  path: ['passwordConfirmation']
 })
+type ResetPasswordSchema = z.output<typeof schema>
+const fields = [
+  { name: 'email', type: 'email' as const, label: 'Email', placeholder: 'you@example.com', required: true, autocomplete: 'email', defaultValue: typeof route.query.email === 'string' ? route.query.email : '' },
+  { name: 'token', type: 'text' as const, label: 'Reset token', placeholder: 'Paste the token from your email', required: true, autocomplete: 'one-time-code', defaultValue: typeof route.query.token === 'string' ? route.query.token : '' },
+  { name: 'password', type: 'password' as const, label: 'New password', placeholder: 'At least 12 characters', required: true, autocomplete: 'new-password' },
+  { name: 'passwordConfirmation', type: 'password' as const, label: 'Confirm password', placeholder: 'Repeat your password', required: true, autocomplete: 'new-password' }
+]
 const pending = ref(false)
-const errorMessage = ref('')
 const successMessage = ref('')
 const applicationUrl = ref('')
 
-async function submit() {
+async function submit({ data }: FormSubmitEvent<ResetPasswordSchema>) {
   pending.value = true
-  errorMessage.value = ''
   successMessage.value = ''
 
   try {
     if (hostedClientId.value) {
       const result = await mutateIdentity<{ applicationUrl: string }>('/api/hosted-auth/password/reset', {
         method: 'POST',
-        body: { clientId: hostedClientId.value, ...form }
+        body: { clientId: hostedClientId.value, ...data }
       })
       applicationUrl.value = result.applicationUrl
     } else {
-      await resetPassword(form)
+      await resetPassword(data)
     }
     successMessage.value = 'Your password has been reset. You can now sign in.'
   } catch (error) {
-    errorMessage.value = identityAuthErrorMessage(
-      error,
-      'We could not reset your password.'
-    )
+    toast.add({
+      title: 'Unable to reset your password',
+      description: identityAuthErrorMessage(
+        error,
+        'We could not reset your password.'
+      ),
+      color: 'error'
+    })
   } finally {
     pending.value = false
   }
@@ -49,74 +64,32 @@ async function submit() {
 </script>
 
 <template>
-  <IdentityAuthCard
+  <UAuthForm
+    class="identity-auth-form-shell"
+    :fields="fields"
+    :schema="schema"
+    :validate-on="['input']"
     title="Choose a new password"
     description="Enter the reset token and a new password."
+    icon="i-lucide-lock-keyhole"
+    :submit="{ label: 'Reset password', loading: pending }"
+    @submit="submit"
   >
-    <form
-      class="identity-auth-form"
-      @submit.prevent="submit"
-    >
-      <p
-        v-if="errorMessage"
-        class="identity-auth-error"
-      >
-        {{ errorMessage }}
-      </p>
+    <template #header>
+      <IdentityAuthFormHeader
+        title="Choose a new password"
+        description="Enter the reset token and a new password."
+      />
+    </template>
+    <template #validation>
       <p
         v-if="successMessage"
         class="identity-auth-success"
       >
         {{ successMessage }}
       </p>
-      <label class="identity-auth-field">
-        Email
-        <input
-          v-model="form.email"
-          type="email"
-          autocomplete="email"
-          required
-        >
-      </label>
-      <label class="identity-auth-field">
-        Reset token
-        <input
-          v-model="form.token"
-          type="text"
-          autocomplete="one-time-code"
-          minlength="64"
-          required
-        >
-      </label>
-      <label class="identity-auth-field">
-        New password
-        <input
-          v-model="form.password"
-          type="password"
-          autocomplete="new-password"
-          minlength="12"
-          required
-        >
-      </label>
-      <label class="identity-auth-field">
-        Confirm password
-        <input
-          v-model="form.passwordConfirmation"
-          type="password"
-          autocomplete="new-password"
-          minlength="12"
-          required
-        >
-      </label>
-      <button
-        class="identity-auth-button"
-        type="submit"
-        :disabled="pending"
-      >
-        {{ pending ? 'Resetting…' : 'Reset password' }}
-      </button>
-    </form>
-    <p class="identity-auth-links">
+    </template>
+    <template #footer>
       <a
         v-if="applicationUrl"
         :href="applicationUrl"
@@ -129,6 +102,6 @@ async function submit() {
       >
         Continue to sign in
       </NuxtLink>
-    </p>
-  </IdentityAuthCard>
+    </template>
+  </UAuthForm>
 </template>

@@ -145,6 +145,12 @@ export async function identityCreateSandboxSession(
   event: H3Event,
   connection: IdentityConnectionName = 'sandbox'
 ): Promise<IdentitySandboxSessionData> {
+  const publicConfig = useRuntimeConfig(event).public as {
+    identityAuth?: { sandboxEnabled?: boolean }
+  }
+  if (publicConfig.identityAuth?.sandboxEnabled !== true) {
+    throw createError({ statusCode: 403, statusMessage: 'Demo sandbox accounts are disabled.' })
+  }
   const config = identityConfiguration(event, connection)
   return await identityClientRequest<IdentitySandboxSessionData>(event, '/auth/sandbox-session', {
     client_id: config.clientId,

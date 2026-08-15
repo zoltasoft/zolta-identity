@@ -67,6 +67,12 @@ export type IdentityHostedApplication = {
     background_preset: 'identity' | 'slate' | 'indigo' | 'emerald' | 'sunset'
     logo_url: string | null
   }
+  authentication: {
+    google_enabled: boolean
+    terms_required: boolean
+    terms_url: string | null
+    privacy_url: string | null
+  }
   status: 'active' | 'disabled'
 }
 

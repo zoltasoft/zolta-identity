@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import * as z from 'zod/v4'
+import type { FormSubmitEvent } from '@nuxt/ui'
 import { useIdentityMutation } from '../../../../app/composables/useIdentityMutation'
 
 definePageMeta({
@@ -8,11 +10,26 @@ definePageMeta({
 
 const config = useRuntimeConfig()
 const route = useRoute()
+const toast = useToast()
 const { verifyEmail, resendVerification, fetch } = useIdentityAuth()
 const mutateIdentity = useIdentityMutation()
 const hosted = computed(() => typeof route.query.application === 'string')
+const expiredHostedFlow = ref(false)
+const hostedLoginLocation = computed(() => ({
+  path: '/auth/login',
+  query: {
+    application: route.query.application,
+    ...(typeof route.query.state === 'string' ? { state: route.query.state } : {})
+  }
+}))
 if (hosted.value) {
-  await $fetch('/api/hosted-auth/flow')
+  try {
+    await $fetch('/api/hosted-auth/flow')
+  } catch (error) {
+    const candidate = error as { status?: number, statusCode?: number }
+    if (candidate.status !== 401 && candidate.statusCode !== 401) throw error
+    expiredHostedFlow.value = true
+  }
 } else {
   const session = useUserSession()
   if (!session.loggedIn.value) await session.fetch()
@@ -20,28 +37,28 @@ if (hosted.value) {
     await navigateTo({ path: '/auth/login', query: { redirect: route.fullPath } })
   }
 }
-const code = ref('')
+const schema = z.object({ code: z.string().regex(/^\d{6}$/, 'Enter the six-digit verification code.') })
+type VerificationSchema = z.output<typeof schema>
+const fields = [{ name: 'code', type: 'text' as const, label: 'Verification code', placeholder: '123456', required: true, autocomplete: 'one-time-code', inputmode: 'numeric', maxlength: 6 }]
 const pending = ref(false)
 const resending = ref(false)
-const errorMessage = ref('')
 const successMessage = ref('')
 
-async function submit() {
+async function submit({ data }: FormSubmitEvent<VerificationSchema>) {
   pending.value = true
-  errorMessage.value = ''
   successMessage.value = ''
 
   try {
     if (hosted.value) {
       const result = await mutateIdentity<{ redirectUrl: string }>('/api/hosted-auth/email/verification', {
         method: 'POST',
-        body: { code: code.value }
+        body: { code: data.code }
       })
       await navigateTo(result.redirectUrl, { external: true })
       return
     }
 
-    await verifyEmail(code.value)
+    await verifyEmail(data.code)
     await fetch()
     successMessage.value = 'Your email address is verified.'
     await navigateTo(identitySafeRedirect(
@@ -49,10 +66,14 @@ async function submit() {
       '/'
     ))
   } catch (error) {
-    errorMessage.value = identityAuthErrorMessage(
-      error,
-      'We could not verify that code.'
-    )
+    toast.add({
+      title: 'Unable to verify your email',
+      description: identityAuthErrorMessage(
+        error,
+        'We could not verify that code.'
+      ),
+      color: 'error'
+    })
   } finally {
     pending.value = false
   }
@@ -60,7 +81,6 @@ async function submit() {
 
 async function resend() {
   resending.value = true
-  errorMessage.value = ''
 
   try {
     if (hosted.value) {
@@ -70,10 +90,14 @@ async function resend() {
     }
     successMessage.value = 'A new verification code has been sent.'
   } catch (error) {
-    errorMessage.value = identityAuthErrorMessage(
-      error,
-      'We could not send a new verification code.'
-    )
+    toast.add({
+      title: 'Unable to send a verification code',
+      description: identityAuthErrorMessage(
+        error,
+        'We could not send a new verification code.'
+      ),
+      color: 'error'
+    })
   } finally {
     resending.value = false
   }
@@ -81,53 +105,72 @@ async function resend() {
 </script>
 
 <template>
-  <IdentityAuthCard
+  <section
+    v-if="expiredHostedFlow"
+    class="identity-auth-form-shell space-y-5"
+  >
+    <IdentityAuthFormHeader
+      title="Verification session expired"
+      description="For your security, email verification must be completed shortly after signing in."
+    />
+    <UAlert
+      color="neutral"
+      variant="subtle"
+      icon="i-lucide-clock-3"
+      title="Start again to receive a new verification code."
+    />
+    <UButton
+      :to="hostedLoginLocation"
+      block
+      label="Start again"
+      icon="i-lucide-arrow-left"
+    />
+  </section>
+
+  <UAuthForm
+    v-else
+    class="identity-auth-form-shell"
+    :fields="fields"
+    :schema="schema"
+    :validate-on="['input']"
     title="Verify your email"
     description="Enter the six-digit code sent to your email address."
+    icon="i-lucide-mail-check"
+    :submit="{ label: 'Verify email', loading: pending }"
+    @submit="submit"
   >
-    <form
-      class="identity-auth-form"
-      @submit.prevent="submit"
-    >
-      <p
-        v-if="errorMessage"
-        class="identity-auth-error"
-      >
-        {{ errorMessage }}
-      </p>
+    <template #header>
+      <IdentityAuthFormHeader
+        title="Verify your email"
+        description="Enter the six-digit code sent to your email address."
+      />
+    </template>
+    <template #validation>
       <p
         v-if="successMessage"
         class="identity-auth-success"
       >
         {{ successMessage }}
       </p>
-      <label class="identity-auth-field">
-        Verification code
-        <input
-          v-model="code"
-          type="text"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          pattern="[0-9]{6}"
-          maxlength="6"
-          required
-        >
-      </label>
-      <button
-        class="identity-auth-button"
-        type="submit"
-        :disabled="pending"
-      >
-        {{ pending ? 'Verifying…' : 'Verify email' }}
-      </button>
-      <button
-        class="identity-auth-button"
-        type="button"
-        :disabled="resending"
-        @click="resend"
-      >
-        {{ resending ? 'Sending…' : 'Send a new code' }}
-      </button>
-    </form>
-  </IdentityAuthCard>
+    </template>
+    <template #submit="{ loading }">
+      <div class="grid gap-3">
+        <UButton
+          type="submit"
+          block
+          label="Verify email"
+          :loading="loading"
+        />
+        <UButton
+          type="button"
+          block
+          color="neutral"
+          variant="outline"
+          label="Send a new code"
+          :loading="resending"
+          @click="resend"
+        />
+      </div>
+    </template>
+  </UAuthForm>
 </template>

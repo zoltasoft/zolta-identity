@@ -12,6 +12,7 @@ import { useIdentityMutation } from './useIdentityMutation'
 export function useIdentityAuth() {
   const userSession = useUserSession()
   const mutation = useIdentityMutation()
+  const identity = computed<IdentityBrowserSession | null>(() => userSession.session.value?.identity as IdentityBrowserSession | undefined ?? null)
 
   const login = async (input: IdentityLoginInput) => {
     const identity = await mutation<IdentityBrowserSession>('/api/auth/login', {
@@ -49,6 +50,7 @@ export function useIdentityAuth() {
 
   return {
     ...userSession,
+    identity,
     login,
     register,
     createSandboxSession,

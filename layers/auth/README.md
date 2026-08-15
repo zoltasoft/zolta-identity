@@ -34,10 +34,27 @@ layer. Import server-only session and token helpers from
 `@zoltasoft/identity-nuxt/server`; this avoids mounting embedded credential
 pages and `/api/auth/login|register|reset` handlers in the consumer.
 
-The Identity host reads its server-only `IDENTITY_HOSTED_APPLICATIONS` JSON
-registry. Each entry supplies an application name and URL, exact callback URL,
-and the primary (plus optional sandbox) API URL, project, BFF client ID, and BFF
-client secret. See the repository `.env.example` for a complete shape.
+The Identity host resolves hosted applications from the Identity Console using
+its server-only `IDENTITY_HOSTED_APPLICATIONS_TOKEN`. Configure the application
+name, return URL, exact callback URL, live BFF client, and optional sandbox BFF
+client in the Console. The hosted application record never stores client
+secrets.
+
+Each hosted application also controls its own sign-in presentation: Google
+sign-in, an optional required terms checkbox, and Terms of Service and Privacy
+Policy links. Enable Google only after configuring
+`IDENTITY_GOOGLE_CLIENT_ID` and `IDENTITY_GOOGLE_CLIENT_SECRET` on the Identity
+Nuxt host and registering `<identity-host>/api/hosted-auth/google/callback` in
+Google Cloud. When terms are required, Identity records the accepted terms URL
+when it creates the application's membership; existing members can still use
+Google to sign in without re-accepting.
+
+The ready-made hosted pages include the optional
+`IdentityAttribution.vue` lower-left Zoltasoft credit and source link. A cloned
+or white-labelled host can remove `<IdentityAttribution />` from
+`layers/auth/default-pages/app/layouts/identity-auth.vue`.
+Set `IDENTITY_PORTFOLIO_PRODUCTS_URL` to show the optional “Built by Redouane”
+link; it should use the deployed portfolio products URL in production.
 
 The default-pages entry also mounts `/account?application=<key>`. This hosted
 account portal signs the user in against that application's confidential BFF
@@ -72,7 +89,8 @@ The ready-made pages resolve their experience from Identity at runtime:
 
 - a live primary project renders sign-in, public registration, email
   verification, password recovery, and password reset
-- an optional sandbox connection adds a **Create instant demo account** action
+- an optional sandbox client adds a **Create instant demo account** action; its
+  callback is exchanged by the consumer's sandbox BFF client
 - a sandbox primary project hides permanent-account forms, immediately creates a
   temporary identity, and shows its generated name, email, and expiry before the
   user continues

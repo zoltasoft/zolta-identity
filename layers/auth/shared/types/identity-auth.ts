@@ -81,6 +81,7 @@ export type IdentityLoginData = {
       sandbox_ttl_minutes: number
       registration_mode: 'invite_only' | 'public'
       registration_role_id: string | null
+      email_verification_required: boolean
     }
     client: { id: string }
     membership: {
@@ -108,6 +109,7 @@ export type IdentityRegisterInput = {
   email: string
   password: string
   passwordConfirmation: string
+  termsAccepted?: boolean
 }
 
 export type IdentityResetPasswordInput = {

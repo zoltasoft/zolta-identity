@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import * as z from 'zod/v4'
+import type { FormSubmitEvent } from '@nuxt/ui'
 import { useIdentityMutation } from '../../../../app/composables/useIdentityMutation'
 
 definePageMeta({
@@ -7,34 +9,39 @@ definePageMeta({
 })
 
 const route = useRoute()
+const toast = useToast()
 const { forgotPassword } = useIdentityAuth()
 const mutateIdentity = useIdentityMutation()
 const hostedApplication = computed(() => typeof route.query.application === 'string' ? route.query.application : '')
-const email = ref('')
+const schema = z.object({ email: z.email('Enter a valid email address.') })
+type ForgotPasswordSchema = z.output<typeof schema>
+const fields = [{ name: 'email', type: 'email' as const, label: 'Email', placeholder: 'you@example.com', required: true, autocomplete: 'email' }]
 const pending = ref(false)
-const errorMessage = ref('')
 const successMessage = ref('')
 
-async function submit() {
+async function submit({ data }: FormSubmitEvent<ForgotPasswordSchema>) {
   pending.value = true
-  errorMessage.value = ''
   successMessage.value = ''
 
   try {
     if (hostedApplication.value) {
       await mutateIdentity('/api/hosted-auth/password/forgot', {
         method: 'POST',
-        body: { application: hostedApplication.value, email: email.value }
+        body: { application: hostedApplication.value, email: data.email }
       })
     } else {
-      await forgotPassword(email.value)
+      await forgotPassword(data.email)
     }
     successMessage.value = 'If that account exists, password reset instructions have been sent.'
   } catch (error) {
-    errorMessage.value = identityAuthErrorMessage(
-      error,
-      'We could not request a password reset.'
-    )
+    toast.add({
+      title: 'Unable to request a password reset',
+      description: identityAuthErrorMessage(
+        error,
+        'We could not request a password reset.'
+      ),
+      color: 'error'
+    })
   } finally {
     pending.value = false
   }
@@ -42,47 +49,35 @@ async function submit() {
 </script>
 
 <template>
-  <IdentityAuthCard
+  <UAuthForm
+    class="identity-auth-form-shell"
+    :fields="fields"
+    :schema="schema"
+    :validate-on="['input']"
     title="Reset your password"
     description="Enter your email address and we will send the reset instructions."
+    icon="i-lucide-key-round"
+    :submit="{ label: 'Send reset instructions', loading: pending }"
+    @submit="submit"
   >
-    <form
-      class="identity-auth-form"
-      @submit.prevent="submit"
-    >
-      <p
-        v-if="errorMessage"
-        class="identity-auth-error"
-      >
-        {{ errorMessage }}
-      </p>
+    <template #header>
+      <IdentityAuthFormHeader
+        title="Reset your password"
+        description="Enter your email address and we will send the reset instructions."
+      />
+    </template>
+    <template #validation>
       <p
         v-if="successMessage"
         class="identity-auth-success"
       >
         {{ successMessage }}
       </p>
-      <label class="identity-auth-field">
-        Email
-        <input
-          v-model="email"
-          type="email"
-          autocomplete="email"
-          required
-        >
-      </label>
-      <button
-        class="identity-auth-button"
-        type="submit"
-        :disabled="pending"
-      >
-        {{ pending ? 'Sending…' : 'Send reset instructions' }}
-      </button>
-    </form>
-    <p class="identity-auth-links">
+    </template>
+    <template #footer>
       <NuxtLink :to="{ path: '/auth/login', query: hostedApplication ? { application: hostedApplication, state: route.query.state } : {} }">
         Return to sign in
       </NuxtLink>
-    </p>
-  </IdentityAuthCard>
+    </template>
+  </UAuthForm>
 </template>

@@ -7,6 +7,12 @@ const appearanceSchema = z.object({
   accent_color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable(),
   background_preset: z.enum(['identity', 'slate', 'indigo', 'emerald', 'sunset'])
 })
+const authenticationSchema = z.object({
+  google_enabled: z.boolean(),
+  terms_required: z.boolean(),
+  terms_url: z.url().max(2048).nullable(),
+  privacy_url: z.url().max(2048).nullable()
+})
 
 const schema = z.object({
   name: z.string().trim().min(2).max(200),
@@ -15,7 +21,11 @@ const schema = z.object({
   sandbox_client_id: z.uuid().nullable(),
   application_url: z.url().max(2048),
   callback_url: z.url().max(2048),
-  appearance: appearanceSchema
+  appearance: appearanceSchema,
+  authentication: authenticationSchema
+}).refine(body => !body.authentication.terms_required || body.authentication.terms_url !== null, {
+  message: 'A Terms of Service URL is required when terms acceptance is enabled.',
+  path: ['authentication', 'terms_url']
 })
 
 export default defineEventHandler(async (event) => {

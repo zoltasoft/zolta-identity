@@ -12,8 +12,7 @@ type Profile = {
 
 type Envelope = {
   data: {
-    auth_user?: Profile
-    response?: { auth_user?: Profile }
+    user?: Profile
   }
 }
 
@@ -21,8 +20,8 @@ const schema = z.object({ application: z.string().trim().min(1) })
 
 export default defineEventHandler(async (event) => {
   const { application } = await getValidatedQuery(event, schema.parse)
-  const response = await identityHostedAccountRequest<Envelope>(event, application, '/api/auth/user')
-  const profile = response.data.auth_user ?? response.data.response?.auth_user
+  const response = await identityHostedAccountRequest<Envelope>(event, application, '/auth/me')
+  const profile = response.data.user
   if (!profile) {
     throw createError({ statusCode: 502, statusMessage: 'Identity returned an invalid account profile.' })
   }

@@ -74,12 +74,12 @@ export function useIdentityAccess() {
       mutation<IdentityClient>(`/api/identity/projects/${projectId}/clients`, { method: 'POST', body: { name } }),
     createHostedApplication: (
       projectId: string,
-      body: { name: string, key: string, primary_client_id: string, sandbox_client_id: string | null, application_url: string, callback_url: string, appearance: IdentityHostedApplication['appearance'] }
+      body: { name: string, key: string, primary_client_id: string, sandbox_client_id: string | null, application_url: string, callback_url: string, appearance: IdentityHostedApplication['appearance'], authentication: IdentityHostedApplication['authentication'] }
     ) => mutation<IdentityHostedApplication>(`/api/identity/projects/${projectId}/hosted-applications`, { method: 'POST', body }),
     updateHostedApplication: (
       projectId: string,
       applicationId: string,
-      body: { name: string, primary_client_id: string, sandbox_client_id: string | null, application_url: string, callback_url: string, status: 'active' | 'disabled', appearance: IdentityHostedApplication['appearance'] }
+      body: { name: string, primary_client_id: string, sandbox_client_id: string | null, application_url: string, callback_url: string, status: 'active' | 'disabled', appearance: IdentityHostedApplication['appearance'], authentication: IdentityHostedApplication['authentication'] }
     ) => mutation(`/api/identity/projects/${projectId}/hosted-applications/${applicationId}`, { method: 'PATCH', body }),
     uploadHostedApplicationLogo: (projectId: string, applicationId: string, logo: File) => {
       const formData = new FormData()

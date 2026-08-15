@@ -26,13 +26,18 @@ export function createAuthRuntimeConfig(
       }
     },
     identityHostedApplicationsToken: env.IDENTITY_HOSTED_APPLICATIONS_TOKEN ?? '',
+    identityGoogle: {
+      clientId: env.IDENTITY_GOOGLE_CLIENT_ID ?? env.GOOGLE_CLIENT_ID ?? '',
+      clientSecret: env.IDENTITY_GOOGLE_CLIENT_SECRET ?? env.GOOGLE_CLIENT_SECRET ?? ''
+    },
     public: {
       identityAuth: {
         productName: env.NUXT_PUBLIC_IDENTITY_AUTH_PRODUCT_NAME ?? 'Identity',
         loginRedirect: env.NUXT_PUBLIC_IDENTITY_AUTH_LOGIN_REDIRECT ?? '/',
         logoutRedirect: env.NUXT_PUBLIC_IDENTITY_AUTH_LOGOUT_REDIRECT ?? '/auth/login',
         registerRedirect: env.NUXT_PUBLIC_IDENTITY_AUTH_REGISTER_REDIRECT ?? '/auth/verify-email',
-        sandboxEnabled: env.NUXT_PUBLIC_IDENTITY_SANDBOX_ENABLED === 'true'
+        sandboxEnabled: env.NUXT_PUBLIC_IDENTITY_SANDBOX_ENABLED === 'true',
+        portfolioProductsUrl: env.IDENTITY_PORTFOLIO_PRODUCTS_URL ?? ''
       }
     }
   }

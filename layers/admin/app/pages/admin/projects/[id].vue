@@ -54,8 +54,12 @@ const hostedApplication = reactive<{
   accentColor: string
   backgroundPreset: 'identity' | 'slate' | 'indigo' | 'emerald' | 'sunset'
   logoUrl: string | null
+  googleEnabled: boolean
+  termsRequired: boolean
+  termsUrl: string
+  privacyUrl: string
   status: 'active' | 'disabled'
-}>({ id: null, name: '', key: '', primaryClientId: '', sandboxClientId: '', applicationUrl: '', callbackUrl: '', welcomeText: '', accentColor: '', backgroundPreset: 'identity', logoUrl: null, status: 'active' })
+}>({ id: null, name: '', key: '', primaryClientId: '', sandboxClientId: '', applicationUrl: '', callbackUrl: '', welcomeText: '', accentColor: '', backgroundPreset: 'identity', logoUrl: null, googleEnabled: false, termsRequired: false, termsUrl: '', privacyUrl: '', status: 'active' })
 const hostedApplicationLogo = ref<File | null>(null)
 const hostedApplicationLogoPreview = ref<string | null>(null)
 const removeHostedApplicationLogo = ref(false)
@@ -210,9 +214,13 @@ function openHostedApplication(application?: IdentityHostedApplication) {
         accentColor: application.appearance.accent_color ?? '',
         backgroundPreset: application.appearance.background_preset,
         logoUrl: application.appearance.logo_url,
+        googleEnabled: application.authentication.google_enabled,
+        termsRequired: application.authentication.terms_required,
+        termsUrl: application.authentication.terms_url ?? '',
+        privacyUrl: application.authentication.privacy_url ?? '',
         status: application.status
       }
-    : { id: null, name: '', key: '', primaryClientId: '', sandboxClientId: '', applicationUrl: '', callbackUrl: '', welcomeText: '', accentColor: '', backgroundPreset: 'identity', logoUrl: null, status: 'active' })
+    : { id: null, name: '', key: '', primaryClientId: '', sandboxClientId: '', applicationUrl: '', callbackUrl: '', welcomeText: '', accentColor: '', backgroundPreset: 'identity', logoUrl: null, googleEnabled: false, termsRequired: false, termsUrl: '', privacyUrl: '', status: 'active' })
   hostedApplicationLogo.value = null
   hostedApplicationLogoPreview.value = null
   removeHostedApplicationLogo.value = false
@@ -225,6 +233,15 @@ function hostedApplicationAppearance() {
     accent_color: hostedApplication.accentColor || null,
     background_preset: hostedApplication.backgroundPreset,
     logo_url: hostedApplication.logoUrl
+  }
+}
+
+function hostedApplicationAuthentication() {
+  return {
+    google_enabled: hostedApplication.googleEnabled,
+    terms_required: hostedApplication.termsRequired,
+    terms_url: hostedApplication.termsRequired ? hostedApplication.termsUrl.trim() || null : null,
+    privacy_url: hostedApplication.privacyUrl.trim() || null
   }
 }
 
@@ -247,7 +264,8 @@ async function saveHostedApplication() {
       application_url: hostedApplication.applicationUrl,
       callback_url: hostedApplication.callbackUrl,
       status: hostedApplication.status,
-      appearance: hostedApplicationAppearance()
+      appearance: hostedApplicationAppearance(),
+      authentication: hostedApplicationAuthentication()
     })
   } else {
     const created = await access.createHostedApplication(projectId.value, {
@@ -257,7 +275,8 @@ async function saveHostedApplication() {
       sandbox_client_id: hostedApplication.sandboxClientId || null,
       application_url: hostedApplication.applicationUrl,
       callback_url: hostedApplication.callbackUrl,
-      appearance: hostedApplicationAppearance()
+      appearance: hostedApplicationAppearance(),
+      authentication: hostedApplicationAuthentication()
     })
     applicationId = created.id
   }
@@ -1315,6 +1334,56 @@ function selectMembership(membership: IdentityMembership) {
                 <div class="border-b border-default px-5 py-4">
                   <div class="flex items-center gap-2">
                     <UIcon
+                      name="i-lucide-shield-check"
+                      class="size-4 text-primary"
+                    />
+                    <h3 class="font-semibold text-highlighted">
+                      Sign-in and legal
+                    </h3>
+                  </div>
+                  <p class="mt-1 text-sm text-muted">
+                    Select the hosted sign-in options. Legal links are shown only on the hosted pages for this application.
+                  </p>
+                </div>
+                <div class="space-y-4 p-5">
+                  <UCheckbox
+                    v-model="hostedApplication.googleEnabled"
+                    label="Offer Google sign-in"
+                    description="Requires Google OAuth to be configured on the Identity host before it is available to users."
+                  />
+                  <UCheckbox
+                    v-model="hostedApplication.termsRequired"
+                    label="Require acceptance of terms when creating an account"
+                    description="Identity records the accepted terms URL with the new account."
+                  />
+                  <div class="grid gap-4 sm:grid-cols-2">
+                    <UFormField
+                      label="Terms of Service URL"
+                      :required="hostedApplication.termsRequired"
+                    >
+                      <UInput
+                        v-model="hostedApplication.termsUrl"
+                        type="url"
+                        placeholder="https://app.example.com/legal/terms"
+                        class="w-full font-mono"
+                      />
+                    </UFormField>
+                    <UFormField label="Privacy Policy URL">
+                      <UInput
+                        v-model="hostedApplication.privacyUrl"
+                        type="url"
+                        placeholder="https://app.example.com/legal/privacy"
+                        class="w-full font-mono"
+                      />
+                    </UFormField>
+                  </div>
+                </div>
+              </section>
+
+              <section class="rounded-xl border border-default">
+                <div class="border-b border-default px-5 py-4">
+                  <div class="flex items-center gap-2">
+                    <UIcon
                       name="i-lucide-key-round"
                       class="size-4 text-primary"
                     />
@@ -1341,7 +1410,7 @@ function selectMembership(membership: IdentityMembership) {
                   </UFormField>
                   <UFormField
                     label="Sandbox client ID"
-                    description="Optional active client ID from a sandbox project for demo access."
+                    description="Optional active BFF client from a sandbox project. Linking it enables the temporary demo-account button on this hosted application."
                   >
                     <UInput
                       v-model="hostedApplication.sandboxClientId"
