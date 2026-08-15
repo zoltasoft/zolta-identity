@@ -178,16 +178,25 @@ adapter from `@zoltasoft/identity-nuxt/server`, redirect the browser to the
 Identity host, and expose only an authorize route and a callback route in the
 consumer BFF.
 
-Register hosted consumers in the Identity Nuxt environment. Keep this JSON
-server-only because it contains confidential client secrets:
+Create the hosted application in the Identity Console. Select its live BFF
+client, enter the consumer's exact callback URL, and optionally enter a BFF
+client from a separate sandbox project. The optional sandbox client enables the
+**Create instant demo account** action. The Identity host resolves this
+console-managed metadata with `IDENTITY_HOSTED_APPLICATIONS_TOKEN`; client
+secrets are never stored in the hosted-application record.
 
-```dotenv
-IDENTITY_HOSTED_APPLICATIONS='{"job-tracker":{"name":"Job Tracker","applicationUrl":"http://localhost:3000/dashboard","callbackUrl":"http://localhost:3000/api/auth/callback","primary":{"apiUrl":"http://127.0.0.1:8100","project":"interviewlike-job-tracker","clientId":"<bff-client-id>","clientSecret":"<bff-client-secret>"}}}'
-```
+The same Console form controls hosted Google sign-in and legal presentation per
+application. Enable Google only after the Identity Nuxt host has
+`IDENTITY_GOOGLE_CLIENT_ID` and `IDENTITY_GOOGLE_CLIENT_SECRET` configured and
+Google Cloud has the exact callback URI
+`https://<identity-host>/api/hosted-auth/google/callback`. A required terms URL
+adds a server-enforced consent checkbox to account creation; the accepted URL is
+stored with the hosted application and user.
 
-The consumer must use the same callback URL during handoff exchange. Configure
-an optional `sandbox` connection beside `primary` when the hosted page should
-offer an instant temporary demo account.
+The consumer must configure the live and sandbox BFF clients with the same
+callback URL. A sandbox handoff is exchanged only with the sandbox BFF client;
+the consumer package keeps that temporary session behind its normal application
+session boundary.
 
 Configure the consumer Nuxt server with its own BFF client:
 
