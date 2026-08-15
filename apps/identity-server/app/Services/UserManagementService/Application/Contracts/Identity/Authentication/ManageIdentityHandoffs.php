@@ -21,4 +21,10 @@ interface ManageIdentityHandoffs
         ?string $ipAddress = null,
         ?string $userAgent = null,
     ): array;
+
+    /** @param array<string, mixed> $input @return array<string, mixed> */
+    public function createAccountPortalIntent(string $userId, string $accessToken, array $input, ?string $ipAddress = null, ?string $userAgent = null): array;
+
+    /** @param array<string, mixed> $input @return array<string, mixed> */
+    public function consumeAccountPortalIntent(array $input, ?string $ipAddress = null, ?string $userAgent = null): array;
 }

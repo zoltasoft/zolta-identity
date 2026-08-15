@@ -12,6 +12,9 @@ interface IssueIdentityAccess
     /** @param array<string, mixed> $attributes @return array<string, mixed> */
     public function register(array $attributes, ?string $ipAddress = null, ?string $userAgent = null): array;
 
+    /** @param array<string, mixed> $attributes @return array<string, mixed> */
+    public function socialLogin(array $attributes, ?string $ipAddress = null, ?string $userAgent = null): array;
+
     /** @return array<string, mixed> */
     public function createSandboxSession(
         string $clientId,

@@ -11,7 +11,7 @@ final class IdentityHostedAuthenticationOperationRequest extends IdentityOperati
 {
     public function authorize(): bool
     {
-        return $this->operation() !== 'auth.handoff.create' || $this->hasAuthenticatedIdentity();
+        return ! in_array($this->operation(), ['auth.handoff.create', 'auth.account.intent.create'], true) || $this->hasAuthenticatedIdentity();
     }
 
     /** @return array<string, mixed> */
@@ -30,6 +30,12 @@ final class IdentityHostedAuthenticationOperationRequest extends IdentityOperati
                 'username' => ['required', 'string', 'min:2', 'max:100'],
                 'email' => ['required', 'email', 'max:255'],
                 'password' => ['required', 'string', 'min:12', 'confirmed'],
+                'terms_accepted' => ['sometimes', 'boolean'],
+            ],
+            'auth.social' => [
+                'provider' => ['required', 'in:google'],
+                'access_token' => ['required', 'string', 'max:4096'],
+                'terms_accepted' => ['sometimes', 'boolean'],
             ],
             'auth.sandbox-session' => [],
             'auth.refresh' => ['refresh_token' => ['required', 'string', 'min:64']],
@@ -39,7 +45,9 @@ final class IdentityHostedAuthenticationOperationRequest extends IdentityOperati
                 'token' => ['required', 'string', 'min:64'],
                 'password' => ['required', 'string', 'min:12', 'confirmed'],
             ],
-            'auth.handoff.create' => ['redirect_uri' => ['sometimes', 'url:http,https', 'max:2048']],
+            'auth.handoff.create' => ['connection' => ['required', 'in:primary,sandbox']],
+            'auth.account.intent.create' => [],
+            'auth.account.intent.consume' => ['intent' => ['required', 'string', 'min:64']],
             default => [],
         };
     }
@@ -57,7 +65,8 @@ final class IdentityHostedAuthenticationOperationRequest extends IdentityOperati
         }
 
         $sandbox = $this->operation() === 'auth.sandbox-session'
-            || ($this->operation() === 'auth.context' && $this->input('connection') === 'sandbox');
+            || in_array($this->operation(), ['auth.context', 'auth.handoff.create'], true)
+                && $this->input('connection') === 'sandbox';
         $client = $sandbox ? $application->sandboxClient : $application->primaryClient;
         if ($client === null || $client->status !== 'active' || $client->project?->status !== 'active') {
             throw new IdentityResourceNotFoundException('Identity hosted application');
@@ -67,6 +76,20 @@ final class IdentityHostedAuthenticationOperationRequest extends IdentityOperati
             'client_id' => $client->id,
             'client_secret' => '',
         ];
+        if (in_array($this->operation(), ['auth.account.intent.create', 'auth.account.intent.consume'], true)) {
+            $input['hosted_application_id'] = $application->id;
+        }
+        if (in_array($this->operation(), ['auth.register', 'auth.social'], true)) {
+            $authentication = $application->authentication ?? [];
+            if ($this->operation() === 'auth.register'
+                && ($authentication['terms_required'] ?? false)
+                && ! ($input['terms_accepted'] ?? false)) {
+                abort(422, 'You must accept the terms of service to create an account.');
+            }
+            $input['hosted_application_id'] = $application->id;
+            $input['terms_required'] = (bool) ($authentication['terms_required'] ?? false);
+            $input['terms_url'] = $authentication['terms_url'] ?? null;
+        }
         if ($this->operation() === 'auth.handoff.create') {
             $input['redirect_uri'] = $application->callback_url;
         }

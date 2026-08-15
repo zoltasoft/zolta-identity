@@ -61,6 +61,7 @@ final class IdentityProjectOperationRequest extends IdentityOperationRequest
                 'application_url' => ['required', 'url:http,https', 'max:2048'],
                 'callback_url' => ['required', 'url:http,https', 'max:2048'],
                 ...$this->hostedApplicationAppearanceRules(),
+                ...$this->hostedApplicationAuthenticationRules(),
             ],
             'projects.hosted_applications.update' => [
                 'name' => ['required', 'string', 'max:200'],
@@ -70,6 +71,7 @@ final class IdentityProjectOperationRequest extends IdentityOperationRequest
                 'callback_url' => ['required', 'url:http,https', 'max:2048'],
                 'status' => ['required', Rule::in(['active', 'disabled'])],
                 ...$this->hostedApplicationAppearanceRules(),
+                ...$this->hostedApplicationAuthenticationRules(),
             ],
             'projects.roles.store' => [
                 'name' => ['required', 'string', 'max:255'],
@@ -122,6 +124,18 @@ final class IdentityProjectOperationRequest extends IdentityOperationRequest
             'appearance.welcome_text' => ['nullable', 'string', 'max:280'],
             'appearance.accent_color' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'appearance.background_preset' => ['nullable', Rule::in(['identity', 'slate', 'indigo', 'emerald', 'sunset'])],
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function hostedApplicationAuthenticationRules(): array
+    {
+        return [
+            'authentication' => ['sometimes', 'array'],
+            'authentication.google_enabled' => ['nullable', 'boolean'],
+            'authentication.terms_required' => ['nullable', 'boolean'],
+            'authentication.terms_url' => ['nullable', 'required_if:authentication.terms_required,true', 'url:http,https', 'max:2048'],
+            'authentication.privacy_url' => ['nullable', 'url:http,https', 'max:2048'],
         ];
     }
 

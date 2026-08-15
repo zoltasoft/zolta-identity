@@ -8,5 +8,6 @@ enum IdentityAccessOperation: string
 {
     case Login = 'auth.login';
     case Register = 'auth.register';
+    case SocialLogin = 'auth.social';
     case SandboxSession = 'auth.sandbox-session';
 }

@@ -185,6 +185,7 @@ final class IdentityPayloadFactory
             'application_url' => $application->application_url,
             'callback_url' => $application->callback_url,
             'appearance' => $this->hostedApplicationAppearance($application),
+            'authentication' => $this->hostedApplicationAuthentication($application),
             'status' => $application->status,
         ];
     }
@@ -201,6 +202,19 @@ final class IdentityPayloadFactory
             'accent_color' => $appearance['accent_color'] ?? null,
             'background_preset' => $appearance['background_preset'] ?? 'identity',
             'logo_url' => $this->safeHostedApplicationLogoUrl($disk, $logoPath),
+        ];
+    }
+
+    /** @return array{google_enabled: bool, terms_required: bool, terms_url: string|null, privacy_url: string|null} */
+    private function hostedApplicationAuthentication(IdentityHostedApplication $application): array
+    {
+        $authentication = $application->authentication ?? [];
+
+        return [
+            'google_enabled' => (bool) ($authentication['google_enabled'] ?? false),
+            'terms_required' => (bool) ($authentication['terms_required'] ?? false),
+            'terms_url' => $authentication['terms_url'] ?? null,
+            'privacy_url' => $authentication['privacy_url'] ?? null,
         ];
     }
 

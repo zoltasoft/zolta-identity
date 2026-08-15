@@ -8,4 +8,6 @@ enum IdentityHandoffOperation: string
 {
     case Create = 'auth.handoff.create';
     case Exchange = 'auth.handoff.exchange';
+    case AccountIntentCreate = 'auth.account.intent.create';
+    case AccountIntentConsume = 'auth.account.intent.consume';
 }

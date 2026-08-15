@@ -32,6 +32,11 @@ final class IdentityHostedAuthenticationController extends Controller
     #[Service(ExecuteIdentityAuthenticationService::class, 'Registration successful.', 201)]
     public function register(): void {}
 
+    #[Route('v1/identity/hosted-applications/{application}/auth/social', methods: ['POST'], middleware: [...self::MIDDLEWARE, 'throttle:identity-hosted-login'], name: 'identity.hosted_applications.social')]
+    #[Request(IdentityHostedAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Social login successful.')]
+    public function social(): void {}
+
     #[Route('v1/identity/hosted-applications/{application}/auth/sandbox-session', methods: ['POST'], middleware: [...self::MIDDLEWARE, 'throttle:20,1'], name: 'identity.hosted_applications.sandbox-session')]
     #[Request(IdentityHostedAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityAuthenticationService::class, 'Sandbox session created.', 201)]
@@ -56,4 +61,14 @@ final class IdentityHostedAuthenticationController extends Controller
     #[Request(IdentityHostedAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityAuthenticationService::class, 'Authorization handoff created.', 201)]
     public function createHandoff(): void {}
+
+    #[Route('v1/identity/hosted-applications/{application}/auth/account/intent', methods: ['POST'], middleware: [...self::MIDDLEWARE, 'auth:sanctum', 'identity.token', 'throttle:30,1'], name: 'identity.hosted_applications.account.intent.create')]
+    #[Request(IdentityHostedAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Account portal intent created.', 201)]
+    public function createAccountIntent(): void {}
+
+    #[Route('v1/identity/hosted-applications/{application}/auth/account/intent/consume', methods: ['POST'], middleware: [...self::MIDDLEWARE, 'throttle:60,1'], name: 'identity.hosted_applications.account.intent.consume')]
+    #[Request(IdentityHostedAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Account portal intent consumed.')]
+    public function consumeAccountIntent(): void {}
 }

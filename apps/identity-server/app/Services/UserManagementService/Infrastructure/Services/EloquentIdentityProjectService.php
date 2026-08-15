@@ -345,6 +345,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
                 'application_url' => $attributes['application_url'],
                 'callback_url' => $attributes['callback_url'],
                 'appearance' => $this->hostedApplicationAppearance($attributes),
+                'authentication' => $this->hostedApplicationAuthentication($attributes),
                 'status' => 'active',
             ]);
             $this->audit->record(
@@ -377,6 +378,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
             'application_url' => $attributes['application_url'],
             'callback_url' => $attributes['callback_url'],
             'appearance' => $this->hostedApplicationAppearance($attributes),
+            'authentication' => $this->hostedApplicationAuthentication($attributes),
             'status' => $attributes['status'],
         ])->save();
         $this->audit->record(
@@ -857,6 +859,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
             'application_url' => $application->application_url,
             'callback_url' => $application->callback_url,
             'appearance' => $this->payloads->hostedApplication($application)['appearance'],
+            'authentication' => $this->payloads->hostedApplication($application)['authentication'],
             'primary' => [
                 'project' => $application->project->slug,
                 'client_id' => $client->id,
@@ -881,6 +884,20 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
                 ? (string) $appearance['accent_color']
                 : null,
             'background_preset' => (string) ($appearance['background_preset'] ?? 'identity'),
+        ];
+    }
+
+    /** @param array<string, mixed> $attributes @return array{google_enabled: bool, terms_required: bool, terms_url: string|null, privacy_url: string|null} */
+    private function hostedApplicationAuthentication(array $attributes): array
+    {
+        $authentication = is_array($attributes['authentication'] ?? null) ? $attributes['authentication'] : [];
+        $termsRequired = (bool) ($authentication['terms_required'] ?? false);
+
+        return [
+            'google_enabled' => (bool) ($authentication['google_enabled'] ?? false),
+            'terms_required' => $termsRequired,
+            'terms_url' => $termsRequired && ! empty($authentication['terms_url']) ? (string) $authentication['terms_url'] : null,
+            'privacy_url' => ! empty($authentication['privacy_url']) ? (string) $authentication['privacy_url'] : null,
         ];
     }
 

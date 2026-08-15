@@ -113,6 +113,25 @@ final class IdentityAccessServiceTest extends TestCase
         ])->assertOk()->assertJsonPath('active', false);
     }
 
+    public function test_logout_revokes_all_identity_sessions_for_the_current_project(): void
+    {
+        [$user, $project, $client, $secret] = $this->identityFixture();
+        $firstSession = $this->login($user, $project, $client, $secret);
+        $secondSession = $this->login($user, $project, $client, $secret);
+
+        $this->withToken($firstSession['access_token'])
+            ->postJson('/api/v1/identity/auth/logout')
+            ->assertOk();
+
+        foreach ([$firstSession, $secondSession] as $session) {
+            $this->postJson('/api/v1/identity/auth/introspect', [
+                'client_id' => $client->id,
+                'client_secret' => $secret,
+                'token' => $session['access_token'],
+            ])->assertOk()->assertJsonPath('active', false);
+        }
+    }
+
     public function test_hosted_authentication_handoff_is_client_bound_and_single_use(): void
     {
         [$user, $project, $client, $secret] = $this->identityFixture();
@@ -257,6 +276,63 @@ final class IdentityAccessServiceTest extends TestCase
         $this->assertTrue($temporary->is_temporary);
         $this->assertNotNull($temporary->email_verified_at);
         $this->assertEqualsWithDelta(now()->addHour()->getTimestamp(), $temporary->demo_expires_at?->getTimestamp(), 5);
+    }
+
+    public function test_hosted_sandbox_handoff_is_bound_to_the_sandbox_client(): void
+    {
+        [, $project, $sandboxClient, $sandboxSecret] = $this->identityFixture();
+        $role = IdentityProjectRole::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Demo member',
+            'slug' => 'demo-member',
+        ]);
+        $project->forceFill([
+            'mode' => 'sandbox',
+            'sandbox_ttl_minutes' => 60,
+            'registration_role_id' => $role->id,
+        ])->save();
+        $primarySecret = Str::random(64);
+        $primaryClient = IdentityProjectClient::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Live BFF',
+            'secret_hash' => hash('sha256', $primarySecret),
+            'secret_prefix' => Str::substr($primarySecret, 0, 8),
+            'status' => 'active',
+        ]);
+        IdentityHostedApplication::query()->create([
+            'project_id' => $project->id,
+            'primary_client_id' => $primaryClient->id,
+            'sandbox_client_id' => $sandboxClient->id,
+            'key' => 'demo-app',
+            'name' => 'Demo App',
+            'application_url' => 'https://demo.example.test',
+            'callback_url' => 'https://demo.example.test/api/auth/callback',
+            'status' => 'active',
+        ]);
+        config()->set('identity.hosted_applications.internal_token', 'hosted-application-test-token');
+
+        $session = $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->postJson('/api/v1/identity/hosted-applications/demo-app/auth/sandbox-session')
+            ->assertCreated()
+            ->json('data');
+
+        $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->withToken($session['access_token'])
+            ->postJson('/api/v1/identity/hosted-applications/demo-app/auth/handoff', ['connection' => 'primary'])
+            ->assertUnauthorized();
+
+        $code = $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->withToken($session['access_token'])
+            ->postJson('/api/v1/identity/hosted-applications/demo-app/auth/handoff', ['connection' => 'sandbox'])
+            ->assertCreated()
+            ->json('data.code');
+
+        $this->postJson('/api/v1/identity/auth/handoff/exchange', [
+            'client_id' => $sandboxClient->id,
+            'client_secret' => $sandboxSecret,
+            'code' => $code,
+            'redirect_uri' => 'https://demo.example.test/api/auth/callback',
+        ])->assertOk();
     }
 
     public function test_live_project_rejects_sandbox_sessions(): void

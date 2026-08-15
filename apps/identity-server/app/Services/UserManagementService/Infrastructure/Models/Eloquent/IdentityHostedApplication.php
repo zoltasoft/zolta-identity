@@ -23,13 +23,14 @@ final class IdentityHostedApplication extends Model
         'application_url',
         'callback_url',
         'appearance',
+        'authentication',
         'logo_path',
         'status',
     ];
 
     protected function casts(): array
     {
-        return ['appearance' => 'array'];
+        return ['appearance' => 'array', 'authentication' => 'array'];
     }
 
     public function project(): BelongsTo

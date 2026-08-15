@@ -21,10 +21,15 @@ use App\Services\UserManagementService\Domain\Repositories\IdentityMembershipRep
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityProjectId;
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityRoleId;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAuthorizationCode;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAccountPortalIntent;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHostedApplication;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHostedApplicationConsent;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectInvitation;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityRefreshToken;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\Role;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\SocialAccount;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\SocialProvider;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
 use App\Services\UserManagementService\Infrastructure\Notifications\ResetIdentityPassword;
 use App\Services\UserManagementService\Infrastructure\Notifications\VerifyEmailCode;
@@ -55,6 +60,7 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
         private IdentityTokenManager $tokens,
         private IdentityPayloadFactory $payloads,
         private IdentityAuditRecorder $audit,
+        private OAuthProviderFactory $oauthProviders,
     ) {}
 
     public function login(
@@ -263,6 +269,50 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
         });
     }
 
+    public function createAccountPortalIntent(string $userId, string $accessToken, array $input, ?string $ipAddress = null, ?string $userAgent = null): array
+    {
+        $application = IdentityHostedApplication::query()->with('primaryClient')
+            ->when(isset($input['hosted_application_id']), fn ($query) => $query->whereKey((string) $input['hosted_application_id']))
+            ->when(isset($input['hosted_application']), fn ($query) => $query->where('key', (string) $input['hosted_application']))
+            ->firstOrFail();
+        $token = PersonalAccessToken::findToken($accessToken);
+        if (! $token
+            || (string) $token->tokenable_id !== $userId
+            || (string) $token->identity_project_id !== (string) $application->project_id
+            || (string) $token->identity_client_id !== (string) $application->primary_client_id) {
+            throw new IdentityAuthenticationException('The Identity session cannot open account settings.');
+        }
+
+        $intent = Str::random(96);
+        IdentityAccountPortalIntent::query()->create([
+            'hosted_application_id' => $application->id,
+            'user_id' => $userId,
+            'intent_hash' => hash('sha256', $intent),
+            'expires_at' => now()->addMinutes(2),
+        ]);
+        $this->audit->record('auth.account_portal_intent_created', $application->project_id, $application->primary_client_id, $userId, 'hosted_application', $application->id, [], $ipAddress, $userAgent);
+
+        return ['intent' => $intent, 'expires_in' => 120];
+    }
+
+    public function consumeAccountPortalIntent(array $input, ?string $ipAddress = null, ?string $userAgent = null): array
+    {
+        return DB::transaction(function () use ($input, $ipAddress, $userAgent): array {
+            $intent = IdentityAccountPortalIntent::query()
+                ->where('intent_hash', hash('sha256', (string) $input['intent']))
+                ->lockForUpdate()
+                ->first();
+            if (! $intent || $intent->consumed_at !== null || $intent->expires_at->isPast()
+                || (string) $intent->hosted_application_id !== (string) $input['hosted_application_id']) {
+                throw new IdentityAuthenticationException('The account settings request is invalid or expired.');
+            }
+            $intent->forceFill(['consumed_at' => now()])->save();
+            $application = IdentityHostedApplication::query()->findOrFail($intent->hosted_application_id);
+            $this->audit->record('auth.account_portal_intent_consumed', $application->project_id, $application->primary_client_id, $intent->user_id, 'hosted_application', $application->id, [], $ipAddress, $userAgent);
+            return ['authorized' => true];
+        });
+    }
+
     public function register(
         array $attributes,
         ?string $ipAddress = null,
@@ -336,6 +386,15 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
                 $membershipAggregate->id()->toString(),
             );
 
+            if (($attributes['terms_required'] ?? false) === true && isset($attributes['hosted_application_id'])) {
+                IdentityHostedApplicationConsent::query()->create([
+                    'hosted_application_id' => (string) $attributes['hosted_application_id'],
+                    'user_id' => $user->id,
+                    'terms_url' => $attributes['terms_url'] ?? null,
+                    'accepted_at' => now(),
+                ]);
+            }
+
             $tokens = $this->tokens->issuePair($user, $project, $client, $membership);
             if ($project->email_verification_required) {
                 $this->issueEmailVerification($user);
@@ -355,6 +414,91 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             return $tokens + [
                 'identity' => $this->payloads->identity($user, $project, $client, $membership),
             ];
+        });
+    }
+
+    public function socialLogin(
+        array $attributes,
+        ?string $ipAddress = null,
+        ?string $userAgent = null,
+    ): array {
+        $client = $this->clients->authenticate((string) $attributes['client_id'], (string) $attributes['client_secret']);
+        $project = $client->project;
+        if ($project->mode === 'sandbox' || $project->status !== 'active') {
+            throw new IdentityAuthorizationException('This project does not accept social sign-in.');
+        }
+
+        $remote = $this->oauthProviders->make((string) $attributes['provider'])
+            ->fetchOAuthUser((string) $attributes['access_token']);
+        if ($remote->email === '') {
+            throw new IdentityAuthenticationException('Google did not return an email address.');
+        }
+
+        return DB::transaction(function () use ($attributes, $client, $ipAddress, $project, $remote, $userAgent): array {
+            $provider = SocialProvider::query()->firstOrCreate(
+                ['social_provider' => (string) $attributes['provider']],
+                ['id' => (string) Str::uuid()],
+            );
+            $account = SocialAccount::query()
+                ->where('social_provider_id', $provider->id)
+                ->where('social_provider_user_id', $remote->providerUserId)
+                ->first();
+            $user = $account?->user ?? User::query()
+                ->whereRaw('lower(email) = ?', [Str::lower($remote->email)])
+                ->first();
+            $newMembership = false;
+
+            if ($user === null) {
+                if ($project->registration_mode !== 'public') {
+                    throw new IdentityAuthorizationException('Public registration is not enabled for this project.');
+                }
+                $user = User::query()->create([
+                    'username' => Str::limit($remote->name !== '' ? $remote->name : Str::before($remote->email, '@'), 100, ''),
+                    'email' => Str::lower($remote->email),
+                    'password' => Str::random(64),
+                    'role_id' => Role::query()->firstOrCreate(['role' => 'User'], ['description' => 'Default global identity role'])->id,
+                    'terms' => 'accepted',
+                    'email_verified_at' => now(),
+                ]);
+                $newMembership = true;
+            }
+
+            $membership = $this->memberships->findActiveForProjectUser($project->id, $user->id);
+            if ($membership === null) {
+                if ($project->registration_mode !== 'public') {
+                    throw new IdentityAuthorizationException('This account does not have access to the project.');
+                }
+                if (($attributes['terms_required'] ?? false) === true
+                    && ! ($attributes['terms_accepted'] ?? false)) {
+                    throw new IdentityAuthorizationException(
+                        'You must accept the terms of service to create an account.',
+                    );
+                }
+                $roleIds = $project->registration_role_id !== null && $this->projectRoles->existsForProject($project->id, $project->registration_role_id)
+                    ? [IdentityRoleId::fromString($project->registration_role_id)] : [];
+                $aggregate = DomainIdentityMembership::create(IdentityProjectId::fromString($project->id), new UserId((string) $user->id), roleIds: $roleIds);
+                $this->membershipAggregates->save($aggregate);
+                $membership = $this->memberships->findForProjectOrFail($project->id, $aggregate->id()->toString());
+                $newMembership = true;
+            }
+
+            SocialAccount::query()->updateOrCreate(
+                ['social_provider_id' => $provider->id, 'social_provider_user_id' => $remote->providerUserId],
+                ['id' => (string) Str::uuid(), 'user_id' => $user->id, 'access_token' => $remote->accessToken, 'refresh_token' => $remote->refreshToken, 'avatar_url' => $remote->avatarUrl],
+            );
+            if ($newMembership && ($attributes['terms_required'] ?? false) === true && isset($attributes['hosted_application_id'])) {
+                IdentityHostedApplicationConsent::query()->create([
+                    'hosted_application_id' => (string) $attributes['hosted_application_id'],
+                    'user_id' => $user->id,
+                    'terms_url' => $attributes['terms_url'] ?? null,
+                    'accepted_at' => now(),
+                ]);
+            }
+
+            $tokens = $this->tokens->issuePair($user, $project, $client, $membership);
+            $this->audit->record('auth.social_login', $project->id, $client->id, $user->id, 'user', $user->id, ['provider' => $attributes['provider']], $ipAddress, $userAgent);
+
+            return $tokens + ['identity' => $this->payloads->identity($user, $project, $client, $membership)];
         });
     }
 

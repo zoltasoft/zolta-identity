@@ -66,6 +66,11 @@ final class IdentityAuthenticationController extends Controller
     #[Service(ExecuteIdentityAuthenticationService::class, 'Authorization handoff created.', 201)]
     public function createHandoff(): void {}
 
+    #[Route('v1/identity/auth/account/intent', methods: ['POST'], middleware: ['api', 'auth:sanctum', 'identity.token', 'throttle:30,1'], name: 'identity.auth.account.intent.create')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Account portal intent created.', 201)]
+    public function createAccountIntent(): void {}
+
     #[Route('v1/identity/auth/handoff/exchange', methods: ['POST'], middleware: ['api', 'throttle:60,1'], name: 'identity.auth.handoff.exchange')]
     #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityAuthenticationService::class, 'Authorization handoff exchanged.')]

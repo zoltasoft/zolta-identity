@@ -33,6 +33,18 @@ final readonly class ExecuteIdentityHandoffCommandHandler
                 $command->ipAddress,
                 $command->userAgent,
             ),
+            IdentityHandoffOperation::AccountIntentCreate => $this->handoffs->createAccountPortalIntent(
+                $command->actorUserId ?? throw new InvalidArgumentException('An authenticated Identity actor is required.'),
+                $command->accessToken ?? throw new InvalidArgumentException('An Identity access token is required.'),
+                $command->input,
+                $command->ipAddress,
+                $command->userAgent,
+            ),
+            IdentityHandoffOperation::AccountIntentConsume => $this->handoffs->consumeAccountPortalIntent(
+                $command->input,
+                $command->ipAddress,
+                $command->userAgent,
+            ),
         };
 
         return Result::success(new IdentityOperationPayload($result));

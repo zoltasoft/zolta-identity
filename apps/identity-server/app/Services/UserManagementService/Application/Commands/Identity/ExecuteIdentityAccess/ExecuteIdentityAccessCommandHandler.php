@@ -28,6 +28,11 @@ final readonly class ExecuteIdentityAccessCommandHandler
                 $command->ipAddress,
                 $command->userAgent,
             ),
+            IdentityAccessOperation::SocialLogin => $this->access->socialLogin(
+                $command->input,
+                $command->ipAddress,
+                $command->userAgent,
+            ),
             IdentityAccessOperation::SandboxSession => $this->access->createSandboxSession(
                 (string) $command->input['client_id'],
                 (string) $command->input['client_secret'],
