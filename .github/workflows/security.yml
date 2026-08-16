@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 0
       - run: ./scripts/check-tracked-secrets.sh
       - run: IDENTITY_ENV_FILE=.env.production.example docker compose --env-file .env.production.example config --quiet
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
