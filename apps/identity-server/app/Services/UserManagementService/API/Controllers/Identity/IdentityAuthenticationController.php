@@ -8,8 +8,6 @@ use App\Services\UserManagementService\API\Requests\Identity\IdentityAuthenticat
 use App\Services\UserManagementService\Application\DTOs\Input\IdentityOperationDTO;
 use App\Services\UserManagementService\Application\Services\Identity\ExecuteIdentityAuthenticationService;
 use App\Services\UserManagementService\Application\Services\Identity\ReadIdentityAuthenticationService;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Zolta\Http\Controller\Controller;
 use Zolta\Http\Request\Attributes\Request as RequestAttribute;
 use Zolta\Http\Router\Attributes\Route;
@@ -17,8 +15,6 @@ use Zolta\Http\Service\Attributes\Service;
 
 final class IdentityAuthenticationController extends Controller
 {
-    public function __construct(private readonly ReadIdentityAuthenticationService $readIdentity) {}
-
     #[Route('v1/identity/auth/context', methods: ['POST'], middleware: ['api', 'throttle:120,1'], name: 'identity.auth.context')]
     #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ReadIdentityAuthenticationService::class, 'Authentication context resolved.')]
@@ -53,13 +49,6 @@ final class IdentityAuthenticationController extends Controller
     #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityAuthenticationService::class, 'Password reset completed.')]
     public function resetPassword(): void {}
-
-    #[Route('v1/identity/auth/introspect', methods: ['POST'], middleware: ['api', 'throttle:300,1'], name: 'identity.auth.introspect')]
-    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
-    public function introspect(Request $request, IdentityOperationDTO $dto): JsonResponse
-    {
-        return response()->json(($this->readIdentity)($dto));
-    }
 
     #[Route('v1/identity/auth/handoff', methods: ['POST'], middleware: ['api', 'auth:sanctum', 'identity.token', 'throttle:30,1'], name: 'identity.auth.handoff.create')]
     #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]

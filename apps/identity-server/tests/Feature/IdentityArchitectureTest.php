@@ -127,6 +127,36 @@ final class IdentityArchitectureTest extends TestCase
         }
     }
 
+    public function test_identity_controllers_are_declarative_http_definitions(): void
+    {
+        $directory = app_path('Services/UserManagementService/API/Controllers/Identity');
+        $violations = [];
+        $forbidden = [
+            'use Illuminate\\Http\\Request;',
+            'use Illuminate\\Http\\JsonResponse;',
+            'use Illuminate\\Support\\Facades\\Validator;',
+            'response()->',
+            'Validator::',
+        ];
+
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory));
+        /** @var SplFileInfo $file */
+        foreach ($files as $file) {
+            if (! $file->isFile() || $file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $contents = (string) file_get_contents($file->getPathname());
+            foreach ($forbidden as $expression) {
+                if (str_contains($contents, $expression)) {
+                    $violations[] = $file->getFilename()." contains {$expression}";
+                }
+            }
+        }
+
+        $this->assertSame([], $violations, implode(PHP_EOL, $violations));
+    }
+
     public function test_identity_contracts_resolve_to_focused_infrastructure_adapters(): void
     {
         $this->assertInstanceOf(
