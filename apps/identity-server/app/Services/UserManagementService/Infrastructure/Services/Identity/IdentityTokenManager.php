@@ -111,4 +111,15 @@ final class IdentityTokenManager
             ->where('identity_project_id', $projectId)
             ->delete();
     }
+
+    public function revokeProject(string $projectId): void
+    {
+        IdentityRefreshToken::query()
+            ->where('project_id', $projectId)
+            ->whereNull('revoked_at')
+            ->update(['revoked_at' => now()]);
+        PersonalAccessToken::query()
+            ->where('identity_project_id', $projectId)
+            ->delete();
+    }
 }

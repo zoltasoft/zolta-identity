@@ -23,11 +23,13 @@ final readonly class ExecuteIdentityProjectAccessCommandHandler
                 $command->projectId,
                 $command->input,
             ),
+            IdentityProjectAccessOperation::DeleteRole => $this->deleteRole($command),
             IdentityProjectAccessOperation::CreatePermission => $this->access->createPermission(
                 $command->actorUserId,
                 $command->projectId,
                 $command->input,
             ),
+            IdentityProjectAccessOperation::DeletePermission => $this->deletePermission($command),
             IdentityProjectAccessOperation::SetRolePermissions => $this->setRolePermissions($command),
             IdentityProjectAccessOperation::Invite => $this->access->invite(
                 $command->actorUserId,
@@ -40,6 +42,32 @@ final readonly class ExecuteIdentityProjectAccessCommandHandler
         };
 
         return Result::success(new IdentityOperationPayload($result));
+    }
+
+    /** @return array{message: string} */
+    private function deleteRole(ExecuteIdentityProjectAccessCommand $command): array
+    {
+        $this->access->deleteRole(
+            $command->actorUserId,
+            $command->projectId,
+            (string) $command->input['role'],
+            (string) $command->input['confirmation'],
+        );
+
+        return ['message' => 'Role deleted.'];
+    }
+
+    /** @return array{message: string} */
+    private function deletePermission(ExecuteIdentityProjectAccessCommand $command): array
+    {
+        $this->access->deletePermission(
+            $command->actorUserId,
+            $command->projectId,
+            (string) $command->input['permission'],
+            (string) $command->input['confirmation'],
+        );
+
+        return ['message' => 'Permission deleted.'];
     }
 
     /** @return array{message: string} */

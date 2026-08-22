@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
 use Zolta\Http\Response\Laravel\Resources\GenericResource;
 
 return [
@@ -86,22 +85,6 @@ return [
         ],
     ],
 
-    'security' => [
-        'abilities' => [
-            'admin.access' => [
-                'users.manage',
-            ],
-        ],
-        'user' => [
-            'class' => User::class,
-            'attributes' => [
-                'permissions.*.name',
-                'role.permissions.*.name',
-                'roles.*.permissions.*.name',
-            ],
-        ],
-    ],
-
     'identity' => [
         'access_token_ttl_minutes' => (int) env('IDENTITY_ACCESS_TOKEN_TTL_MINUTES', 15),
         'refresh_token_ttl_days' => (int) env('IDENTITY_REFRESH_TOKEN_TTL_DAYS', 30),
@@ -110,6 +93,8 @@ return [
         'password_reset_ttl_minutes' => (int) env('IDENTITY_PASSWORD_RESET_TTL_MINUTES', 60),
         'expose_development_tokens' => (bool) env('IDENTITY_EXPOSE_DEVELOPMENT_TOKENS', false),
         'password_reset_url' => env('IDENTITY_PASSWORD_RESET_URL'),
+        'project_deletion_grace_days' => (int) env('IDENTITY_PROJECT_DELETION_GRACE_DAYS', 30),
+        'protected_project_slugs' => array_values(array_filter(array_map('trim', explode(',', (string) env('IDENTITY_PROTECTED_PROJECT_SLUGS', env('IDENTITY_PROJECT', '')))))),
         'hosted_applications' => [
             'internal_token' => env('IDENTITY_HOSTED_APPLICATIONS_TOKEN'),
             'branding_disk' => env('IDENTITY_BRANDING_DISK', 'public'),

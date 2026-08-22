@@ -12,7 +12,6 @@ use Zolta\Domain\ValueObjects\Credit;
 use Zolta\Domain\ValueObjects\Email;
 use Zolta\Domain\ValueObjects\OAuthProviderId;
 use Zolta\Domain\ValueObjects\Password;
-use Zolta\Domain\ValueObjects\RoleId;
 use Zolta\Domain\ValueObjects\Terms;
 use Zolta\Domain\ValueObjects\UserId;
 use Zolta\Domain\ValueObjects\Username;
@@ -22,8 +21,6 @@ use Zolta\Domain\ValueObjects\Username;
  */
 final class User extends AggregateRoot
 {
-    private ?RoleId $roleId = null;
-
     private readonly DateTimeImmutable $createdAt;
 
     private DateTimeImmutable $updatedAt;
@@ -37,7 +34,6 @@ final class User extends AggregateRoot
         private Username $username,
         private Password $password,
         private Credit $credit,
-        private ?Role $role,
         private readonly Terms $terms,
         private ?string $profilePicture = null,
         private ?string $themePreference = null,
@@ -47,8 +43,6 @@ final class User extends AggregateRoot
         private ?Email $backupEmail = null,
         /** @var OAuthAccount[] */
         private array $oAuthAccounts = [],
-        /** @var Permission[] */
-        private readonly array $permissions = [],
         private ?string $verificationCode = null,
         private ?DateTimeImmutable $verificationCodeExpiresAt = null,
         private ?string $passwordResetToken = null,
@@ -60,7 +54,6 @@ final class User extends AggregateRoot
         ?DateTimeImmutable $createdAt = null,
         ?DateTimeImmutable $updatedAt = null
     ) {
-        $this->roleId = $this->role?->getId();
         $this->createdAt = $createdAt ?? new DateTimeImmutable;
         $this->updatedAt = $updatedAt ?? new DateTimeImmutable;
     }
@@ -75,7 +68,6 @@ final class User extends AggregateRoot
         Username $username,
         Password $password,
         Credit $credit,
-        Role $role, // now RoleId
         Terms $terms,
         ?string $profilePicture = null,
         ?string $themePreference = null,
@@ -94,7 +86,6 @@ final class User extends AggregateRoot
             $username,
             $password,
             $credit,
-            $role,
             $terms,
             $profilePicture,
             $themePreference,
@@ -102,7 +93,6 @@ final class User extends AggregateRoot
             $twoFactorEnabled,
             $loginAlertsEnabled,
             $backupEmail,
-            [],
             [],
             null,
             null,
@@ -132,7 +122,6 @@ final class User extends AggregateRoot
         Username $username,
         Password $password,
         Credit $credit,
-        ?Role $role,
         Terms $terms,
         ?string $profilePicture = null,
         ?string $themePreference = null,
@@ -141,7 +130,6 @@ final class User extends AggregateRoot
         bool $loginAlertsEnabled = true,
         ?Email $backupEmail = null,
         array $oAuthAccounts = [],
-        array $permissions = [],
         ?string $verificationCode = null,
         ?DateTimeImmutable $verificationCodeExpiresAt = null,
         ?string $passwordResetToken = null,
@@ -159,7 +147,6 @@ final class User extends AggregateRoot
             $username,
             $password,
             $credit,
-            $role,
             $terms,
             $profilePicture,
             $themePreference,
@@ -168,7 +155,6 @@ final class User extends AggregateRoot
             $loginAlertsEnabled,
             $backupEmail,
             $oAuthAccounts,
-            $permissions,
             $verificationCode,
             $verificationCodeExpiresAt,
             $passwordResetToken,
@@ -185,28 +171,6 @@ final class User extends AggregateRoot
     // -------------------------
     // Domain behavior
     // -------------------------
-
-    // Domain behavior: assign role now accepts RoleId
-    public function assignRole(Role|RoleId $role): void
-    {
-        if ($role instanceof Role) {
-            $this->role = $role;
-            $this->roleId = $role->getId();
-        } else {
-            // RoleId provided: drop any cached Role entity if it doesn't match
-            $this->roleId = $role;
-            if ($this->role !== null && ! $this->role->getId()->equals($role)) {
-                $this->role = null;
-            }
-        }
-
-        $this->touch();
-    }
-
-    public function downgradeToDefaultRole(Role|RoleId $defaultRole): void
-    {
-        $this->assignRole($defaultRole);
-    }
 
     public function changeUsername(Username $username): void
     {
@@ -493,12 +457,6 @@ final class User extends AggregateRoot
         return $this->credit;
     }
 
-    // Getters (role changed)
-    public function getRole(): ?Role
-    {
-        return $this->role;
-    }
-
     public function getTerms(): Terms
     {
         return $this->terms;
@@ -510,29 +468,6 @@ final class User extends AggregateRoot
     public function getOAuthAccounts(): array
     {
         return $this->oAuthAccounts;
-    }
-
-    /**
-     * @return Permission[]
-     */
-    public function getPermissions(): array
-    {
-        return $this->permissions;
-    }
-
-    public function getRoleName(): ?string
-    {
-        return $this->role?->getName()->get('value');
-    }
-
-    public function getRoleDescription(): ?string
-    {
-        return $this->role?->getDescription()->get('value');
-    }
-
-    public function getRoleId(): ?RoleId
-    {
-        return $this->role?->getId() ?? $this->roleId;
     }
 
     public function getVerificationCodeExpiresAt(): ?DateTimeImmutable

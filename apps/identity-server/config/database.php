@@ -44,22 +44,6 @@ return [
             'transaction_mode' => 'DEFERRED',
         ],
 
-        'legacy_identity' => [
-            'driver' => env('LEGACY_IDENTITY_DB_CONNECTION', 'sqlite'),
-            'host' => env('LEGACY_IDENTITY_DB_HOST', '127.0.0.1'),
-            'port' => env('LEGACY_IDENTITY_DB_PORT', '3306'),
-            'database' => env('LEGACY_IDENTITY_DB_DATABASE', database_path('legacy.sqlite')),
-            'username' => env('LEGACY_IDENTITY_DB_USERNAME', 'root'),
-            'password' => env('LEGACY_IDENTITY_DB_PASSWORD', ''),
-            'unix_socket' => env('LEGACY_IDENTITY_DB_SOCKET', ''),
-            'charset' => 'utf8mb4',
-            'collation' => 'utf8mb4_unicode_ci',
-            'prefix' => '',
-            'prefix_indexes' => true,
-            'strict' => true,
-            'foreign_key_constraints' => true,
-        ],
-
         'mysql' => [
             'driver' => 'mysql',
             'url' => env('DB_URL'),

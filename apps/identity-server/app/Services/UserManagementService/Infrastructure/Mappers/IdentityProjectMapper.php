@@ -27,6 +27,8 @@ final class IdentityProjectMapper
             IdentityProjectRegistrationMode::from((string) $model->registration_mode),
             $model->registration_role_id !== null ? (string) $model->registration_role_id : null,
             (bool) $model->email_verification_required,
+            $model->deletion_scheduled_at !== null ? DateTimeImmutable::createFromInterface($model->deletion_scheduled_at) : null,
+            $model->deletion_previous_status !== null ? IdentityProjectStatus::from((string) $model->deletion_previous_status) : null,
             DateTimeImmutable::createFromInterface($model->created_at),
             DateTimeImmutable::createFromInterface($model->updated_at),
         );
@@ -47,6 +49,8 @@ final class IdentityProjectMapper
             'registration_mode' => $project->registrationMode()->value,
             'registration_role_id' => $project->registrationRoleId(),
             'email_verification_required' => $project->emailVerificationRequired(),
+            'deletion_scheduled_at' => $project->deletionScheduledAt(),
+            'deletion_previous_status' => $project->deletionPreviousStatus()?->value,
             'created_at' => $project->createdAt(),
             'updated_at' => $project->updatedAt(),
         ]);

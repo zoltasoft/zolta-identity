@@ -6,7 +6,6 @@ namespace Tests\Feature;
 
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -14,7 +13,7 @@ final class LegacyAdministrationParityTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_system_administrator_can_manage_global_users_roles_and_permissions(): void
+    public function test_system_administrator_can_manage_installation_users(): void
     {
         $administrator = $this->user('administrator', true);
         $managedUser = $this->user('managed-user');
@@ -25,49 +24,24 @@ final class LegacyAdministrationParityTest extends TestCase
             ->assertOk();
 
         $this->withToken($token)
-            ->postJson('/api/permissions', [
-                'name' => 'identity.users.audit',
-                'description' => 'Audit global identity users',
-            ])
-            ->assertCreated();
-
-        $permissionId = (string) DB::table('permissions')
-            ->where('name', 'identity.users.audit')
-            ->value('id');
-
-        $this->withToken($token)
-            ->postJson('/api/roles', [
-                'name' => 'Identity Auditor',
-                'description' => 'Read-only identity auditing role',
-                'permission_ids' => [$permissionId],
-            ])
-            ->assertCreated();
-
-        $roleId = (string) DB::table('roles')
-            ->where('role', 'Identity Auditor')
-            ->value('id');
-
-        $this->withToken($token)
-            ->postJson("/api/roles/{$roleId}/users/{$managedUser->id}")
+            ->deleteJson("/api/users/{$managedUser->id}")
             ->assertOk();
-
-        $this->assertDatabaseHas('users', [
-            'id' => $managedUser->id,
-            'role_id' => $roleId,
-        ]);
-        $this->assertDatabaseHas('permission_role', [
-            'permission_id' => $permissionId,
-            'role_id' => $roleId,
-        ]);
     }
 
-    public function test_regular_user_cannot_access_global_administration_routes(): void
+    public function test_regular_user_cannot_access_installation_user_administration(): void
     {
         $token = $this->user('regular-user')->createToken('browser')->plainTextToken;
 
         $this->withToken($token)->getJson('/api/users')->assertForbidden();
-        $this->withToken($token)->getJson('/api/roles')->assertForbidden();
-        $this->withToken($token)->getJson('/api/permissions')->assertForbidden();
+    }
+
+    public function test_legacy_global_authorization_endpoints_are_not_registered(): void
+    {
+        $token = $this->user('administrator', true)->createToken('admin-console')->plainTextToken;
+
+        $this->withToken($token)->getJson('/api/roles')->assertNotFound();
+        $this->withToken($token)->getJson('/api/permissions')->assertNotFound();
+        $this->withToken($token)->postJson('/api/users/provision-access')->assertNotFound();
     }
 
     public function test_regular_user_can_still_update_their_own_account_profile_and_security(): void
@@ -109,7 +83,6 @@ final class LegacyAdministrationParityTest extends TestCase
             'username' => $name,
             'email' => "{$name}@example.com",
             'password' => 'correct-password',
-            'role_id' => (string) DB::table('roles')->where('role', 'User')->value('id'),
             'terms' => 'accepted',
             'email_verified_at' => now(),
             'is_system_admin' => $systemAdministrator,

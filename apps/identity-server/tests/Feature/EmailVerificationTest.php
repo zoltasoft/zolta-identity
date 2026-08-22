@@ -8,7 +8,6 @@ use App\Services\UserManagementService\Infrastructure\Mail\Mailable\WelcomeUser;
 use App\Services\UserManagementService\Infrastructure\Mail\VerificationEmail;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
@@ -27,7 +26,11 @@ final class EmailVerificationTest extends TestCase
             'email' => 'new-user@example.com',
             'password' => 'secure-password',
             'terms' => true,
-        ])->assertOk();
+        ])
+            ->assertOk()
+            ->assertJsonMissingPath('data.user.role')
+            ->assertJsonMissingPath('data.user.role_id')
+            ->assertJsonMissingPath('data.user.permissions');
 
         $user = User::query()->where('email', 'new-user@example.com')->firstOrFail();
         $this->assertMatchesRegularExpression('/^\d{6}$/', (string) $user->verification_code);
@@ -107,7 +110,6 @@ final class EmailVerificationTest extends TestCase
             'username' => $name,
             'email' => "{$name}@example.com",
             'password' => 'password',
-            'role_id' => (string) DB::table('roles')->value('id'),
             'terms' => 'accepted',
             'verification_code' => $code,
             'verification_expires_at' => now()->addHour(),

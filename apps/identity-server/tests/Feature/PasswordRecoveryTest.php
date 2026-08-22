@@ -7,7 +7,6 @@ namespace Tests\Feature;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
 use App\Services\UserManagementService\Infrastructure\Notifications\ResetPasswordNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
@@ -84,7 +83,6 @@ final class PasswordRecoveryTest extends TestCase
             'username' => $name,
             'email' => "{$name}@example.com",
             'password' => 'original-password',
-            'role_id' => (string) DB::table('roles')->value('id'),
             'terms' => 'accepted',
         ]);
     }

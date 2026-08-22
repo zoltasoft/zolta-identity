@@ -15,7 +15,7 @@ final class IdentityProjectPermission extends Model
 
     protected $table = 'identity_project_permissions';
 
-    protected $fillable = ['project_id', 'source_client_id', 'key', 'name', 'description', 'source', 'status'];
+    protected $fillable = ['project_id', 'source_client_id', 'catalog_permission_id', 'catalog_version', 'catalog_origin', 'key', 'name', 'description', 'source', 'status'];
 
     public function project(): BelongsTo
     {
@@ -25,5 +25,10 @@ final class IdentityProjectPermission extends Model
     public function roles(): BelongsToMany
     {
         return $this->belongsToMany(IdentityProjectRole::class, 'identity_project_role_permission', 'permission_id', 'role_id');
+    }
+
+    public function memberships(): BelongsToMany
+    {
+        return $this->belongsToMany(IdentityProjectMembership::class, 'identity_membership_permission', 'permission_id', 'membership_id');
     }
 }

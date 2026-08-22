@@ -19,7 +19,7 @@ use Zolta\Http\Service\Attributes\Service;
 #[Response(UserCollectionResource::class)]
 #[Doc(
     summary: 'List Users',
-    description: 'Retrieve all available users with their permissions and roles.',
+    description: 'Retrieve all available installation users.',
     tags: ['Users']
 )]
 final class ListUsersController extends Controller {}

@@ -31,4 +31,9 @@ final class EloquentIdentityClientRepository implements IdentityClientRepository
 
         IdentityClientMapper::fill($model, $client)->save();
     }
+
+    public function delete(DomainIdentityClient $client): void
+    {
+        IdentityProjectClient::query()->whereKey($client->id()->toString())->delete();
+    }
 }

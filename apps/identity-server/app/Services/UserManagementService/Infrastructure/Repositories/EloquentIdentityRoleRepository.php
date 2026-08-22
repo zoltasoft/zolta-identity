@@ -39,4 +39,12 @@ final class EloquentIdentityRoleRepository implements IdentityRoleRepository
             );
         });
     }
+
+    public function delete(DomainIdentityRole $role): void
+    {
+        IdentityProjectRole::query()
+            ->where('project_id', $role->projectId()->toString())
+            ->whereKey($role->id()->toString())
+            ->delete();
+    }
 }

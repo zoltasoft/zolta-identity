@@ -4,8 +4,6 @@ namespace App\Services\UserManagementService\Infrastructure\Mappers;
 
 use App\Services\UserManagementService\Domain\Aggregates\User as DomainUser;
 use App\Services\UserManagementService\Domain\Factories\OAuthAccountFactory;
-use App\Services\UserManagementService\Domain\Factories\PermissionFactory;
-use App\Services\UserManagementService\Domain\Factories\RoleFactory;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User as EloquentUser;
 use Illuminate\Support\Carbon;
 use Zolta\Cqrs\Repositories\Mapper\RepositoryMapper;
@@ -62,34 +60,14 @@ class UserMapper implements RepositoryMapper
     /**
      * Maps an Eloquent model to a domain aggregate by reconstituting it.
      *
-     * This method will attempt to map related role, permissions and social accounts
-     * if they are loaded on the Eloquent model. The repository should eager-load
-     * relations (role, permissions, socialAccounts) before calling this mapper.
+     * This method maps social accounts when they are loaded on the Eloquent model.
      */
     public static function toDomain(object $model): object
     {
         // if (!($model instanceof EloquentUser)) {
         //     throw new \InvalidArgumentException('Expected EloquentUser in toDomain');
         // }
-        $permissionFactory = new PermissionFactory;
         $oauthFactory = new OAuthAccountFactory;
-
-        // ---- Role & role-permissions (restore aggregate via RoleFactory) ----
-        $role = null;
-        if ($model->relationLoaded('role') && $model->role !== null) {
-            $roleFactory = new RoleFactory;
-            $roleRow = $model->role->toArray();
-            $rolePermissionRows = $model->role->relationLoaded('permissions') ? $model->role->permissions->toArray() : [];
-            $role = $roleFactory->restoreFromRow($roleRow, $rolePermissionRows, $permissionFactory, []);
-        }
-
-        // ---- User-level permissions (permission_user pivot) ----
-        $permissions = [];
-        if ($model->relationLoaded('permissions')) {
-            foreach ($model->permissions as $permModel) {
-                $permissions[] = $permissionFactory->restoreFromRow($permModel->toArray());
-            }
-        }
 
         // ---- OAuth / social accounts ----
         $oauthAccounts = [];
@@ -134,7 +112,6 @@ class UserMapper implements RepositoryMapper
             $username,
             $password,
             $credit,
-            $role,
             $terms,
             $profilePicture,
             $themePreference,
@@ -143,7 +120,6 @@ class UserMapper implements RepositoryMapper
             $loginAlertsEnabled,
             $backupEmail,
             $oauthAccounts,
-            $permissions,
             $verificationCode,
             $verificationExpires,
             $pwResetToken,
@@ -164,7 +140,7 @@ class UserMapper implements RepositoryMapper
      * Returns a new EloquentUser with attributes filled — you can call save() on it.
      *
      * Note: This creates an Eloquent model populated with attributes. Relations
-     * (role/permissions/social_accounts) should be persisted separately.
+     * Social-account relations should be persisted separately.
      */
     public static function toEloquent(DomainUser $user): EloquentUser
     {
@@ -174,7 +150,6 @@ class UserMapper implements RepositoryMapper
             'email_verified_at' => $user->getEmail()->get('verifiedAt')?->format('Y-m-d H:i:s'),
             'username' => (string) $user->getUsername()->get('username'),
             'password' => (string) $user->getPassword()->get('hash'),
-            'role_id' => (string) $user->getRole()->getId()->get('value'),
             'credit' => $user->getCredit()->get('amount'),
             'terms' => $user->getTerms(),
             'profile_picture' => $user->getProfilePicture(),
@@ -204,7 +179,6 @@ class UserMapper implements RepositoryMapper
         $model->email_verified_at = $user->getEmail()->get('verifiedAt')?->format('Y-m-d H:i:s');
         $model->username = (string) $user->getUsername()->get('username');
         $model->password = (string) $user->getPassword()->get('hash');
-        $model->role_id = (string) ($user->getRoleId()?->get('value') ?? $model->role_id);
         $model->credit = $user->getCredit()->get('amount');
         $model->terms = $user->getTerms()->value;
         $model->profile_picture = $user->getProfilePicture();

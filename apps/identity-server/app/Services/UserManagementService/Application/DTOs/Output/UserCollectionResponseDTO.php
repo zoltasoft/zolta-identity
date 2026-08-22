@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\UserManagementService\Application\DTOs\Output;
 
-use App\Services\UserManagementService\Domain\Aggregates\Permission;
 use App\Services\UserManagementService\Domain\Aggregates\User;
 use App\Services\UserManagementService\Domain\Entities\OAuthAccount;
 use Zolta\Support\Application\DTO\Output\ResponseDTO;
@@ -23,21 +22,6 @@ final class UserCollectionResponseDTO extends ResponseDTO
     public static function fromDomain(array $users, array $meta = [], array $captureLog = []): self
     {
         $normalizedUsers = array_map(static function (User $user): array {
-            $permissions = array_map(
-                static fn (Permission $permission): array => [
-                    'id' => $permission->getId()->get('value'),
-                    'name' => $permission->getName()->get('value'),
-                ],
-                $user->getPermissions()
-            );
-            // $roles = array_map(
-            //     static fn ($permission) => [
-            //         'id' => $permission->getId()->get('value'),
-            //         'name' => $permission->getName()->get('value'),
-            //     ],
-            //     $user->getRole()
-            // );
-
             $oauthAccounts = array_map(
                 static function (OAuthAccount $oAuthAccount): array {
                     $providerName = $oAuthAccount->getProviderName();
@@ -64,18 +48,6 @@ final class UserCollectionResponseDTO extends ResponseDTO
                 'id' => $user->getId()->get('value'),
                 'email' => $user->getEmail()->get('address'),
                 'username' => $user->getUsername()->get('username'),
-                'role' => $user->getRole() ? [
-                    'id' => $user->getRole()->getId()->get('value'),
-                    'name' => $user->getRole()->getName()->get('value'),
-                    'permissions' => array_map(
-                        static fn (Permission $permission): array => [
-                            'id' => $permission->getId()->get('value'),
-                            'name' => $permission->getName()->get('value'),
-                        ],
-                        $user->getRole()->getPermissions()
-                    ),
-                ] : [],
-                'permissions' => $permissions,
                 'status' => $user->isLocked() ? 'Locked' : 'Active',
                 'created_at' => $user->getCreatedAt()->format(DATE_ATOM),
                 'updated_at' => $user->getUpdatedAt()->format(DATE_ATOM),

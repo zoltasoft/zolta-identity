@@ -28,10 +28,6 @@ final class ProtectIdentityAdministration
     {
         $path = $request->path();
 
-        if (preg_match('#^api/(roles|permissions)(/|$)#', $path) === 1) {
-            return true;
-        }
-
         if ($path === 'api/users') {
             return true;
         }
@@ -40,6 +36,6 @@ final class ProtectIdentityAdministration
             return false;
         }
 
-        return preg_match('#^api/users/(by-email/|provision-access$|[^/]+(?:/email)?$)#', $path) === 1;
+        return preg_match('#^api/users/(by-email/|[^/]+(?:/email)?$)#', $path) === 1;
     }
 }

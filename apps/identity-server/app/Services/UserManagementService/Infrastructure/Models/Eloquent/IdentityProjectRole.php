@@ -15,7 +15,7 @@ final class IdentityProjectRole extends Model
 
     protected $table = 'identity_project_roles';
 
-    protected $fillable = ['project_id', 'name', 'slug', 'description'];
+    protected $fillable = ['project_id', 'catalog_role_id', 'catalog_version', 'catalog_origin', 'name', 'slug', 'description'];
 
     public function project(): BelongsTo
     {

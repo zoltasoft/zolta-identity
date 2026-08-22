@@ -115,6 +115,7 @@ final class IdentityPayloadFactory
             'registration_mode' => $project->registrationMode()->value,
             'registration_role_id' => $project->registrationRoleId(),
             'email_verification_required' => $project->emailVerificationRequired(),
+            'deletion_scheduled_at' => $project->deletionScheduledAt()?->format(DATE_ATOM),
         ];
     }
 
@@ -156,6 +157,7 @@ final class IdentityPayloadFactory
             'registration_mode' => $project->registration_mode,
             'registration_role_id' => $project->registration_role_id,
             'email_verification_required' => $project->email_verification_required,
+            'deletion_scheduled_at' => $project->deletion_scheduled_at?->toIso8601String(),
         ];
     }
 
@@ -260,6 +262,9 @@ final class IdentityPayloadFactory
             'name' => $role->name,
             'slug' => $role->slug,
             'description' => $role->description,
+            'catalog_role_id' => $role->catalog_role_id,
+            'catalog_version' => $role->catalog_version,
+            'catalog_origin' => $role->catalog_origin,
             'permission_ids' => $role->permissions()->pluck('identity_project_permissions.id')->all(),
         ];
     }
@@ -275,6 +280,9 @@ final class IdentityPayloadFactory
             'description' => $permission->description,
             'source' => $permission->source,
             'source_client_id' => $permission->source_client_id,
+            'catalog_permission_id' => $permission->catalog_permission_id,
+            'catalog_version' => $permission->catalog_version,
+            'catalog_origin' => $permission->catalog_origin,
             'status' => $permission->status,
         ];
     }

@@ -8,11 +8,9 @@ use App\Services\UserManagementService\Domain\Aggregates\User as DomainUser;
 use App\Services\UserManagementService\Domain\Repositories\UserRepository;
 use App\Services\UserManagementService\Infrastructure\Mappers\UserMapper;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User as EloquentUser;
-use Illuminate\Database\Eloquent\Builder;
 use Zolta\Cqrs\Laravel\Eloquent\Filters\DateRangeFilter;
 use Zolta\Cqrs\Laravel\Eloquent\Filters\SearchFilter;
 use Zolta\Cqrs\Repositories\BaseRepository;
-use Zolta\Cqrs\Repositories\Query\Interfaces\QueryDefinition;
 use Zolta\Cqrs\Repositories\Query\RepositoryQuery;
 use Zolta\Domain\Repositories\Query\AbstractQueryOptions;
 use Zolta\Domain\ValueObjects\AccessToken;
@@ -38,7 +36,6 @@ class EloquentUserRepository extends BaseRepository implements UserRepository
         'username',
         'name',
         'id',
-        'role.id',
         'status',
         'created_at',
         'updated_at',
@@ -46,12 +43,9 @@ class EloquentUserRepository extends BaseRepository implements UserRepository
         'email_verified_at',
     ];
 
-    protected array $filterableRelations = [
-        'role.permissions' => ['name'],
-        'role' => ['id'],
-    ];
+    protected array $filterableRelations = [];
 
-    protected array $allowedRelations = ['role', 'role.permissions'];
+    protected array $allowedRelations = ['socialAccounts'];
 
     protected array $filterOperators = [
         'eq' => '=',
@@ -73,33 +67,6 @@ class EloquentUserRepository extends BaseRepository implements UserRepository
     protected function modelClass(): string
     {
         return EloquentUser::class;
-    }
-
-    protected function applyRelationSorting(mixed $builder, string $sortField, string $direction, QueryDefinition $queryDefinition): void
-    {
-        if (! $builder instanceof Builder) {
-            // Fall back to framework default (Doctrine query builder or others)
-            parent::applyRelationSorting($builder, $sortField, $direction, $queryDefinition);
-
-            return;
-        }
-
-        parent::applyRelationSorting($builder, $sortField, $direction, $queryDefinition);
-
-        [$relation, $field] = explode('.', $sortField, 2);
-
-        if ($relation !== 'role') {
-            return;
-        }
-
-        $joinAlias = 'roles';
-        $joinedTables = array_map(fn ($join) => $join->table ?? null, $builder->getQuery()->joins ?? []);
-        if (! in_array($joinAlias, $joinedTables, true)) {
-            $builder->leftJoin($joinAlias, 'users.role_id', '=', "{$joinAlias}.id");
-            $builder->select('users.*');
-        }
-
-        $builder->orderBy("{$joinAlias}.{$field}", $direction);
     }
 
     /**
@@ -224,18 +191,6 @@ class EloquentUserRepository extends BaseRepository implements UserRepository
         }
     }
 
-    /**
-     * Count users by role id.
-     */
-    public function countByRole(string $roleId): int
-    {
-        return $this->count(RepositoryQuery::fromOptions([
-            'filters' => [
-                'role.id' => $roleId,
-            ],
-        ]));
-    }
-
     // === Advanced helpers (clean usage of base API) ===
 
     public function findActiveUsersWithRecentLogin(): iterable
@@ -247,20 +202,6 @@ class EloquentUserRepository extends BaseRepository implements UserRepository
         $opts = [
             'filters' => $filters,
             'sort' => '-last_login_at,username',
-        ];
-        $query = $this->query($opts);
-        foreach ($this->all($query) as $user) {
-            yield UserMapper::toDomain($user);
-        }
-    }
-
-    public function findUsersByRoleWithPermissions(string $roleName): iterable
-    {
-        $opts = [
-            'filters' => [
-                'role.name' => $roleName,
-            ],
-            'include' => ['role.permissions'],
         ];
         $query = $this->query($opts);
         foreach ($this->all($query) as $user) {

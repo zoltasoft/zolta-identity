@@ -6,6 +6,7 @@ namespace App\Services\UserManagementService\API\Controllers\Identity;
 
 use App\Services\UserManagementService\API\Requests\Identity\IdentityProjectOperationRequest;
 use App\Services\UserManagementService\Application\DTOs\Input\IdentityOperationDTO;
+use App\Services\UserManagementService\Application\Services\Identity\ExecuteIdentityProjectCatalogService;
 use App\Services\UserManagementService\Application\Services\Identity\ExecuteIdentityProjectService;
 use App\Services\UserManagementService\Application\Services\Identity\ReadIdentityProjectService;
 use Zolta\Http\Controller\Controller;
@@ -16,6 +17,21 @@ use Zolta\Http\Service\Attributes\Service;
 final class IdentityProjectController extends Controller
 {
     private const MIDDLEWARE = ['api', 'auth:sanctum', 'identity.token'];
+
+    #[Route('v1/identity/project-access-catalog', methods: ['GET'], middleware: self::MIDDLEWARE, name: 'identity.project_access_catalog.index')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectCatalogService::class, 'Project access catalog retrieved.')]
+    public function catalog(): void {}
+
+    #[Route('v1/identity/project-access-catalog/permissions', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.project_access_catalog.permissions.store')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectCatalogService::class, 'Catalog permission created.', 201)]
+    public function storeCatalogPermission(): void {}
+
+    #[Route('v1/identity/project-access-catalog/roles', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.project_access_catalog.roles.store')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectCatalogService::class, 'Catalog role created.', 201)]
+    public function storeCatalogRole(): void {}
 
     #[Route('v1/identity/projects', methods: ['GET'], middleware: self::MIDDLEWARE, name: 'identity.projects.index')]
     #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
@@ -32,6 +48,26 @@ final class IdentityProjectController extends Controller
     #[Service(ReadIdentityProjectService::class, 'Project retrieved.')]
     public function show(): void {}
 
+    #[Route('v1/identity/projects/{project}', methods: ['DELETE'], middleware: self::MIDDLEWARE, name: 'identity.projects.destroy')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Project deletion scheduled.', 202)]
+    public function destroy(): void {}
+
+    #[Route('v1/identity/projects/{project}/deletion/cancel', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.deletion.cancel')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Project deletion cancelled.')]
+    public function cancelDeletion(): void {}
+
+    #[Route('v1/identity/projects/{project}/suspension', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.suspension.store')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Project suspended.')]
+    public function suspend(): void {}
+
+    #[Route('v1/identity/projects/{project}/reactivation', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.reactivation.store')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Project reactivated.')]
+    public function reactivate(): void {}
+
     #[Route('v1/identity/projects/{project}/registration', methods: ['PATCH'], middleware: self::MIDDLEWARE, name: 'identity.projects.registration.update')]
     #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityProjectService::class, 'Registration policy updated.')]
@@ -41,6 +77,21 @@ final class IdentityProjectController extends Controller
     #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityProjectService::class, 'Project environment updated.')]
     public function updateEnvironment(): void {}
+
+    #[Route('v1/identity/projects/{project}/access-catalog/import', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.access_catalog.import')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectCatalogService::class, 'Catalog items imported.')]
+    public function importCatalogItems(): void {}
+
+    #[Route('v1/identity/projects/{project}/permissions/{permission}/publish', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.permissions.publish')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectCatalogService::class, 'Permission published to catalog.')]
+    public function publishPermission(): void {}
+
+    #[Route('v1/identity/projects/{project}/roles/{role}/publish', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.roles.publish')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectCatalogService::class, 'Role published to catalog.')]
+    public function publishRole(): void {}
 
     #[Route('v1/identity/projects/{project}/webhooks', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.webhooks.store')]
     #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
@@ -77,6 +128,11 @@ final class IdentityProjectController extends Controller
     #[Service(ExecuteIdentityProjectService::class, 'Client status updated.')]
     public function setClientStatus(): void {}
 
+    #[Route('v1/identity/projects/{project}/clients/{client}', methods: ['DELETE'], middleware: self::MIDDLEWARE, name: 'identity.projects.clients.destroy')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Client deleted.')]
+    public function destroyClient(): void {}
+
     #[Route('v1/identity/projects/{project}/clients/{client}/permission-manifest', methods: ['PUT'], middleware: self::MIDDLEWARE, name: 'identity.projects.clients.manifest')]
     #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityProjectService::class, 'Permission manifest synchronized.')]
@@ -102,10 +158,20 @@ final class IdentityProjectController extends Controller
     #[Service(ExecuteIdentityProjectService::class, 'Role created.', 201)]
     public function storeRole(): void {}
 
+    #[Route('v1/identity/projects/{project}/roles/{role}', methods: ['DELETE'], middleware: self::MIDDLEWARE, name: 'identity.projects.roles.destroy')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Role deleted.')]
+    public function destroyRole(): void {}
+
     #[Route('v1/identity/projects/{project}/permissions', methods: ['POST'], middleware: self::MIDDLEWARE, name: 'identity.projects.permissions.store')]
     #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityProjectService::class, 'Permission created.', 201)]
     public function storePermission(): void {}
+
+    #[Route('v1/identity/projects/{project}/permissions/{permission}', methods: ['DELETE'], middleware: self::MIDDLEWARE, name: 'identity.projects.permissions.destroy')]
+    #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityProjectService::class, 'Permission deleted.')]
+    public function destroyPermission(): void {}
 
     #[Route('v1/identity/projects/{project}/roles/{role}/permissions', methods: ['PUT'], middleware: self::MIDDLEWARE, name: 'identity.projects.roles.permissions')]
     #[Request(IdentityProjectOperationRequest::class, IdentityOperationDTO::class)]

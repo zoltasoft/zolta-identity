@@ -59,8 +59,17 @@ final class IdentityAuthenticationOperationRequest extends IdentityOperationRequ
             'auth.handoff.create' => $this->clientRules([
                 'redirect_uri' => ['required', 'url:http,https', 'max:2048'],
             ]),
+            'auth.authorization.intent' => $this->clientRules([
+                'hosted_application' => ['required', 'string', 'max:255'],
+                'state' => ['required', 'string', 'min:32', 'max:180', 'regex:/^[A-Za-z0-9_-]+$/'],
+                'demo_account_enabled' => ['required', 'boolean'],
+            ]),
             'auth.account.intent.create' => $this->clientRules([
                 'hosted_application' => ['required', 'string', 'max:255'],
+            ]),
+            'auth.logout.intent' => $this->clientRules([
+                'hosted_application' => ['required', 'string', 'max:255'],
+                'return_to' => ['required', 'string', 'max:2048', 'regex:/^\/(?!\/)(?!.*\\\\).*$/'],
             ]),
             'auth.handoff.exchange' => $this->clientRules([
                 'code' => ['required', 'string', 'min:64'],

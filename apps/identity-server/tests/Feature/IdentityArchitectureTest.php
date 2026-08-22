@@ -17,6 +17,7 @@ use App\Services\UserManagementService\Application\Contracts\Identity\Projects\C
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\CreateIdentityProject;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityClients;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityProjectAccess;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityProjectSuspension;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityWebhooks;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ReadIdentityProjects;
 use App\Services\UserManagementService\Application\Contracts\IdentityInstallationServiceInterface;
@@ -46,7 +47,7 @@ final class IdentityArchitectureTest extends TestCase
         $routes = collect(app('router')->getRoutes()->getRoutes())
             ->filter(static fn (Route $route): bool => str_starts_with($route->uri(), 'api/v1/identity/'));
 
-        $this->assertCount(55, $routes);
+        $this->assertCount(76, $routes);
 
         $routes->each(function (Route $route): void {
             $this->assertSame(
@@ -119,6 +120,10 @@ final class IdentityArchitectureTest extends TestCase
         $this->assertInstanceOf(
             EloquentIdentityProjectService::class,
             app(ManageIdentityProjectAccess::class),
+        );
+        $this->assertInstanceOf(
+            EloquentIdentityProjectService::class,
+            app(ManageIdentityProjectSuspension::class),
         );
         $this->assertInstanceOf(
             EloquentIdentityProjectService::class,

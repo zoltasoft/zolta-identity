@@ -11,6 +11,7 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
@@ -39,6 +40,7 @@ final class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         class_exists(User::class);
+        Route::pattern('id', '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}');
 
         RateLimiter::for('identity-hosted-login', static function (Request $request): array {
             return [

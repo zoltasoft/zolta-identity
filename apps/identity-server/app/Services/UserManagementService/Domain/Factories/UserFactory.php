@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\UserManagementService\Domain\Factories;
 
-use App\Services\UserManagementService\Domain\Aggregates\Role;
 use App\Services\UserManagementService\Domain\Aggregates\User;
 use DateTimeImmutable;
 use Zolta\Domain\ValueObjects\Credit;
@@ -21,17 +20,14 @@ final readonly class UserFactory
 {
     public function __construct(
         private OAuthAccountFactory $oauthAccountFactory,
-        private PermissionFactory $permissionFactory
     ) {}
 
     /**
      * Create a new registered user.
      *
      * $data expects keys: email, username, password (plain), termsAccepted (bool), credit (optional)
-     *
-     * @param  Role  $defaultRole  role identifier to assign;
      */
-    public function create(array $data, Role $defaultRole): User
+    public function create(array $data): User
     {
         $userId = new UserId;
         $username = Username::resolve(['username' => $data['username']]);
@@ -50,15 +46,6 @@ final readonly class UserFactory
         $profilePicture = $data['profile_picture'] ?? $data['avatar_url'] ?? null;
         $themePreference = $data['theme_preference'] ?? 'system';
         $languagePreference = $data['language_preference'] ?? 'en-US';
-        $role = $defaultRole;
-        // determine RoleId
-        // if ($defaultRoleId !== null) {
-        //     $roleId = $defaultRoleId;
-        // } else {
-        //     $defaultRole = $this->roleFactory->getDefaultRole();
-        //     $roleId = $defaultRole->getId();
-        // }
-
         $twoFactorEnabled = (bool) ($data['two_factor_enabled'] ?? false);
         $loginAlertsEnabled = array_key_exists('login_alerts_enabled', $data)
             ? (bool) $data['login_alerts_enabled']
@@ -71,7 +58,6 @@ final readonly class UserFactory
             $username,
             $password,
             $credit,
-            $role,
             $terms,
             $profilePicture,
             $themePreference,
@@ -94,7 +80,6 @@ final readonly class UserFactory
     public function restore(
         array $userRow,
         // array $roleRow,
-        array $permissionRows = [],
         array $oauthRows = []
     ): User {
         $userId = new UserId((string) $userRow['id']);
@@ -109,30 +94,6 @@ final readonly class UserFactory
         $profilePicture = $userRow['profile_picture'] ?? null;
         $themePreference = $userRow['theme_preference'] ?? 'system';
         $languagePreference = $userRow['language_preference'] ?? 'en-US';
-        $role = $userRow['role'];
-
-        // role -> only RoleId
-        // if ($roleRow !== null) {
-        //     $role = $this->roleFactory->restoreFromRow($roleRow, [], $this->permissionFactory);
-        //     $roleId = $role->getId();
-        // } else {
-        //     if (! empty($userRow['role_id'])) {
-        //         $roleId = new RoleId((string) $userRow['role_id']);
-        //     } else {
-        //         $roleId = $this->roleFactory->getDefaultRole()->getId();
-        //     }
-        // }
-
-        // permissions and oauth same as before
-        $permissions = [];
-        foreach ($permissionRows as $permissionRow) {
-            $permissions[] = $this->permissionFactory->restoreFromRow(
-                $permissionRow,
-                [],
-                isset($userRow['id']) ? [['id' => $userRow['id']]] : []
-            );
-        }
-
         $oauthAccounts = [];
         foreach ($oauthRows as $oauthRow) {
             $oauthAccounts[] = $this->oauthAccountFactory->restoreFromRow($oauthRow);
@@ -169,7 +130,6 @@ final readonly class UserFactory
             $username,
             $password,
             $credit,
-            $role,
             $terms,
             $profilePicture,
             $themePreference,
@@ -178,7 +138,6 @@ final readonly class UserFactory
             $loginAlertsEnabled,
             $backupEmail,
             $oauthAccounts,
-            $permissions,
             $verificationCode,
             $verificationExpires,
             $pwResetToken,

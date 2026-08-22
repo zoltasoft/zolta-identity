@@ -31,6 +31,4 @@ interface UserRepository
     public function updateUser(User $user): void;
 
     public function deleteUser(User $user): void;
-
-    public function countByRole(string $roleId): int;
 }

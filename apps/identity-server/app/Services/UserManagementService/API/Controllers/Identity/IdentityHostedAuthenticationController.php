@@ -62,6 +62,11 @@ final class IdentityHostedAuthenticationController extends Controller
     #[Service(ExecuteIdentityAuthenticationService::class, 'Authorization handoff created.', 201)]
     public function createHandoff(): void {}
 
+    #[Route('v1/identity/hosted-applications/{application}/auth/authorization/intent/consume', methods: ['POST'], middleware: [...self::MIDDLEWARE, 'throttle:60,1'], name: 'identity.hosted_applications.authorization.intent.consume')]
+    #[Request(IdentityHostedAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Hosted authorization intent consumed.')]
+    public function consumeAuthorizationIntent(): void {}
+
     #[Route('v1/identity/hosted-applications/{application}/auth/account/intent', methods: ['POST'], middleware: [...self::MIDDLEWARE, 'auth:sanctum', 'identity.token', 'throttle:30,1'], name: 'identity.hosted_applications.account.intent.create')]
     #[Request(IdentityHostedAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityAuthenticationService::class, 'Account portal intent created.', 201)]
@@ -71,4 +76,9 @@ final class IdentityHostedAuthenticationController extends Controller
     #[Request(IdentityHostedAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityAuthenticationService::class, 'Account portal intent consumed.')]
     public function consumeAccountIntent(): void {}
+
+    #[Route('v1/identity/hosted-applications/{application}/auth/logout/intent/consume', methods: ['POST'], middleware: [...self::MIDDLEWARE, 'throttle:60,1'], name: 'identity.hosted_applications.logout.intent.consume')]
+    #[Request(IdentityHostedAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Logout intent consumed.')]
+    public function consumeLogoutIntent(): void {}
 }

@@ -9,6 +9,7 @@ use App\Services\UserManagementService\Domain\Enums\IdentityProjectMode;
 use App\Services\UserManagementService\Domain\Enums\IdentityProjectRegistrationMode;
 use App\Services\UserManagementService\Domain\Enums\IdentityProjectStatus;
 use App\Services\UserManagementService\Domain\Exceptions\InvalidIdentityProjectConfigurationException;
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 
 final class IdentityProjectTest extends TestCase
@@ -50,5 +51,40 @@ final class IdentityProjectTest extends TestCase
 
         $this->expectException(InvalidIdentityProjectConfigurationException::class);
         $project->configureEnvironment(IdentityProjectMode::Sandbox, 4);
+    }
+
+    public function test_project_deletion_can_be_scheduled_and_cancelled_without_losing_prior_status(): void
+    {
+        $project = IdentityProject::create('Job Tracker', 'job-tracker');
+        $project->configureEnvironment(IdentityProjectMode::Sandbox, 90);
+        $deadline = new DateTimeImmutable('+30 days');
+
+        $project->scheduleDeletion($deadline);
+
+        $this->assertSame(IdentityProjectStatus::PendingDeletion, $project->status());
+        $this->assertEquals($deadline, $project->deletionScheduledAt());
+        $this->assertSame(IdentityProjectStatus::Active, $project->deletionPreviousStatus());
+
+        $project->cancelDeletion();
+
+        $this->assertSame(IdentityProjectStatus::Active, $project->status());
+        $this->assertNull($project->deletionScheduledAt());
+        $this->assertNull($project->deletionPreviousStatus());
+    }
+
+    public function test_project_suspension_is_reversible_and_cannot_override_scheduled_deletion(): void
+    {
+        $project = IdentityProject::create('Job Tracker', 'job-tracker');
+
+        $this->assertTrue($project->suspend());
+        $this->assertSame(IdentityProjectStatus::Suspended, $project->status());
+        $this->assertFalse($project->suspend());
+        $this->assertTrue($project->reactivate());
+        $this->assertSame(IdentityProjectStatus::Active, $project->status());
+
+        $project->scheduleDeletion(new DateTimeImmutable('+30 days'));
+
+        $this->expectException(InvalidIdentityProjectConfigurationException::class);
+        $project->suspend();
     }
 }

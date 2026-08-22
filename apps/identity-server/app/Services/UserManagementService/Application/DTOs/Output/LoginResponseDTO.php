@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\UserManagementService\Application\DTOs\Output;
 
-use App\Services\UserManagementService\Domain\Aggregates\Permission;
 use App\Services\UserManagementService\Domain\Aggregates\User;
 use Zolta\Domain\ValueObjects\AccessToken;
 use Zolta\Support\Application\DTO\Output\ResponseDTO;
@@ -29,24 +28,6 @@ final class LoginResponseDTO extends ResponseDTO
                 'id' => $user->getId()->get(),
                 'is_temporary' => $user->isTemporary(),
                 'demo_expires_at' => $user->getDemoExpiresAt()?->format(DATE_ATOM),
-                'role' => [
-                    'id' => $user->getRole()?->getId()->get(),
-                    'name' => $user->getRole()?->getName()->get(),
-                    'permissions' => array_map(
-                        static fn (Permission $permission): array => [
-                            'id' => $permission->getId()->get(),
-                            'name' => $permission->getName()->get(),
-                            'description' => $permission->getDescription()?->get(),
-                        ],
-                        $user->getRole()?->getPermissions() ?? []
-                    ),
-                ],
-                'permissions' => array_map(
-                    static fn (Permission $permission): array => [
-                        'id' => $permission->getId()->get(),
-                    ],
-                    $user->getPermissions()
-                ),
             ],
         );
     }

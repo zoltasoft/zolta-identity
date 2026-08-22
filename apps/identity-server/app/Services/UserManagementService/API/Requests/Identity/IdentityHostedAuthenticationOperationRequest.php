@@ -46,8 +46,10 @@ final class IdentityHostedAuthenticationOperationRequest extends IdentityOperati
                 'password' => ['required', 'string', 'min:12', 'confirmed'],
             ],
             'auth.handoff.create' => ['connection' => ['required', 'in:primary,sandbox']],
+            'auth.authorization.intent.consume' => ['intent' => ['required', 'string', 'min:64']],
             'auth.account.intent.create' => [],
             'auth.account.intent.consume' => ['intent' => ['required', 'string', 'min:64']],
+            'auth.logout.intent.consume' => ['intent' => ['required', 'string', 'min:64']],
             default => [],
         };
     }
@@ -76,7 +78,7 @@ final class IdentityHostedAuthenticationOperationRequest extends IdentityOperati
             'client_id' => $client->id,
             'client_secret' => '',
         ];
-        if (in_array($this->operation(), ['auth.account.intent.create', 'auth.account.intent.consume'], true)) {
+        if (in_array($this->operation(), ['auth.authorization.intent.consume', 'auth.account.intent.create', 'auth.account.intent.consume', 'auth.logout.intent.consume'], true)) {
             $input['hosted_application_id'] = $application->id;
         }
         if (in_array($this->operation(), ['auth.register', 'auth.social'], true)) {

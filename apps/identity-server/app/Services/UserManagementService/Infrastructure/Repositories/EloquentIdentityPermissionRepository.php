@@ -56,4 +56,12 @@ final class EloquentIdentityPermissionRepository implements IdentityPermissionRe
 
         IdentityPermissionMapper::fill($model, $permission)->save();
     }
+
+    public function delete(DomainIdentityPermission $permission): void
+    {
+        IdentityProjectPermission::query()
+            ->where('project_id', $permission->projectId()->toString())
+            ->whereKey($permission->id()->toString())
+            ->delete();
+    }
 }

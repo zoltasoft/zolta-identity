@@ -8,7 +8,6 @@ use App\Services\UserManagementService\Domain\Aggregates\IdentityMembership as D
 use App\Services\UserManagementService\Domain\Repositories\IdentityMembershipRepository;
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityProjectId;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
-use App\Services\UserManagementService\Infrastructure\Models\Eloquent\Role;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
 use App\Services\UserManagementService\Infrastructure\Services\Identity\IdentityClientProvisioner;
 use Illuminate\Console\Command;
@@ -47,16 +46,11 @@ final class BootstrapIdentity extends Command
         }
 
         [$user, $project, $client, $secret] = DB::transaction(function () use ($clients, $memberships, $email, $name, $password): array {
-            $defaultRole = Role::query()->firstOrCreate(
-                ['role' => 'User'],
-                ['description' => 'Default global identity role'],
-            );
             $user = User::query()->firstOrNew(['email' => $email]);
             $user->fill([
                 'id' => $user->id ?: (string) Str::uuid(),
                 'username' => $name,
                 'password' => $password,
-                'role_id' => $user->role_id ?: $defaultRole->id,
                 'terms' => 'accepted',
                 'email_verified_at' => $user->email_verified_at ?: now(),
                 'is_system_admin' => true,

@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\UserManagementService\Application\DTOs\External;
 
-use App\Services\UserManagementService\Domain\Aggregates\Permission;
-use App\Services\UserManagementService\Domain\Aggregates\Role;
 use App\Services\UserManagementService\Domain\Aggregates\User;
 
 final readonly class AuthenticatedUser
@@ -15,8 +13,6 @@ final readonly class AuthenticatedUser
         public string $email,
         public bool $emailVerified,
         public string $username,
-        public array $role,
-        public array $permissions,
         public bool $twoFactorEnabled = false,
         public bool $loginAlertsEnabled = true,
         public ?string $backupEmail = null,
@@ -34,8 +30,6 @@ final readonly class AuthenticatedUser
             'email' => $this->email,
             'email_verified' => $this->emailVerified,
             'username' => $this->username,
-            'role' => $this->role,
-            'permissions' => $this->permissions,
             'two_factor_enabled' => $this->twoFactorEnabled,
             'login_alerts_enabled' => $this->loginAlertsEnabled,
             'backup_email' => $this->backupEmail,
@@ -47,38 +41,13 @@ final readonly class AuthenticatedUser
         ];
     }
 
-    public static function fromDomain(User $user, ?Role $role = null): self
+    public static function fromDomain(User $user): self
     {
-        $rolePayload = $role ? [
-            'id' => $user->getRoleId()->get('value'),
-            'name' => $role?->getName()->get('value') ?? null,
-            'description' => $role?->getDescription()?->get('description'),
-        ] : [];
-
-        $directPermissions = array_map(
-            static fn (Permission $permission): mixed => $permission->getName()->get('value'),
-            $user->getPermissions()
-        );
-
-        $rolePermissions = $role
-            ? array_map(
-                static fn (Permission $permission): mixed => $permission->getName()->get('value'),
-                $role->getPermissions()
-            )
-            : [];
-
-        $permissions = array_values(array_unique(array_filter(array_merge(
-            $directPermissions,
-            $rolePermissions
-        ))));
-
         return new self(
             id: $user->getId()->get('value'),
             email: $user->getEmail()->get('address'),
             emailVerified: $user->getEmail()->isVerified(),
             username: $user->getUsername()->get('username'),
-            role: $rolePayload,
-            permissions: $permissions,
             twoFactorEnabled: $user->isTwoFactorEnabled(),
             loginAlertsEnabled: $user->hasLoginAlertsEnabled(),
             backupEmail: $user->getBackupEmail()?->get('address'),

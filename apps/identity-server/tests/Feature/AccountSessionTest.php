@@ -6,7 +6,6 @@ namespace Tests\Feature;
 
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -58,7 +57,6 @@ final class AccountSessionTest extends TestCase
             'username' => $name,
             'email' => "{$name}@example.com",
             'password' => 'original-password',
-            'role_id' => (string) DB::table('roles')->value('id'),
             'terms' => 'accepted',
             'email_verified_at' => now(),
         ]);

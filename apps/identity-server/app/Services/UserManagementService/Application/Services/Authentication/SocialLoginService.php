@@ -12,15 +12,12 @@ use App\Services\UserManagementService\Application\DTOs\External\AuthenticatedUs
 use App\Services\UserManagementService\Application\DTOs\Input\SocialLoginDTO;
 use App\Services\UserManagementService\Application\DTOs\Output\OAuthResponseDTO;
 use App\Services\UserManagementService\Application\Queries\Authentication\GenerateTokenFromUser\GenerateTokenFromUserQuery;
-use App\Services\UserManagementService\Application\Queries\Roles\GetRoleByName\GetRoleByNameQuery;
-use App\Services\UserManagementService\Domain\Aggregates\Role;
 use App\Services\UserManagementService\Domain\Aggregates\User;
 use App\Services\UserManagementService\Domain\Entities\OAuthProvider;
 use App\Services\UserManagementService\Infrastructure\DTOs\OAuthUser as InfrastructureOAuthUser;
 use RuntimeException;
 use Zolta\Cqrs\Services\Pipeline\ApplicationService;
 use Zolta\Domain\ValueObjects\AccessToken as AccessTokenVO;
-use Zolta\Domain\ValueObjects\RoleName;
 use Zolta\Support\Application\Attributes\AsApplicationService;
 
 #[AsApplicationService]
@@ -55,21 +52,9 @@ final readonly class SocialLoginService
             'Unable to resolve social provider.'
         );
 
-        $rolePayload = $this->applicationService->runAndCapture(GetRoleByNameQuery::class, [
-            'name' => new RoleName('User'),
-        ])->getOrFail(static fn (): RuntimeException => new RuntimeException('Default role not configured.'));
-
-        $role = $this->extractPayloadValue(
-            $rolePayload,
-            'role',
-            Role::class,
-            'Default role not configured.'
-        );
-
         $userPayload = $this->applicationService->runAndCapture(ResolveSocialUserCommand::class, [
             'email' => $oauthUser->email,
             'name' => $oauthUser->name,
-            'roleId' => $role->getId()->get('value'),
         ])->getOrFail(static fn (): RuntimeException => new RuntimeException('Unable to resolve user account.'));
 
         $user = $this->extractPayloadValue(
