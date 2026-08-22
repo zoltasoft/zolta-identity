@@ -38,7 +38,13 @@ const {
   () => (hosted.value ? '/api/hosted-auth/context' : '/api/auth/context'),
   {
     query: computed(() =>
-      hosted.value ? { application: hostedApplication.value } : {}
+      hosted.value
+        ? {
+            application: hostedApplication.value,
+            intent: typeof route.query.intent === 'string' ? route.query.intent : undefined,
+            state: hostedState.value
+          }
+        : {}
     )
   }
 )
@@ -46,7 +52,7 @@ const {
 const primary = computed(() => experience.value?.primary ?? null)
 const liveEnabled = computed(() => primary.value?.project.mode === 'live')
 const demoContext = computed<IdentityAuthenticationContext | null>(() => {
-  if (!config.public.identityAuth.sandboxEnabled) return null
+  if (!hosted.value && !config.public.identityAuth.sandboxEnabled) return null
   if (primary.value?.project.mode === 'sandbox') return primary.value
   if (experience.value?.sandbox?.project.mode === 'sandbox')
     return experience.value.sandbox

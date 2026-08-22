@@ -5,19 +5,38 @@ import type { IdentityProject } from '#admin/types/identity-access'
 definePageMeta({ layout: 'identity-admin', middleware: ['identity-admin'] })
 
 const localePath = useLocalePath()
+const route = useRoute()
+const router = useRouter()
 const { projects: fetchProjects, createProject } = useIdentityAccess()
 const { data: projects, status, error, refresh } = await fetchProjects()
 const open = ref(false)
 const saving = ref(false)
-const mode = ref<'all' | 'live' | 'sandbox'>('all')
+const queryValue = (key: string): string | undefined => {
+  const value = route.query[key]
+  const candidate = Array.isArray(value) ? value[0] : value
+  return typeof candidate === 'string' ? candidate : undefined
+}
+const routeMode = queryValue('environment')
+const routeStatus = queryValue('status')
+const mode = ref<'all' | 'live' | 'sandbox'>(routeMode === 'live' || routeMode === 'sandbox' ? routeMode : 'all')
+const includeDisabled = ref(queryValue('include_disabled') === '1')
+const projectStatus = ref<'all' | IdentityProject['status']>(
+  includeDisabled.value && (routeStatus === 'active' || routeStatus === 'suspended' || routeStatus === 'pending_deletion') ? routeStatus : 'all'
+)
+const syncingRoute = ref(false)
 const form = reactive({ name: '', slug: '', description: '' })
 
-const scopedProjects = computed(() => (projects.value ?? []).filter(project => (
-  mode.value === 'all' || project.mode === mode.value
-)))
+const scopedProjects = computed(() => (projects.value ?? []).filter((project) => {
+  if (!includeDisabled.value && project.status !== 'active') return false
+  if (includeDisabled.value && projectStatus.value !== 'all' && project.status !== projectStatus.value) return false
+  return mode.value === 'all' || project.mode === mode.value
+}))
 const collection = useIdentityCollection(scopedProjects, project => (
   `${project.name} ${project.slug} ${project.description ?? ''} ${project.status} ${project.mode}`
 ))
+collection.search.value = queryValue('q') ?? ''
+const routePage = Number(queryValue('page'))
+if (Number.isInteger(routePage) && routePage > 0) collection.page.value = routePage
 
 const columns: TableColumn<IdentityProject>[] = [
   { accessorKey: 'name', header: 'Project' },
@@ -31,8 +50,37 @@ watch(() => form.name, (name) => {
   if (!form.slug) form.slug = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 })
 
-watch(mode, () => {
-  collection.page.value = 1
+watch([mode, includeDisabled, projectStatus, collection.search], () => {
+  if (!syncingRoute.value) collection.page.value = 1
+})
+
+watch([mode, includeDisabled, projectStatus, collection.search, collection.page], async () => {
+  if (syncingRoute.value) return
+  const query: Record<string, string> = {}
+  if (collection.search.value.trim()) query.q = collection.search.value.trim()
+  if (mode.value !== 'all') query.environment = mode.value
+  if (includeDisabled.value) {
+    query.include_disabled = '1'
+    if (projectStatus.value !== 'all') query.status = projectStatus.value
+  }
+  if (collection.page.value > 1) query.page = String(collection.page.value)
+  await router.replace({ query })
+})
+
+watch(() => route.query, async () => {
+  syncingRoute.value = true
+  const nextMode = queryValue('environment')
+  const nextStatus = queryValue('status')
+  mode.value = nextMode === 'live' || nextMode === 'sandbox' ? nextMode : 'all'
+  includeDisabled.value = queryValue('include_disabled') === '1'
+  projectStatus.value = includeDisabled.value && (nextStatus === 'active' || nextStatus === 'suspended' || nextStatus === 'pending_deletion')
+    ? nextStatus
+    : 'all'
+  collection.search.value = queryValue('q') ?? ''
+  const nextPage = Number(queryValue('page'))
+  collection.page.value = Number.isInteger(nextPage) && nextPage > 0 ? nextPage : 1
+  await nextTick()
+  syncingRoute.value = false
 })
 
 async function submit() {
@@ -84,6 +132,22 @@ async function submit() {
             ]"
             size="lg"
             class="w-full sm:w-48"
+          />
+          <UCheckbox
+            v-model="includeDisabled"
+            label="Include disabled projects"
+          />
+          <USelect
+            v-if="includeDisabled"
+            v-model="projectStatus"
+            :items="[
+              { label: 'All statuses', value: 'all' },
+              { label: 'Active', value: 'active' },
+              { label: 'Suspended', value: 'suspended' },
+              { label: 'Pending deletion', value: 'pending_deletion' }
+            ]"
+            size="lg"
+            class="w-full sm:w-52"
           />
         </template>
 
@@ -144,7 +208,7 @@ async function submit() {
             <div class="flex items-center gap-2 text-sm capitalize">
               <span
                 class="size-2 rounded-full"
-                :class="row.original.status === 'active' ? 'bg-success' : 'bg-warning'"
+                :class="row.original.status === 'active' ? 'bg-success' : row.original.status === 'pending_deletion' ? 'bg-error' : 'bg-warning'"
               />
               {{ row.original.status }}
             </div>

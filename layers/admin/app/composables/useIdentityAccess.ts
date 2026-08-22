@@ -2,11 +2,12 @@ import type {
   IdentityBrowserSession,
   IdentityAccountSession,
   IdentityAuditEvent,
+  IdentityAccessCatalog,
+  IdentityAccessCatalogPermission,
+  IdentityAccessCatalogRole,
   IdentityClient,
   IdentityHostedApplication,
   IdentityInstallationUser,
-  IdentityGlobalPermission,
-  IdentityGlobalRole,
   IdentityProject,
   IdentityProjectDetails,
   IdentityRole,
@@ -26,16 +27,33 @@ export function useIdentityAccess() {
     session: () => useFetch<IdentityBrowserSession>('/api/auth/session'),
     projects: () => useFetch<IdentityProject[]>('/api/identity/projects'),
     users: () => useFetch<IdentityInstallationUser[]>('/api/identity/users'),
-    globalRoles: () => useFetch<IdentityGlobalRole[]>('/api/identity/global/roles'),
-    globalPermissions: () => useFetch<IdentityGlobalPermission[]>('/api/identity/global/permissions'),
     accountSessions: () => useFetch<IdentityAccountSession[]>('/api/auth/sessions'),
     project: (id: MaybeRefOrGetter<string>) => useFetch<IdentityProjectDetails>(() => `/api/identity/projects/${toValue(id)}`),
+    projectAccessCatalog: () => useFetch<IdentityAccessCatalog>('/api/identity/project-access-catalog'),
     audit: (id: MaybeRefOrGetter<string>, options: { immediate?: boolean } = {}) => useFetch<IdentityAuditEvent[]>(
       () => `/api/identity/projects/${toValue(id)}/audit`,
       { immediate: options.immediate ?? true }
     ),
     createProject: (body: { name: string, slug: string, description?: string | null }) =>
       mutation<IdentityProject>('/api/identity/projects', { method: 'POST', body }),
+    scheduleProjectDeletion: (projectId: string, confirmation: string) =>
+      mutation<IdentityProject>(`/api/identity/projects/${projectId}`, { method: 'DELETE', body: { confirmation } }),
+    cancelProjectDeletion: (projectId: string) =>
+      mutation<IdentityProject>(`/api/identity/projects/${projectId}/deletion/cancel`, { method: 'POST' }),
+    suspendProject: (projectId: string, confirmation: string) =>
+      mutation<IdentityProject>(`/api/identity/projects/${projectId}/suspension`, { method: 'POST', body: { confirmation } }),
+    reactivateProject: (projectId: string) =>
+      mutation<IdentityProject>(`/api/identity/projects/${projectId}/reactivation`, { method: 'POST' }),
+    createCatalogPermission: (body: { key: string, name?: string | null, description?: string | null }) =>
+      mutation<IdentityAccessCatalogPermission>('/api/identity/project-access-catalog/permissions', { method: 'POST', body }),
+    createCatalogRole: (body: { name: string, slug: string, description?: string | null, permission_ids: string[] }) =>
+      mutation<IdentityAccessCatalogRole>('/api/identity/project-access-catalog/roles', { method: 'POST', body }),
+    importCatalogItems: (projectId: string, body: { permission_ids: string[], role_ids: string[] }) =>
+      mutation(`/api/identity/projects/${projectId}/access-catalog/import`, { method: 'POST', body }),
+    publishProjectPermission: (projectId: string, permissionId: string) =>
+      mutation(`/api/identity/projects/${projectId}/permissions/${permissionId}/publish`, { method: 'POST' }),
+    publishProjectRole: (projectId: string, roleId: string) =>
+      mutation(`/api/identity/projects/${projectId}/roles/${roleId}/publish`, { method: 'POST' }),
     updateProjectRegistration: (
       projectId: string,
       body: { registration_mode: 'invite_only' | 'public', registration_role_id: string | null, email_verification_required: boolean }
@@ -54,14 +72,6 @@ export function useIdentityAccess() {
       mutation(`/api/identity/projects/${projectId}/webhooks/${webhookId}`, { method: 'DELETE' }),
     updateUser: (userId: string, body: { is_system_admin: boolean, locked: boolean }) =>
       mutation(`/api/identity/users/${userId}`, { method: 'PATCH', body }),
-    createGlobalRole: (body: { name: string, description?: string | null, permission_ids: string[] }) =>
-      mutation<IdentityGlobalRole>('/api/identity/global/roles', { method: 'POST', body }),
-    deleteGlobalRole: (roleId: string) =>
-      mutation(`/api/identity/global/roles/${roleId}`, { method: 'DELETE' }),
-    createGlobalPermission: (body: { name: string, description?: string | null }) =>
-      mutation<IdentityGlobalPermission>('/api/identity/global/permissions', { method: 'POST', body }),
-    deleteGlobalPermission: (permissionId: string) =>
-      mutation(`/api/identity/global/permissions/${permissionId}`, { method: 'DELETE' }),
     updateAccount: (body: { username: string, email: string, avatar_url: string | null }) =>
       mutation<Record<string, unknown>>('/api/identity/account', { method: 'PATCH', body }),
     updateAccountSecurity: (body: { two_factor_enabled: boolean, login_alerts_enabled: boolean, backup_email: string | null }) =>
@@ -94,10 +104,16 @@ export function useIdentityAccess() {
       mutation<IdentityClient>(`/api/identity/projects/${projectId}/clients/${clientId}/rotate-secret`, { method: 'POST' }),
     setClientStatus: (projectId: string, clientId: string, status: 'active' | 'disabled') =>
       mutation(`/api/identity/projects/${projectId}/clients/${clientId}`, { method: 'PATCH', body: { status } }),
+    removeClient: (projectId: string, clientId: string, confirmation: string) =>
+      mutation(`/api/identity/projects/${projectId}/clients/${clientId}`, { method: 'DELETE', body: { confirmation } }),
     createRole: (projectId: string, body: { name: string, slug: string, description?: string | null }) =>
       mutation<IdentityRole>(`/api/identity/projects/${projectId}/roles`, { method: 'POST', body }),
+    removeRole: (projectId: string, roleId: string, confirmation: string) =>
+      mutation(`/api/identity/projects/${projectId}/roles/${roleId}`, { method: 'DELETE', body: { confirmation } }),
     createPermission: (projectId: string, body: { key: string, name?: string | null, description?: string | null }) =>
       mutation(`/api/identity/projects/${projectId}/permissions`, { method: 'POST', body }),
+    removePermission: (projectId: string, permissionId: string, confirmation: string) =>
+      mutation(`/api/identity/projects/${projectId}/permissions/${permissionId}`, { method: 'DELETE', body: { confirmation } }),
     syncPermissionManifest: (
       projectId: string,
       clientId: string,

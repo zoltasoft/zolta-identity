@@ -3,7 +3,8 @@ export type IdentityProject = {
   name: string
   slug: string
   description: string | null
-  status: 'active' | 'suspended'
+  status: 'active' | 'suspended' | 'pending_deletion'
+  deletion_scheduled_at: string | null
   mode: 'live' | 'sandbox'
   sandbox_ttl_minutes: number
   registration_mode: 'invite_only' | 'public'
@@ -27,8 +28,11 @@ export type IdentityPermission = {
   key: string
   name: string
   description: string | null
-  source: 'manual' | 'manifest'
+  source: 'manual' | 'manifest' | 'catalog'
   source_client_id: string | null
+  catalog_permission_id: string | null
+  catalog_version: number | null
+  catalog_origin: 'imported' | 'published' | null
   status: 'active' | 'stale'
 }
 
@@ -38,6 +42,9 @@ export type IdentityRole = {
   name: string
   slug: string
   description: string | null
+  catalog_role_id: string | null
+  catalog_version: number | null
+  catalog_origin: 'imported' | 'published' | null
   permission_ids: string[]
 }
 
@@ -98,6 +105,43 @@ export type IdentityProjectDetails = IdentityProject & {
   hosted_applications: IdentityHostedApplication[]
 }
 
+export type IdentityAccessCatalogPermission = {
+  id: string
+  key: string
+  name: string
+  description: string | null
+  status: 'active' | 'archived'
+  version: number
+}
+
+export type IdentityAccessCatalogRole = {
+  id: string
+  slug: string
+  name: string
+  description: string | null
+  status: 'active' | 'archived'
+  version: number
+  permission_ids: string[]
+}
+
+export type IdentityAccessCatalog = {
+  permissions: IdentityAccessCatalogPermission[]
+  roles: IdentityAccessCatalogRole[]
+}
+
+export type IdentityAccessDependencyConflict = {
+  code: 'identity.access_dependency_conflict'
+  message: string
+  resource_type: 'role' | 'permission'
+  resource_id: string
+  dependencies: {
+    memberships: Array<{ id: string, user_id: string, label: string, status: 'active' | 'suspended' }>
+    roles: Array<{ id: string, name: string, slug: string }>
+    registration_default: boolean
+    manifest_client: { id: string, name: string } | null
+  }
+}
+
 export type {
   IdentityBrowserSession,
   IdentityLoginData
@@ -133,24 +177,4 @@ export type IdentityInstallationUser = {
   locked: boolean
   project_count: number
   created_at: string | null
-}
-
-export type IdentityGlobalPermission = {
-  id: string
-  name: string
-  description: string | null
-  roles: string[]
-  users: string[]
-  created_at: string
-  updated_at: string
-}
-
-export type IdentityGlobalRole = {
-  id: string
-  name: string
-  description: string | null
-  permissions: IdentityGlobalPermission[]
-  users: string[]
-  created_at: string
-  updated_at: string
 }

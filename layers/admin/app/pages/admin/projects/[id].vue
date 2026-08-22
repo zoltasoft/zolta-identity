@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui'
 import type {
+  IdentityAccessCatalog,
+  IdentityAccessDependencyConflict,
   IdentityAuditEvent,
   IdentityClient,
   IdentityHostedApplication,
@@ -13,6 +15,18 @@ import type {
 definePageMeta({ layout: 'identity-admin', middleware: ['identity-admin'] })
 
 type ProjectTab = 'overview' | 'members' | 'access' | 'clients' | 'hosted-applications' | 'webhooks' | 'audit'
+type AccessRoleRow = {
+  id: string
+  name: string
+  slug: string
+  permissionCount: number
+  global: boolean
+  availableCatalog: boolean
+  projectRole: IdentityRole | null
+}
+type AccessDeletionTarget
+  = { kind: 'role', resource: IdentityRole }
+    | { kind: 'permission', resource: IdentityPermission }
 
 const route = useRoute()
 const router = useRouter()
@@ -20,6 +34,8 @@ const localePath = useLocalePath()
 const projectId = computed(() => String(route.params.id))
 const access = useIdentityAccess()
 const { data: project, status, error, refresh } = await access.project(projectId)
+const { data: session } = await access.session()
+const catalogRequest = await access.projectAccessCatalog()
 const auditRequest = await access.audit(projectId, { immediate: false })
 const toast = useToast()
 const routeTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
@@ -29,11 +45,21 @@ const auditLoaded = ref(false)
 const auditVisibleCount = ref(20)
 const auditSentinel = ref<HTMLElement | null>(null)
 const clientModalOpen = ref(false)
+const clientDeletionModalOpen = ref(false)
+const clientDeletionConfirmation = ref('')
+const clientDeletionSaving = ref(false)
+const selectedClientForDeletion = ref<IdentityClient | null>(null)
 const hostedApplicationModalOpen = ref(false)
 const invitationModalOpen = ref(false)
 const roleModalOpen = ref(false)
 const permissionModalOpen = ref(false)
 const webhookModalOpen = ref(false)
+const deletionModalOpen = ref(false)
+const deletionConfirmation = ref('')
+const deletionSaving = ref(false)
+const suspensionModalOpen = ref(false)
+const suspensionConfirmation = ref('')
+const suspensionSaving = ref(false)
 const clientName = ref('')
 const hostedApplicationBackgroundOptions = [
   { label: 'Identity default', value: 'identity' },
@@ -75,6 +101,10 @@ const webhookForm = reactive({
 const revealedWebhookSecret = ref<{ id: string, secret: string } | null>(null)
 const revealedSecret = ref<{ clientId: string, secret: string } | null>(null)
 const selectedRole = ref<{ id: string, name: string, permissionIds: string[] } | null>(null)
+const selectedAccessDeletion = ref<AccessDeletionTarget | null>(null)
+const accessDeletionConfirmation = ref('')
+const accessDeletionSaving = ref(false)
+const accessDeletionServerMessage = ref('')
 const selectedMembership = ref<{
   id: string
   label: string
@@ -99,6 +129,68 @@ const primaryClientOptions = computed(() => (project.value?.clients ?? [])
   .filter(item => item.status === 'active')
   .map(item => ({ label: `${item.name} (${item.secret_prefix})`, value: item.id })))
 const auditEvents = computed(() => auditRequest.data.value ?? [])
+const catalog = computed<IdentityAccessCatalog | null>(() => catalogRequest?.data.value ?? null)
+const projectPermissions = computed(() => project.value?.permissions ?? [])
+const configurableProjectPermissions = computed(() => projectPermissions.value.filter(item => item.catalog_origin !== 'imported'))
+const roleRows = computed<AccessRoleRow[]>(() => {
+  const projectCatalogRoleIds = new Set((project.value?.roles ?? [])
+    .filter(item => item.catalog_role_id)
+    .map(item => item.catalog_role_id))
+  const reusableRoles = (catalog.value?.roles ?? [])
+    .filter(item => !projectCatalogRoleIds.has(item.id))
+    .map(item => ({ id: `catalog:${item.id}`, name: item.name, slug: item.slug, permissionCount: item.permission_ids.length, global: true, availableCatalog: true, projectRole: null }))
+  const localRoles = (project.value?.roles ?? [])
+    .map(item => ({ id: `project:${item.id}`, name: item.name, slug: item.slug, permissionCount: item.permission_ids.length, global: item.catalog_role_id !== null, availableCatalog: false, projectRole: item }))
+
+  return [...reusableRoles, ...localRoles]
+})
+const registrationRoleOptions = computed(() => [
+  { label: 'No default role', value: null },
+  ...(catalog.value?.roles ?? []).map(item => ({ label: `${item.name} · Catalog`, value: `catalog:${item.id}` })),
+  ...(project.value?.roles ?? [])
+    .filter(item => item.catalog_origin !== 'imported')
+    .map(item => ({ label: item.name, value: `project:${item.id}` }))
+])
+const rolePermissionChoices = computed(() => {
+  const publishedCatalogPermissionIds = new Set((project.value?.permissions ?? [])
+    .filter(item => item.catalog_origin === 'published' && item.catalog_permission_id)
+    .map(item => item.catalog_permission_id))
+  return [
+    ...(catalog.value?.permissions ?? [])
+      .filter(item => !publishedCatalogPermissionIds.has(item.id))
+      .map(item => ({ value: `catalog:${item.id}`, label: item.key, global: true })),
+    ...configurableProjectPermissions.value.map(item => ({ value: `project:${item.id}`, label: item.key, global: item.catalog_permission_id !== null }))
+  ]
+})
+const accessDeletionMemberships = computed(() => {
+  const target = selectedAccessDeletion.value
+  if (!target || !project.value) return []
+  return project.value.memberships.filter(membership => target.kind === 'role'
+    ? membership.role_ids.includes(target.resource.id)
+    : membership.direct_permission_ids.includes(target.resource.id))
+})
+const accessDeletionRoles = computed(() => {
+  const target = selectedAccessDeletion.value
+  if (!target || target.kind !== 'permission' || !project.value) return []
+  return project.value.roles.filter(role => role.permission_ids.includes(target.resource.id))
+})
+const accessDeletionIsRegistrationDefault = computed(() => {
+  const target = selectedAccessDeletion.value
+  return target?.kind === 'role' && project.value?.registration_role_id === target.resource.id
+})
+const accessDeletionManifestClient = computed(() => {
+  const target = selectedAccessDeletion.value
+  if (!target || target.kind !== 'permission' || target.resource.source !== 'manifest' || target.resource.status !== 'active') return null
+  return project.value?.clients.find(client => client.id === target.resource.source_client_id) ?? null
+})
+const accessDeletionBlocked = computed(() => accessDeletionMemberships.value.length > 0
+  || accessDeletionRoles.value.length > 0
+  || accessDeletionIsRegistrationDefault.value
+  || accessDeletionManifestClient.value !== null)
+const accessDeletionExpectedConfirmation = computed(() => {
+  const target = selectedAccessDeletion.value
+  return target?.kind === 'role' ? target.resource.slug : target?.resource.key ?? ''
+})
 const visibleAuditEvents = computed(() => auditEvents.value.slice(0, auditVisibleCount.value))
 const hasMoreAuditEvents = computed(() => auditVisibleCount.value < auditEvents.value.length)
 const hostedApplicationPreviewStyle = computed(() => ({
@@ -115,6 +207,11 @@ const hostedApplicationPreviewLogo = computed(() => {
   if (removeHostedApplicationLogo.value) return null
   return hostedApplicationLogoPreview.value || hostedApplication.logoUrl
 })
+const canManageDeletion = computed(() => session.value?.isSystemAdmin === true)
+const projectChangesLocked = computed(() => project.value?.status !== 'active')
+const projectChangesLockMessage = computed(() => project.value?.status === 'suspended'
+  ? 'This project is suspended. Reactivate it before making configuration changes.'
+  : 'This project is scheduled for deletion. Cancel deletion before making configuration changes.')
 
 const memberColumns: TableColumn<IdentityMembership>[] = [
   { accessorKey: 'user', header: 'Member' },
@@ -123,16 +220,17 @@ const memberColumns: TableColumn<IdentityMembership>[] = [
   { accessorKey: 'status', header: 'Status' },
   { id: 'actions', header: '' }
 ]
-const roleColumns: TableColumn<IdentityRole>[] = [
+const roleColumns: TableColumn<AccessRoleRow>[] = [
   { accessorKey: 'name', header: 'Role' },
-  { accessorKey: 'permission_ids', header: 'Permissions' },
+  { accessorKey: 'permissionCount', header: 'Permissions' },
   { id: 'actions', header: '' }
 ]
 const permissionColumns: TableColumn<IdentityPermission>[] = [
   { accessorKey: 'key', header: 'Permission key' },
   { accessorKey: 'name', header: 'Name' },
   { accessorKey: 'source', header: 'Source' },
-  { accessorKey: 'status', header: 'Status' }
+  { accessorKey: 'status', header: 'Status' },
+  { id: 'actions', header: '' }
 ]
 const clientColumns: TableColumn<IdentityClient>[] = [
   { accessorKey: 'name', header: 'Client' },
@@ -141,6 +239,10 @@ const clientColumns: TableColumn<IdentityClient>[] = [
   { accessorKey: 'status', header: 'Status' },
   { id: 'actions', header: '' }
 ]
+const selectedClientDependencies = computed(() => (project.value?.hosted_applications ?? []).filter(application => (
+  application.primary_client_id === selectedClientForDeletion.value?.id
+  || application.sandbox_client_id === selectedClientForDeletion.value?.id
+)))
 const webhookColumns: TableColumn<IdentityWebhook>[] = [
   { accessorKey: 'url', header: 'Endpoint' },
   { accessorKey: 'events', header: 'Events' },
@@ -159,7 +261,10 @@ const auditColumns: TableColumn<IdentityAuditEvent>[] = [
 watch(project, (value) => {
   if (!value) return
   registration.mode = value.registration_mode
-  registration.roleId = value.registration_role_id
+  const registrationRole = value.roles.find(item => item.id === value.registration_role_id)
+  registration.roleId = registrationRole?.catalog_origin === 'imported' && registrationRole.catalog_role_id
+    ? `catalog:${registrationRole.catalog_role_id}`
+    : value.registration_role_id ? `project:${value.registration_role_id}` : null
   registration.emailVerificationRequired = value.email_verification_required
   environment.mode = value.mode
   environment.ttlMinutes = value.sandbox_ttl_minutes
@@ -300,6 +405,34 @@ async function toggleClient(client: IdentityClient) {
   await refreshProjectAndAudit()
 }
 
+function openClientDeletion(client: IdentityClient) {
+  selectedClientForDeletion.value = client
+  clientDeletionConfirmation.value = ''
+  clientDeletionModalOpen.value = true
+}
+
+function clientDependencies(client: IdentityClient): string[] {
+  return (project.value?.hosted_applications ?? [])
+    .filter(application => application.primary_client_id === client.id || application.sandbox_client_id === client.id)
+    .map(application => application.name)
+}
+
+async function deleteClient() {
+  const client = selectedClientForDeletion.value
+  if (!client) return
+  clientDeletionSaving.value = true
+  try {
+    await access.removeClient(projectId.value, client.id, clientDeletionConfirmation.value)
+    clientDeletionModalOpen.value = false
+    selectedClientForDeletion.value = null
+    clientDeletionConfirmation.value = ''
+    toast.add({ title: 'Client deleted', description: 'Its credentials have been revoked and its name is available again.', color: 'success' })
+    await refreshProjectAndAudit()
+  } finally {
+    clientDeletionSaving.value = false
+  }
+}
+
 async function addRole() {
   await access.createRole(projectId.value, { ...role, description: role.description || null })
   Object.assign(role, { name: '', slug: '', description: '' })
@@ -318,6 +451,60 @@ async function addPermission() {
   await refreshProjectAndAudit()
 }
 
+function openAccessDeletion(target: AccessDeletionTarget) {
+  selectedAccessDeletion.value = target
+  accessDeletionConfirmation.value = ''
+  accessDeletionServerMessage.value = ''
+}
+
+function accessDependencyConflict(error: unknown): IdentityAccessDependencyConflict | null {
+  const candidate = error as {
+    data?: { errors?: { public?: IdentityAccessDependencyConflict } }
+    response?: { _data?: { errors?: { public?: IdentityAccessDependencyConflict } } }
+  }
+  const conflict = candidate.data?.errors?.public ?? candidate.response?._data?.errors?.public
+  return conflict?.code === 'identity.access_dependency_conflict' ? conflict : null
+}
+
+async function deleteSelectedAccessResource() {
+  const target = selectedAccessDeletion.value
+  if (!target || accessDeletionBlocked.value) return
+  accessDeletionSaving.value = true
+  accessDeletionServerMessage.value = ''
+  try {
+    if (target.kind === 'role') {
+      await access.removeRole(projectId.value, target.resource.id, accessDeletionConfirmation.value)
+    } else {
+      await access.removePermission(projectId.value, target.resource.id, accessDeletionConfirmation.value)
+    }
+    toast.add({ title: target.kind === 'role' ? 'Role deleted' : 'Permission deleted', color: 'success' })
+    selectedAccessDeletion.value = null
+    accessDeletionConfirmation.value = ''
+    await refreshProjectAndAudit()
+  } catch (error: unknown) {
+    const conflict = accessDependencyConflict(error)
+    if (!conflict) throw error
+    accessDeletionServerMessage.value = conflict.message
+    await refresh()
+  } finally {
+    accessDeletionSaving.value = false
+  }
+}
+
+async function publishPermission(permissionId: string) {
+  await access.publishProjectPermission(projectId.value, permissionId)
+  toast.add({ title: 'Permission published to access catalog', color: 'success' })
+  await catalogRequest?.refresh()
+  await refreshProjectAndAudit()
+}
+
+async function publishRole(roleId: string) {
+  await access.publishProjectRole(projectId.value, roleId)
+  toast.add({ title: 'Role published to access catalog', color: 'success' })
+  await catalogRequest?.refresh()
+  await refreshProjectAndAudit()
+}
+
 async function sendInvitation() {
   const result = await access.invite(projectId.value, invitation)
   toast.add({ title: 'Invitation created', description: `One-time token: ${String(result.invitation_token ?? '')}`, duration: 0 })
@@ -327,9 +514,19 @@ async function sendInvitation() {
 }
 
 async function saveRegistrationPolicy() {
+  let registrationRoleId: string | null = null
+  if (registration.mode === 'public' && registration.roleId?.startsWith('catalog:')) {
+    const catalogRoleId = registration.roleId.slice('catalog:'.length)
+    await access.importCatalogItems(projectId.value, { permission_ids: [], role_ids: [catalogRoleId] })
+    await refresh()
+    const catalogRole = catalog.value?.roles.find(item => item.id === catalogRoleId)
+    registrationRoleId = project.value?.roles.find(item => item.catalog_role_id === catalogRoleId || item.slug === catalogRole?.slug)?.id ?? null
+  } else if (registration.mode === 'public' && registration.roleId?.startsWith('project:')) {
+    registrationRoleId = registration.roleId.slice('project:'.length)
+  }
   await access.updateProjectRegistration(projectId.value, {
     registration_mode: registration.mode,
-    registration_role_id: registration.mode === 'public' ? registration.roleId : null,
+    registration_role_id: registrationRoleId,
     email_verification_required: registration.emailVerificationRequired
   })
   toast.add({ title: 'Registration policy saved', color: 'success' })
@@ -343,6 +540,58 @@ async function saveEnvironment() {
   })
   toast.add({ title: 'Project environment saved', color: 'success' })
   await refreshProjectAndAudit()
+}
+
+async function scheduleDeletion() {
+  if (!project.value) return
+  deletionSaving.value = true
+  try {
+    await access.scheduleProjectDeletion(projectId.value, deletionConfirmation.value)
+    deletionModalOpen.value = false
+    deletionConfirmation.value = ''
+    toast.add({ title: 'Project deletion scheduled', description: 'Access was revoked immediately. You can cancel before the purge deadline.', color: 'warning' })
+    await refreshProjectAndAudit()
+  } finally {
+    deletionSaving.value = false
+  }
+}
+
+async function cancelDeletion() {
+  if (!project.value) return
+  deletionSaving.value = true
+  try {
+    await access.cancelProjectDeletion(projectId.value)
+    toast.add({ title: 'Project deletion cancelled', color: 'success' })
+    await refreshProjectAndAudit()
+  } finally {
+    deletionSaving.value = false
+  }
+}
+
+async function suspendProject() {
+  if (!project.value) return
+  suspensionSaving.value = true
+  try {
+    await access.suspendProject(projectId.value, suspensionConfirmation.value)
+    suspensionModalOpen.value = false
+    suspensionConfirmation.value = ''
+    toast.add({ title: 'Project suspended', description: 'All active project sessions were revoked immediately.', color: 'warning' })
+    await refreshProjectAndAudit()
+  } finally {
+    suspensionSaving.value = false
+  }
+}
+
+async function reactivateProject() {
+  if (!project.value) return
+  suspensionSaving.value = true
+  try {
+    await access.reactivateProject(projectId.value)
+    toast.add({ title: 'Project reactivated', description: 'Users can authenticate again with new sessions.', color: 'success' })
+    await refreshProjectAndAudit()
+  } finally {
+    suspensionSaving.value = false
+  }
 }
 
 async function addWebhook() {
@@ -376,7 +625,23 @@ async function deleteWebhook(webhookId: string) {
 
 async function saveRolePermissions() {
   if (!selectedRole.value) return
-  await access.setRolePermissions(projectId.value, selectedRole.value.id, selectedRole.value.permissionIds)
+  const catalogPermissionIds = selectedRole.value.permissionIds
+    .filter(item => item.startsWith('catalog:'))
+    .map(item => item.slice('catalog:'.length))
+  if (catalogPermissionIds.length > 0) {
+    await access.importCatalogItems(projectId.value, { permission_ids: catalogPermissionIds, role_ids: [] })
+    await refresh()
+  }
+  const permissionIds = selectedRole.value.permissionIds.flatMap((item) => {
+    if (item.startsWith('project:')) return [item.slice('project:'.length)]
+    const catalogPermissionId = item.slice('catalog:'.length)
+    const catalogPermission = catalog.value?.permissions.find(permission => permission.id === catalogPermissionId)
+    const projectPermission = project.value?.permissions.find(permission => (
+      permission.catalog_permission_id === catalogPermissionId || permission.key === catalogPermission?.key
+    ))
+    return projectPermission ? [projectPermission.id] : []
+  })
+  await access.setRolePermissions(projectId.value, selectedRole.value.id, permissionIds)
   selectedRole.value = null
   await refreshProjectAndAudit()
 }
@@ -401,7 +666,13 @@ async function removeSelectedMembership() {
 }
 
 function selectRole(item: IdentityRole) {
-  selectedRole.value = { id: item.id, name: item.name, permissionIds: [...item.permission_ids] }
+  const permissionIds = item.permission_ids.map((permissionId) => {
+    const permission = project.value?.permissions.find(candidate => candidate.id === permissionId)
+    return permission?.catalog_origin === 'imported' && permission.catalog_permission_id
+      ? `catalog:${permission.catalog_permission_id}`
+      : `project:${permissionId}`
+  })
+  selectedRole.value = { id: item.id, name: item.name, permissionIds }
 }
 
 function selectMembership(membership: IdentityMembership) {
@@ -459,36 +730,14 @@ function selectMembership(membership: IdentityMembership) {
         close
         @update:open="revealedWebhookSecret = null"
       />
-
-      <div class="flex flex-wrap gap-2">
-        <IdentityStatPill
-          label="Members"
-          :value="project.memberships.length"
-          icon="i-lucide-users"
-          description="Identities"
-        />
-        <IdentityStatPill
-          label="Active clients"
-          :value="project.clients.filter(client => client.status === 'active').length"
-          icon="i-lucide-server-cog"
-          color="success"
-          description="Credentials"
-        />
-        <IdentityStatPill
-          label="Roles"
-          :value="project.roles.length"
-          icon="i-lucide-shield-check"
-          color="primary"
-          description="Profiles"
-        />
-        <IdentityStatPill
-          label="Permissions"
-          :value="project.permissions.length"
-          icon="i-lucide-key-round"
-          color="warning"
-          description="Published"
-        />
-      </div>
+      <UAlert
+        v-if="projectChangesLocked"
+        color="warning"
+        variant="soft"
+        icon="i-lucide-lock-keyhole"
+        title="Project changes are locked"
+        :description="projectChangesLockMessage"
+      />
 
       <div class="min-w-0 overflow-x-auto">
         <UTabs
@@ -502,11 +751,28 @@ function selectMembership(membership: IdentityMembership) {
       </div>
 
       <template v-if="activeTab === 'overview'">
-        <div class="grid gap-5 lg:grid-cols-2">
+        <UAlert
+          v-if="project.status === 'pending_deletion'"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-triangle-alert"
+          title="Project deletion is scheduled"
+          :description="`Identity access is disabled. This project will be permanently purged after ${new Date(project.deletion_scheduled_at || '').toLocaleString()}.`"
+        />
+        <UAlert
+          v-else-if="project.status === 'suspended'"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-pause-circle"
+          title="Project is suspended"
+          description="Identity access is disabled and active project sessions have been revoked. Reactivate the project to resume access and configuration changes."
+        />
+        <div class="grid items-start gap-5 lg:grid-cols-2">
           <UPageCard
             title="Project environment"
             description="Control runtime mode and sandbox lifetime directly."
             variant="subtle"
+            class="self-start"
           >
             <form
               class="space-y-5"
@@ -517,6 +783,7 @@ function selectMembership(membership: IdentityMembership) {
                   v-model="environment.mode"
                   :items="[{ label: 'Live', value: 'live' }, { label: 'Sandbox', value: 'sandbox' }]"
                   class="w-full"
+                  :disabled="projectChangesLocked"
                 />
               </UFormField>
 
@@ -531,6 +798,7 @@ function selectMembership(membership: IdentityMembership) {
                   :min="5"
                   :max="1440"
                   class="w-full"
+                  :disabled="projectChangesLocked"
                 />
               </UFormField>
 
@@ -547,6 +815,7 @@ function selectMembership(membership: IdentityMembership) {
                 type="submit"
                 label="Save environment"
                 icon="i-lucide-save"
+                :disabled="projectChangesLocked"
               />
             </form>
           </UPageCard>
@@ -555,6 +824,7 @@ function selectMembership(membership: IdentityMembership) {
             title="Registration policy"
             description="Control how identities become members of this project."
             variant="subtle"
+            class="self-start"
           >
             <form
               class="space-y-5"
@@ -565,6 +835,7 @@ function selectMembership(membership: IdentityMembership) {
                   v-model="registration.mode"
                   :items="[{ label: 'Invitation only', value: 'invite_only' }, { label: 'Public registration', value: 'public' }]"
                   class="w-full"
+                  :disabled="projectChangesLocked"
                 />
               </UFormField>
 
@@ -575,8 +846,9 @@ function selectMembership(membership: IdentityMembership) {
               >
                 <USelect
                   v-model="registration.roleId"
-                  :items="[{ label: 'No default role', value: null }, ...project.roles.map(item => ({ label: item.name, value: item.id }))]"
+                  :items="registrationRoleOptions"
                   class="w-full"
+                  :disabled="projectChangesLocked"
                 />
               </UFormField>
 
@@ -591,6 +863,7 @@ function selectMembership(membership: IdentityMembership) {
                     { label: 'Not required', value: false }
                   ]"
                   class="w-full"
+                  :disabled="projectChangesLocked"
                 />
               </UFormField>
 
@@ -610,76 +883,68 @@ function selectMembership(membership: IdentityMembership) {
                 type="submit"
                 label="Save policy"
                 icon="i-lucide-save"
+                :disabled="projectChangesLocked"
               />
             </form>
           </UPageCard>
         </div>
 
-        <div class="grid gap-5 lg:grid-cols-3">
-          <UPageCard
-            title="Client access"
-            description="Confidential clients and their current state."
-            variant="subtle"
-          >
-            <div class="space-y-4">
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-sm text-muted">Active clients</span>
-                <span class="font-semibold tabular-nums text-highlighted">{{ project.clients.filter(client => client.status === 'active').length }}</span>
-              </div>
+        <UPageCard
+          v-if="canManageDeletion"
+          title="Danger zone"
+          description="Suspend access immediately or schedule permanent deletion. Audit records are retained after the purge."
+          variant="subtle"
+          class="border border-error/30"
+        >
+          <div class="space-y-4">
+            <div
+              v-if="project.status !== 'pending_deletion'"
+              class="flex flex-wrap items-center justify-between gap-4"
+            >
+              <p class="text-sm text-muted">
+                {{ project.status === 'suspended' ? 'Identity access is paused. Reactivation does not restore prior sessions.' : 'Suspension revokes every active project session immediately.' }}
+              </p>
               <UButton
-                label="Review clients"
-                icon="i-lucide-server-cog"
-                color="neutral"
+                v-if="project.status === 'suspended'"
+                label="Reactivate project"
+                icon="i-lucide-play-circle"
+                color="success"
                 variant="outline"
-                @click="() => { activeTab = 'clients' }"
+                :loading="suspensionSaving"
+                @click="reactivateProject"
+              />
+              <UButton
+                v-else
+                label="Suspend project"
+                icon="i-lucide-pause-circle"
+                color="warning"
+                variant="outline"
+                @click="() => { suspensionModalOpen = true }"
               />
             </div>
-          </UPageCard>
-
-          <UPageCard
-            title="Webhook delivery"
-            description="Lifecycle hooks for cleanup automation."
-            variant="subtle"
-          >
-            <div class="space-y-4">
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-sm text-muted">Active webhooks</span>
-                <span class="font-semibold tabular-nums text-highlighted">
-                  {{ project.webhooks.filter(webhook => webhook.status === 'active').length }}
-                </span>
-              </div>
+            <div class="flex flex-wrap items-center justify-between gap-4 border-t border-default pt-4">
+              <p class="text-sm text-muted">
+                {{ project.status === 'pending_deletion' ? 'The project can still be restored before its purge deadline.' : 'Permanent removal is delayed for the configured recovery period.' }}
+              </p>
               <UButton
-                label="Open webhooks"
-                icon="i-lucide-webhook"
-                color="neutral"
+                v-if="project.status === 'pending_deletion'"
+                label="Cancel deletion"
+                icon="i-lucide-rotate-ccw"
+                color="warning"
+                :loading="deletionSaving"
+                @click="cancelDeletion"
+              />
+              <UButton
+                v-else
+                label="Schedule deletion"
+                icon="i-lucide-trash-2"
+                color="error"
                 variant="outline"
-                @click="() => { activeTab = 'webhooks' }"
+                @click="() => { deletionModalOpen = true }"
               />
             </div>
-          </UPageCard>
-
-          <UPageCard
-            title="Permission health"
-            description="Permissions that need attention."
-            variant="subtle"
-          >
-            <div class="space-y-4">
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-sm text-muted">Stale permissions</span>
-                <span class="font-semibold tabular-nums text-highlighted">
-                  {{ project.permissions.filter(permission => permission.status === 'stale').length }}
-                </span>
-              </div>
-              <UButton
-                label="Inspect access"
-                icon="i-lucide-shield-check"
-                color="neutral"
-                variant="outline"
-                @click="() => { activeTab = 'access' }"
-              />
-            </div>
-          </UPageCard>
-        </div>
+          </div>
+        </UPageCard>
       </template>
 
       <template v-else-if="activeTab === 'members'">
@@ -692,6 +957,7 @@ function selectMembership(membership: IdentityMembership) {
             <UButton
               label="Invite member"
               icon="i-lucide-mail-plus"
+              :disabled="projectChangesLocked"
               @click="() => { invitationModalOpen = true }"
             />
           </template>
@@ -759,6 +1025,7 @@ function selectMembership(membership: IdentityMembership) {
                   icon="i-lucide-settings-2"
                   color="neutral"
                   variant="ghost"
+                  :disabled="projectChangesLocked"
                   @click="selectMembership(row.original)"
                 />
               </div>
@@ -768,46 +1035,77 @@ function selectMembership(membership: IdentityMembership) {
       </template>
 
       <template v-else-if="activeTab === 'access'">
-        <div class="grid gap-5 xl:grid-cols-2">
+        <div class="space-y-5">
           <IdentityTableCard
-            title="Project roles"
-            description="Reusable permission sets assigned to members."
-            :count="project.roles.length"
+            title="Roles"
+            description="Catalog roles are reusable across projects. Project roles can be configured locally."
+            :count="roleRows.length"
           >
             <template #actions>
               <UButton
                 label="New role"
                 icon="i-lucide-plus"
                 size="sm"
+                :disabled="projectChangesLocked"
                 @click="() => { roleModalOpen = true }"
               />
             </template>
             <UTable
-              :data="project.roles"
+              :data="roleRows"
               :columns="roleColumns"
-              empty="No project roles yet."
+              empty="No roles are available yet."
             >
               <template #name-cell="{ row }">
                 <div class="py-1">
-                  <p class="font-medium text-highlighted">
-                    {{ row.original.name }}
-                  </p>
+                  <div class="flex items-center gap-2">
+                    <p class="font-medium text-highlighted">
+                      {{ row.original.name }}
+                    </p>
+                    <UBadge
+                      v-if="row.original.global"
+                      color="primary"
+                      variant="soft"
+                    >
+                      {{ row.original.availableCatalog ? 'Available catalog' : 'Catalog' }}
+                    </UBadge>
+                  </div>
                   <p class="text-xs text-muted">
                     {{ row.original.slug }}
                   </p>
                 </div>
               </template>
-              <template #permission_ids-cell="{ row }">
-                <span class="text-sm text-muted">{{ row.original.permission_ids.length }} assigned</span>
+              <template #permissionCount-cell="{ row }">
+                <span class="text-sm text-muted">{{ row.original.permissionCount }} assigned</span>
               </template>
               <template #actions-cell="{ row }">
-                <div class="flex justify-end">
+                <div
+                  v-if="row.original.projectRole"
+                  class="flex justify-end gap-1"
+                >
                   <UButton
                     label="Configure"
                     icon="i-lucide-sliders-horizontal"
                     color="neutral"
                     variant="ghost"
-                    @click="selectRole(row.original)"
+                    :disabled="projectChangesLocked"
+                    @click="selectRole(row.original.projectRole)"
+                  />
+                  <UButton
+                    v-if="canManageDeletion && !row.original.projectRole.catalog_role_id"
+                    label="Publish"
+                    icon="i-lucide-upload"
+                    color="neutral"
+                    variant="ghost"
+                    :disabled="projectChangesLocked"
+                    @click="publishRole(row.original.projectRole.id)"
+                  />
+                  <UButton
+                    label="Delete"
+                    icon="i-lucide-trash-2"
+                    color="error"
+                    variant="ghost"
+                    :disabled="projectChangesLocked"
+                    @click="openAccessDeletion({ kind: 'role', resource: row.original.projectRole })"
                   />
                 </div>
               </template>
@@ -815,26 +1113,36 @@ function selectMembership(membership: IdentityMembership) {
           </IdentityTableCard>
 
           <IdentityTableCard
-            title="Permission catalog"
-            description="Stable keys published manually or through client manifests."
-            :count="project.permissions.length"
+            title="Project permissions"
+            description="Permissions created by this project. Publishing adds one to the reusable access catalog."
+            :count="projectPermissions.length"
           >
             <template #actions>
               <UButton
                 label="New permission"
                 icon="i-lucide-plus"
                 size="sm"
+                :disabled="projectChangesLocked"
                 @click="() => { permissionModalOpen = true }"
               />
             </template>
             <UTable
-              :data="project.permissions"
+              :data="projectPermissions"
               :columns="permissionColumns"
               empty="No project permissions yet."
               class="min-w-2xl"
             >
               <template #key-cell="{ row }">
-                <code class="rounded-md bg-elevated px-2 py-1 text-xs">{{ row.original.key }}</code>
+                <div class="flex items-center gap-2">
+                  <code class="rounded-md bg-elevated px-2 py-1 text-xs">{{ row.original.key }}</code>
+                  <UBadge
+                    v-if="row.original.catalog_permission_id"
+                    color="primary"
+                    variant="soft"
+                  >
+                    Catalog
+                  </UBadge>
+                </div>
               </template>
               <template #name-cell="{ row }">
                 <span class="text-sm text-muted">{{ row.original.name }}</span>
@@ -857,12 +1165,41 @@ function selectMembership(membership: IdentityMembership) {
                   {{ row.original.status }}
                 </UBadge>
               </template>
+              <template #actions-cell="{ row }">
+                <div class="flex justify-end gap-1">
+                  <UButton
+                    v-if="canManageDeletion && !row.original.catalog_permission_id"
+                    label="Publish"
+                    icon="i-lucide-upload"
+                    color="neutral"
+                    variant="ghost"
+                    :disabled="projectChangesLocked"
+                    @click="publishPermission(row.original.id)"
+                  />
+                  <UButton
+                    label="Delete"
+                    icon="i-lucide-trash-2"
+                    color="error"
+                    variant="ghost"
+                    :disabled="projectChangesLocked"
+                    @click="openAccessDeletion({ kind: 'permission', resource: row.original })"
+                  />
+                </div>
+              </template>
             </UTable>
           </IdentityTableCard>
         </div>
       </template>
 
       <template v-else-if="activeTab === 'clients'">
+        <UAlert
+          v-if="projectChangesLocked"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-lock-keyhole"
+          title="Client management is locked"
+          :description="projectChangesLockMessage"
+        />
         <IdentityTableCard
           title="Confidential clients"
           description="Create one credential per BFF, API, worker, or environment."
@@ -872,6 +1209,7 @@ function selectMembership(membership: IdentityMembership) {
             <UButton
               label="New client"
               icon="i-lucide-plus"
+              :disabled="projectChangesLocked"
               @click="() => { clientModalOpen = true }"
             />
           </template>
@@ -913,6 +1251,7 @@ function selectMembership(membership: IdentityMembership) {
                   :icon="row.original.status === 'active' ? 'i-lucide-ban' : 'i-lucide-circle-check'"
                   color="neutral"
                   variant="ghost"
+                  :disabled="projectChangesLocked"
                   @click="toggleClient(row.original)"
                 />
                 <UButton
@@ -920,8 +1259,19 @@ function selectMembership(membership: IdentityMembership) {
                   icon="i-lucide-refresh-cw"
                   color="neutral"
                   variant="outline"
+                  :disabled="projectChangesLocked"
                   @click="rotateClient(row.original.id)"
                 />
+                <UTooltip :text="projectChangesLocked ? projectChangesLockMessage : (clientDependencies(row.original).length ? `Used by: ${clientDependencies(row.original).join(', ')}` : 'Delete client')">
+                  <UButton
+                    label="Delete"
+                    icon="i-lucide-trash-2"
+                    color="error"
+                    variant="ghost"
+                    :disabled="projectChangesLocked || clientDependencies(row.original).length > 0"
+                    @click="openClientDeletion(row.original)"
+                  />
+                </UTooltip>
               </div>
             </template>
           </UTable>
@@ -938,6 +1288,7 @@ function selectMembership(membership: IdentityMembership) {
             <UButton
               label="New hosted app"
               icon="i-lucide-plus"
+              :disabled="projectChangesLocked"
               @click="openHostedApplication()"
             />
           </template>
@@ -1064,6 +1415,7 @@ function selectMembership(membership: IdentityMembership) {
                       icon="i-lucide-settings-2"
                       color="neutral"
                       variant="outline"
+                      :disabled="projectChangesLocked"
                       @click="openHostedApplication(application)"
                     />
                     <UButton
@@ -1071,6 +1423,7 @@ function selectMembership(membership: IdentityMembership) {
                       color="error"
                       variant="ghost"
                       aria-label="Delete hosted application"
+                      :disabled="projectChangesLocked"
                       @click="deleteHostedApplication(application.id)"
                     />
                   </div>
@@ -1097,6 +1450,7 @@ function selectMembership(membership: IdentityMembership) {
             <UButton
               label="Add webhook"
               icon="i-lucide-plus"
+              :disabled="projectChangesLocked"
               @click="() => { webhookModalOpen = true }"
             />
           </template>
@@ -1147,6 +1501,7 @@ function selectMembership(membership: IdentityMembership) {
                   color="neutral"
                   variant="ghost"
                   :aria-label="row.original.status === 'active' ? 'Disable webhook' : 'Enable webhook'"
+                  :disabled="projectChangesLocked"
                   @click="toggleWebhook(row.original)"
                 />
                 <UButton
@@ -1154,6 +1509,7 @@ function selectMembership(membership: IdentityMembership) {
                   color="neutral"
                   variant="ghost"
                   aria-label="Rotate webhook secret"
+                  :disabled="projectChangesLocked"
                   @click="rotateWebhook(row.original.id)"
                 />
                 <UButton
@@ -1161,6 +1517,7 @@ function selectMembership(membership: IdentityMembership) {
                   color="error"
                   variant="ghost"
                   aria-label="Delete webhook"
+                  :disabled="projectChangesLocked"
                   @click="deleteWebhook(row.original.id)"
                 />
               </div>
@@ -1239,6 +1596,60 @@ function selectMembership(membership: IdentityMembership) {
         />
       </template>
 
+      <UModal
+        v-model:open="clientDeletionModalOpen"
+        title="Delete confidential client"
+        :description="selectedClientForDeletion ? `Type ${selectedClientForDeletion.name} to permanently delete this client and revoke its credentials.` : ''"
+        @update:open="value => { if (!value) selectedClientForDeletion = null }"
+      >
+        <template #body>
+          <form
+            v-if="selectedClientForDeletion"
+            class="space-y-5"
+            @submit.prevent="deleteClient"
+          >
+            <UAlert
+              color="warning"
+              variant="soft"
+              icon="i-lucide-triangle-alert"
+              title="This cannot be undone"
+              description="Active sessions and refresh tokens issued by this client will be revoked. Project roles and permissions remain available to other clients."
+            />
+            <UFormField
+              label="Client name"
+              :description="`Type ${selectedClientForDeletion.name} exactly to continue.`"
+            >
+              <UInput
+                v-model="clientDeletionConfirmation"
+                autofocus
+                class="w-full"
+              />
+            </UFormField>
+            <p
+              v-if="selectedClientDependencies.length"
+              class="text-sm text-error"
+            >
+              Reassign or remove these hosted applications first: {{ selectedClientDependencies.map(application => application.name).join(', ') }}.
+            </p>
+            <div class="flex justify-end gap-2">
+              <UButton
+                label="Cancel"
+                color="neutral"
+                variant="ghost"
+                @click="() => { clientDeletionModalOpen = false }"
+              />
+              <UButton
+                type="submit"
+                label="Delete client"
+                color="error"
+                icon="i-lucide-trash-2"
+                :disabled="clientDeletionConfirmation !== selectedClientForDeletion.name || selectedClientDependencies.length > 0"
+                :loading="clientDeletionSaving"
+              />
+            </div>
+          </form>
+        </template>
+      </UModal>
       <UModal
         v-model:open="clientModalOpen"
         title="Create confidential client"
@@ -1821,6 +2232,200 @@ function selectMembership(membership: IdentityMembership) {
         </template>
       </UModal>
       <UModal
+        v-model:open="deletionModalOpen"
+        title="Schedule project deletion"
+        :description="project ? `Type ${project.slug} to confirm. Access is revoked immediately and deletion remains reversible until the configured deadline.` : ''"
+      >
+        <template #body>
+          <form
+            v-if="project"
+            class="space-y-5"
+            @submit.prevent="scheduleDeletion"
+          >
+            <UFormField
+              label="Project slug"
+              :description="`Type ${project.slug} exactly to continue.`"
+            >
+              <UInput
+                v-model="deletionConfirmation"
+                autofocus
+                class="w-full"
+              />
+            </UFormField>
+            <div class="flex justify-end gap-2">
+              <UButton
+                label="Cancel"
+                color="neutral"
+                variant="ghost"
+                @click="() => { deletionModalOpen = false }"
+              />
+              <UButton
+                type="submit"
+                label="Schedule deletion"
+                color="error"
+                icon="i-lucide-trash-2"
+                :disabled="deletionConfirmation !== project.slug"
+                :loading="deletionSaving"
+              />
+            </div>
+          </form>
+        </template>
+      </UModal>
+      <UModal
+        v-model:open="suspensionModalOpen"
+        title="Suspend project"
+        :description="project ? `Type ${project.slug} to confirm. This revokes every active project session immediately; reactivation requires users to sign in again.` : ''"
+      >
+        <template #body>
+          <form
+            v-if="project"
+            class="space-y-5"
+            @submit.prevent="suspendProject"
+          >
+            <UFormField
+              label="Project slug"
+              :description="`Type ${project.slug} exactly to continue.`"
+            >
+              <UInput
+                v-model="suspensionConfirmation"
+                autofocus
+                class="w-full"
+              />
+            </UFormField>
+            <div class="flex justify-end gap-2">
+              <UButton
+                label="Cancel"
+                color="neutral"
+                variant="ghost"
+                @click="() => { suspensionModalOpen = false }"
+              />
+              <UButton
+                type="submit"
+                label="Suspend project"
+                color="warning"
+                icon="i-lucide-pause-circle"
+                :disabled="suspensionConfirmation !== project.slug"
+                :loading="suspensionSaving"
+              />
+            </div>
+          </form>
+        </template>
+      </UModal>
+      <UModal
+        :open="selectedAccessDeletion != null"
+        :title="selectedAccessDeletion?.kind === 'role' ? 'Delete project role' : 'Delete project permission'"
+        :description="selectedAccessDeletion ? `Type ${accessDeletionExpectedConfirmation} exactly to permanently delete this ${selectedAccessDeletion.kind}.` : ''"
+        @update:open="value => { if (!value) selectedAccessDeletion = null }"
+      >
+        <template #body>
+          <form
+            v-if="selectedAccessDeletion"
+            class="space-y-5"
+            @submit.prevent="deleteSelectedAccessResource"
+          >
+            <UAlert
+              v-if="accessDeletionBlocked"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-link-2"
+              title="Resolve dependencies before deleting"
+              description="Access assignments are never removed automatically. Reassign or remove the items below, then retry."
+            />
+            <UAlert
+              v-else
+              color="error"
+              variant="soft"
+              icon="i-lucide-triangle-alert"
+              title="This cannot be undone"
+              :description="selectedAccessDeletion.kind === 'role' ? 'The role and its permission composition will be permanently removed.' : 'The permission will be permanently removed from this project. Reusable catalog entries are not affected.'"
+            />
+            <div
+              v-if="accessDeletionBlocked"
+              class="space-y-3 rounded-xl border border-default p-4 text-sm"
+            >
+              <div v-if="accessDeletionMemberships.length">
+                <p class="font-medium text-highlighted">
+                  Assigned memberships
+                </p>
+                <ul class="mt-1 list-disc space-y-1 pl-5 text-muted">
+                  <li
+                    v-for="membership in accessDeletionMemberships"
+                    :key="membership.id"
+                  >
+                    {{ membership.user.username || membership.user.email || membership.user.id }} ({{ membership.status }})
+                  </li>
+                </ul>
+                <UButton
+                  class="mt-2"
+                  label="Manage members"
+                  size="xs"
+                  color="neutral"
+                  variant="soft"
+                  @click="() => { selectedAccessDeletion = null; activeTab = 'members' }"
+                />
+              </div>
+              <div v-if="accessDeletionRoles.length">
+                <p class="font-medium text-highlighted">
+                  Granted to roles
+                </p>
+                <p class="mt-1 text-muted">
+                  {{ accessDeletionRoles.map(role => `${role.name} (${role.slug})`).join(', ') }}
+                </p>
+              </div>
+              <div v-if="accessDeletionIsRegistrationDefault">
+                <p class="font-medium text-highlighted">
+                  Public registration default
+                </p>
+                <p class="mt-1 text-muted">
+                  Select another default role or disable the default role in the registration policy.
+                </p>
+              </div>
+              <div v-if="accessDeletionManifestClient">
+                <p class="font-medium text-highlighted">
+                  Managed by {{ accessDeletionManifestClient.name }}
+                </p>
+                <p class="mt-1 text-muted">
+                  Remove this key from the client permission manifest first. It can be deleted after the next synchronization marks it stale.
+                </p>
+              </div>
+            </div>
+            <UAlert
+              v-if="accessDeletionServerMessage"
+              color="warning"
+              variant="soft"
+              title="Dependencies changed"
+              :description="accessDeletionServerMessage"
+            />
+            <UFormField
+              :label="selectedAccessDeletion.kind === 'role' ? 'Role slug' : 'Permission key'"
+              :description="`Type ${accessDeletionExpectedConfirmation} exactly to continue.`"
+            >
+              <UInput
+                v-model="accessDeletionConfirmation"
+                autofocus
+                class="w-full"
+              />
+            </UFormField>
+            <div class="flex justify-end gap-2">
+              <UButton
+                label="Cancel"
+                color="neutral"
+                variant="ghost"
+                @click="() => { selectedAccessDeletion = null }"
+              />
+              <UButton
+                type="submit"
+                :label="selectedAccessDeletion.kind === 'role' ? 'Delete role' : 'Delete permission'"
+                color="error"
+                icon="i-lucide-trash-2"
+                :disabled="accessDeletionBlocked || accessDeletionConfirmation !== accessDeletionExpectedConfirmation"
+                :loading="accessDeletionSaving"
+              />
+            </div>
+          </form>
+        </template>
+      </UModal>
+      <UModal
         :open="selectedRole != null"
         title="Role permissions"
         :description="selectedRole ? `Configure ${selectedRole.name}` : ''"
@@ -1832,12 +2437,31 @@ function selectMembership(membership: IdentityMembership) {
             class="space-y-5"
             @submit.prevent="saveRolePermissions"
           >
-            <div class="max-h-96 overflow-y-auto rounded-xl border border-default p-3">
-              <UCheckboxGroup
-                v-model="selectedRole.permissionIds"
-                :items="projectPermissionOptions"
-                class="grid gap-3 sm:grid-cols-2"
-              />
+            <div class="max-h-96 space-y-2 overflow-y-auto rounded-xl border border-default p-3">
+              <label
+                v-for="permission in rolePermissionChoices"
+                :key="permission.value"
+                class="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 hover:bg-elevated"
+              >
+                <UCheckbox
+                  v-model="selectedRole.permissionIds"
+                  :value="permission.value"
+                  :label="permission.label"
+                />
+                <UBadge
+                  v-if="permission.global"
+                  color="primary"
+                  variant="soft"
+                >
+                  Catalog
+                </UBadge>
+              </label>
+              <p
+                v-if="rolePermissionChoices.length === 0"
+                class="py-5 text-center text-sm text-muted"
+              >
+                No permissions are available yet.
+              </p>
             </div><div class="flex justify-end">
               <UButton
                 type="submit"

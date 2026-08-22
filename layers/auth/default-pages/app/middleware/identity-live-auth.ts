@@ -4,7 +4,15 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const application = typeof to.query.application === 'string' ? to.query.application : ''
   const experience = await $fetch<IdentityAuthenticationExperience>(
     application ? '/api/hosted-auth/context' : '/api/auth/context',
-    { query: application ? { application } : undefined }
+    {
+      query: application
+        ? {
+            application,
+            intent: typeof to.query.intent === 'string' ? to.query.intent : undefined,
+            state: typeof to.query.state === 'string' ? to.query.state : undefined
+          }
+        : undefined
+    }
   )
 
   if (experience.primary.project.mode !== 'live') {

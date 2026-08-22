@@ -18,8 +18,7 @@ export function useIdentityAdminNavigation(
   const primaryLinks = computed<NavigationMenuItem[][]>(() => {
     const projectsPath = localePath('/admin/projects')
     const installationUsersPath = localePath('/admin/identity-users')
-    const globalRolesPath = localePath('/admin/global-roles')
-    const globalPermissionsPath = localePath('/admin/global-permissions')
+    const accessCatalogPath = localePath('/admin/access-catalog')
 
     const workspaceItems: NavigationMenuItem[] = [
       {
@@ -43,17 +42,10 @@ export function useIdentityAdminNavigation(
         onSelect
       })
       accessItems.push({
-        label: t('identityConsole.nav.globalRoles'),
-        icon: 'i-lucide-badge-check',
-        to: globalRolesPath,
-        active: route.path === globalRolesPath || route.path.startsWith(`${globalRolesPath}/`),
-        onSelect
-      })
-      accessItems.push({
-        label: t('identityConsole.nav.globalPermissions'),
-        icon: 'i-lucide-key-round',
-        to: globalPermissionsPath,
-        active: route.path === globalPermissionsPath || route.path.startsWith(`${globalPermissionsPath}/`),
+        label: t('identityConsole.nav.accessCatalog'),
+        icon: 'i-lucide-library',
+        to: accessCatalogPath,
+        active: route.path === accessCatalogPath || route.path.startsWith(`${accessCatalogPath}/`),
         onSelect
       })
     }
