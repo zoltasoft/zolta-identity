@@ -27,6 +27,14 @@ type HostedApplication = {
   sandbox?: HostedConnection
 }
 
+export type HostedApplicationPublicMetadata = {
+  key: string
+  name: string
+  returnUrl: string
+  appearance: HostedApplicationAppearance
+  authentication: HostedApplicationAuthentication
+}
+
 type HostedApplicationAuthentication = {
   googleEnabled: boolean
   termsRequired: boolean
@@ -196,6 +204,28 @@ export async function identityHostedApplicationByClient(
   clientId: string
 ): Promise<HostedApplication> {
   return await resolveHostedApplication(event, `/hosted-clients/${encodeURIComponent(clientId)}/configuration`)
+}
+
+function publicApplicationMetadata(application: HostedApplication): HostedApplicationPublicMetadata {
+  return {
+    key: application.key,
+    name: application.name,
+    returnUrl: application.applicationUrl ?? new URL(application.callbackUrl).origin,
+    appearance: application.appearance,
+    authentication: application.authentication
+  }
+}
+
+export async function identityHostedApplicationMetadata(
+  event: H3Event,
+  applicationKey?: string,
+  clientId?: string
+): Promise<HostedApplicationPublicMetadata> {
+  const application = applicationKey
+    ? await identityHostedApplication(event, applicationKey)
+    : await identityHostedApplicationByClient(event, clientId ?? '')
+
+  return publicApplicationMetadata(application)
 }
 
 function requestTarget(connection: HostedConnection, path: string) {
@@ -425,6 +455,16 @@ async function hostedAuthorization(
   return session.data
 }
 
+export async function establishIdentityHostedAuthorization(
+  event: H3Event,
+  applicationKey: string,
+  intent: string,
+  state: string
+): Promise<void> {
+  const application = await identityHostedApplication(event, applicationKey)
+  await hostedAuthorization(event, application, intent, state)
+}
+
 async function requireHostedAuthorization(
   event: H3Event,
   application: HostedApplication,
@@ -461,12 +501,10 @@ async function context(event: H3Event, application: HostedApplication, name: 'pr
 
 export async function identityHostedExperience(
   event: H3Event,
-  applicationKey: string,
-  intent?: string,
-  state?: string
+  applicationKey: string
 ): Promise<IdentityAuthenticationExperience & { application: { key: string, name: string, returnUrl: string, appearance: HostedApplicationAppearance, authentication: HostedApplicationAuthentication } }> {
   const application = await identityHostedApplication(event, applicationKey)
-  const authorization = await hostedAuthorization(event, application, intent, state)
+  const authorization = await hostedAuthorization(event, application)
   return await hostedExperience(event, application, authorization.features.demoAccount)
 }
 
@@ -481,7 +519,7 @@ export async function identityHostedExperienceByClient(
 async function hostedExperience(event: H3Event, application: HostedApplication, demoAccountEnabled: boolean) {
   const sandboxEnabled = demoAccountEnabled && Boolean(application.sandbox)
   return {
-    application: { key: application.key, name: application.name, returnUrl: application.applicationUrl ?? new URL(application.callbackUrl).origin, appearance: application.appearance, authentication: application.authentication },
+    application: publicApplicationMetadata(application),
     primary: await context(event, application, 'primary'),
     sandbox: sandboxEnabled ? await context(event, application, 'sandbox') : null
   }
@@ -573,13 +611,27 @@ export async function identityHostedAccountLogout(event: H3Event): Promise<void>
       const connection = account.connection === 'sandbox'
         ? assertConnection(application.sandbox)
         : application.primary
+      let accessToken = account.identity.access_token
+      const accessExpiresAt = Date.parse(account.identity.access_token_expires_at)
+      const refreshExpiresAt = Date.parse(account.identity.refresh_token_expires_at)
+      if (Number.isFinite(accessExpiresAt) && accessExpiresAt <= Date.now()
+        && Number.isFinite(refreshExpiresAt) && refreshExpiresAt > Date.now()) {
+        const identity = await hostedRequest<IdentityLoginData>(event, application, '/refresh', {
+          refresh_token: account.identity.refresh_token
+        })
+        await session.update({ ...account, identity })
+        accessToken = identity.access_token
+      }
       await connectionRequest(connection, '/auth/logout', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${account.identity.access_token}` }
+        headers: { Authorization: `Bearer ${accessToken}` }
       })
     }
-  } catch {
-    // Clearing the encrypted browser session remains authoritative here.
+  } catch (error) {
+    console.warn('[zolta-identity] Hosted account revocation failed.', {
+      application: account.application,
+      status: identityErrorStatus(error)
+    })
   } finally {
     await session.clear()
   }

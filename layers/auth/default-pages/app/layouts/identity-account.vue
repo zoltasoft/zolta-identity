@@ -18,7 +18,7 @@ const { data: brand } = await useAsyncData<HostedBrand | null>(
   async () => {
     if (!applicationKey.value) return null
     const response = await $fetch<{ application: HostedBrand }>(
-      '/api/hosted-auth/context',
+      '/api/hosted-auth/application',
       {
         query: { application: applicationKey.value }
       }

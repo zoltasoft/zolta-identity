@@ -1,6 +1,6 @@
-import { defineEventHandler, getValidatedQuery } from 'h3'
+import { defineEventHandler, getValidatedQuery, setResponseHeader } from 'h3'
 import { z } from 'zod/v4'
-import { identityHostedExperience, identityHostedExperienceByClient } from '../../utils/identity-hosted-auth'
+import { identityHostedApplicationMetadata } from '../../utils/identity-hosted-auth'
 
 const schema = z.object({
   application: z.string().trim().min(1).max(100).optional(),
@@ -10,8 +10,9 @@ const schema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
+  setResponseHeader(event, 'cache-control', 'private, max-age=60')
   const query = await getValidatedQuery(event, schema.parse)
-  return query.application
-    ? await identityHostedExperience(event, query.application)
-    : await identityHostedExperienceByClient(event, query.clientId!)
+  return {
+    application: await identityHostedApplicationMetadata(event, query.application, query.clientId)
+  }
 })

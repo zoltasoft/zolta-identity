@@ -4,7 +4,10 @@ import type { FormSubmitEvent } from '@nuxt/ui'
 import type { IdentityAuthenticationContext } from '../../../../shared/types/identity-auth'
 import { useIdentityMutation } from '../../../../app/composables/useIdentityMutation'
 
-definePageMeta({ layout: 'identity-auth' })
+definePageMeta({
+  layout: 'identity-auth',
+  middleware: 'identity-live-auth'
+})
 
 const route = useRoute()
 const config = useRuntimeConfig()
@@ -40,9 +43,7 @@ const {
     query: computed(() =>
       hosted.value
         ? {
-            application: hostedApplication.value,
-            intent: typeof route.query.intent === 'string' ? route.query.intent : undefined,
-            state: hostedState.value
+            application: hostedApplication.value
           }
         : {}
     )

@@ -55,7 +55,7 @@ final class IdentityAuthenticationController extends Controller
     #[Service(ExecuteIdentityAuthenticationService::class, 'Authorization handoff created.', 201)]
     public function createHandoff(): void {}
 
-    #[Route('v1/identity/auth/authorization/intent', methods: ['POST'], middleware: ['api', 'throttle:30,1'], name: 'identity.auth.authorization.intent')]
+    #[Route('v1/identity/auth/authorization/intent', methods: ['POST'], middleware: ['api', 'throttle:identity-authorization-intent'], name: 'identity.auth.authorization.intent')]
     #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityAuthenticationService::class, 'Hosted authorization intent created.', 201)]
     public function createAuthorizationIntent(): void {}
@@ -65,7 +65,7 @@ final class IdentityAuthenticationController extends Controller
     #[Service(ExecuteIdentityAuthenticationService::class, 'Account portal intent created.', 201)]
     public function createAccountIntent(): void {}
 
-    #[Route('v1/identity/auth/logout/intent', methods: ['POST'], middleware: ['api', 'throttle:30,1'], name: 'identity.auth.logout.intent')]
+    #[Route('v1/identity/auth/logout/intent', methods: ['POST'], middleware: ['api', 'throttle:identity-logout-intent'], name: 'identity.auth.logout.intent')]
     #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityAuthenticationService::class, 'Logout intent created.', 201)]
     public function createLogoutIntent(): void {}

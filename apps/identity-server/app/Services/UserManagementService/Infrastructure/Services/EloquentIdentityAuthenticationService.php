@@ -401,10 +401,15 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             throw new IdentityAuthenticationException('The logout return destination is invalid.');
         }
         $intent = Str::random(96);
+        $applicationUrl = parse_url((string) $application->application_url);
+        $applicationOrigin = ($applicationUrl['scheme'] ?? 'https').'://'.($applicationUrl['host'] ?? '');
+        if (isset($applicationUrl['port'])) {
+            $applicationOrigin .= ':'.$applicationUrl['port'];
+        }
         IdentityLogoutIntent::query()->create([
             'hosted_application_id' => $application->id,
             'intent_hash' => hash('sha256', $intent),
-            'return_url' => rtrim((string) $application->application_url, '/').$returnTo,
+            'return_url' => $applicationOrigin.$returnTo,
             'expires_at' => now()->addMinutes(2),
         ]);
         $this->audit->record('auth.logout_intent_created', $application->project_id, $application->primary_client_id, null, 'hosted_application', $application->id, [], $ipAddress, $userAgent);
@@ -968,11 +973,8 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             return;
         }
 
-        if ($token->identity_project_id) {
-            $this->tokens->revokeProjectUser(
-                (string) $token->identity_project_id,
-                (string) $token->tokenable_id,
-            );
+        if ($token->identity_refresh_family_id) {
+            $this->tokens->revokeFamily((string) $token->identity_refresh_family_id);
 
             return;
         }

@@ -56,6 +56,14 @@ final class AppServiceProvider extends ServiceProvider
             ];
         });
 
+        RateLimiter::for('identity-authorization-intent', static function (Request $request): array {
+            return self::identityIntentLimits($request, 'authorization');
+        });
+
+        RateLimiter::for('identity-logout-intent', static function (Request $request): array {
+            return self::identityIntentLimits($request, 'logout');
+        });
+
         Gate::before(static function (User $user): ?bool {
             return $user->is_system_admin ? true : null;
         });
@@ -67,5 +75,18 @@ final class AppServiceProvider extends ServiceProvider
         $normalizedSubject = Str::lower(trim($subject));
 
         return 'identity-hosted:'.$scope.':'.hash('sha256', $application.'|'.$normalizedSubject);
+    }
+
+    /** @return list<Limit> */
+    private static function identityIntentLimits(Request $request, string $scope): array
+    {
+        $client = Str::lower(trim((string) $request->input('client_id')));
+        $application = Str::lower(trim((string) $request->input('hosted_application')));
+        $ipAddress = $request->ip() ?? 'unknown';
+
+        return [
+            Limit::perMinute(30)->by('identity-intent:'.$scope.':client:'.hash('sha256', $client.'|'.$application)),
+            Limit::perMinute(120)->by('identity-intent:'.$scope.':ip:'.hash('sha256', $ipAddress)),
+        ];
     }
 }

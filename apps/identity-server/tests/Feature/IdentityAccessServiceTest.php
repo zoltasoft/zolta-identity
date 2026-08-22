@@ -118,7 +118,7 @@ final class IdentityAccessServiceTest extends TestCase
         ])->assertOk()->assertJsonPath('active', false);
     }
 
-    public function test_logout_revokes_all_identity_sessions_for_the_current_project(): void
+    public function test_logout_revokes_only_the_current_refresh_family(): void
     {
         [$user, $project, $client, $secret] = $this->identityFixture();
         $firstSession = $this->login($user, $project, $client, $secret);
@@ -128,13 +128,26 @@ final class IdentityAccessServiceTest extends TestCase
             ->postJson('/api/v1/identity/auth/logout')
             ->assertOk();
 
-        foreach ([$firstSession, $secondSession] as $session) {
-            $this->postJson('/api/v1/identity/auth/introspect', [
-                'client_id' => $client->id,
-                'client_secret' => $secret,
-                'token' => $session['access_token'],
-            ])->assertOk()->assertJsonPath('active', false);
-        }
+        $this->postJson('/api/v1/identity/auth/introspect', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'token' => $firstSession['access_token'],
+        ])->assertOk()->assertJsonPath('active', false);
+        $this->postJson('/api/v1/identity/auth/introspect', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'token' => $secondSession['access_token'],
+        ])->assertOk()->assertJsonPath('active', true);
+        $this->postJson('/api/v1/identity/auth/refresh', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'refresh_token' => $firstSession['refresh_token'],
+        ])->assertUnauthorized();
+        $this->postJson('/api/v1/identity/auth/refresh', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'refresh_token' => $secondSession['refresh_token'],
+        ])->assertOk();
     }
 
     public function test_hosted_authentication_handoff_is_client_bound_and_single_use(): void
@@ -191,7 +204,7 @@ final class IdentityAccessServiceTest extends TestCase
             'primary_client_id' => $client->id,
             'key' => 'portfolio',
             'name' => 'Portfolio',
-            'application_url' => 'https://portfolio.example.test',
+            'application_url' => 'https://portfolio.example.test/dashboard',
             'callback_url' => 'https://portfolio.example.test/api/identity/portfolio/auth/callback',
             'status' => 'active',
         ]);
@@ -234,6 +247,43 @@ final class IdentityAccessServiceTest extends TestCase
             ->postJson('/api/v1/identity/hosted-applications/portfolio/auth/logout/intent/consume', [
                 'intent' => $expired,
             ])->assertUnauthorized();
+    }
+
+    public function test_intent_creation_throttles_are_isolated_from_other_api_traffic(): void
+    {
+        [, $project, $client, $secret] = $this->identityFixture();
+        IdentityHostedApplication::query()->create([
+            'project_id' => $project->id,
+            'primary_client_id' => $client->id,
+            'key' => 'job-tracker',
+            'name' => 'Job Tracker',
+            'application_url' => 'https://portfolio.example.test/dashboard',
+            'callback_url' => 'https://portfolio.example.test/api/identity/job-tracker/auth/callback',
+            'status' => 'active',
+        ]);
+
+        $clientCredentials = [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+        ];
+
+        for ($attempt = 0; $attempt < 30; $attempt++) {
+            $this->postJson('/api/v1/identity/auth/context', $clientCredentials)
+                ->assertOk();
+        }
+
+        $this->postJson('/api/v1/identity/auth/authorization/intent', [
+            ...$clientCredentials,
+            'hosted_application' => 'job-tracker',
+            'state' => Str::random(48),
+            'demo_account_enabled' => false,
+        ])->assertCreated();
+
+        $this->postJson('/api/v1/identity/auth/logout/intent', [
+            ...$clientCredentials,
+            'hosted_application' => 'job-tracker',
+            'return_to' => '/en/auth/login',
+        ])->assertCreated();
     }
 
     public function test_authorization_intent_carries_the_client_bound_demo_policy_once(): void
