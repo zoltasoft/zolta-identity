@@ -17,5 +17,5 @@ interface IdentityRoleRepository
 
     public function save(IdentityRole $role): void;
 
-    public function delete(IdentityRole $role): void;
+    public function remove(IdentityRole $role): void;
 }

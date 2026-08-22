@@ -17,5 +17,5 @@ interface IdentityClientRepository
 
     public function save(IdentityClient $client): void;
 
-    public function delete(IdentityClient $client): void;
+    public function remove(IdentityClient $client): void;
 }

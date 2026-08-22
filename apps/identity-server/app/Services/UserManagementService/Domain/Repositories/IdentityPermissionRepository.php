@@ -26,5 +26,5 @@ interface IdentityPermissionRepository
 
     public function save(IdentityPermission $permission): void;
 
-    public function delete(IdentityPermission $permission): void;
+    public function remove(IdentityPermission $permission): void;
 }

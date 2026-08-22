@@ -9,12 +9,12 @@ use App\Services\UserManagementService\Application\Commands\Authentication\Socia
 use App\Services\UserManagementService\Application\Commands\Authentication\SocialLogin\ResolveSocialUserCommand;
 use App\Services\UserManagementService\Application\Commands\Authentication\SocialLogin\SyncOAuthAccountCommand;
 use App\Services\UserManagementService\Application\DTOs\External\AuthenticatedUser;
+use App\Services\UserManagementService\Application\DTOs\External\OAuthUser;
 use App\Services\UserManagementService\Application\DTOs\Input\SocialLoginDTO;
 use App\Services\UserManagementService\Application\DTOs\Output\OAuthResponseDTO;
 use App\Services\UserManagementService\Application\Queries\Authentication\GenerateTokenFromUser\GenerateTokenFromUserQuery;
 use App\Services\UserManagementService\Domain\Aggregates\User;
 use App\Services\UserManagementService\Domain\Entities\OAuthProvider;
-use App\Services\UserManagementService\Infrastructure\DTOs\OAuthUser as InfrastructureOAuthUser;
 use RuntimeException;
 use Zolta\Cqrs\Services\Pipeline\ApplicationService;
 use Zolta\Domain\ValueObjects\AccessToken as AccessTokenVO;
@@ -37,7 +37,7 @@ final readonly class SocialLoginService
         $oauthUser = $this->extractPayloadValue(
             $socialPayload,
             'oauthUser',
-            InfrastructureOAuthUser::class,
+            OAuthUser::class,
             'Unable to communicate with the social provider.'
         );
 

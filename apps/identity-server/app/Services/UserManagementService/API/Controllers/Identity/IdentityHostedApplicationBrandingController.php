@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\UserManagementService\API\Controllers\Identity;
 
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityHostedApplications;
+use App\Services\UserManagementService\Application\DTOs\External\UploadedAsset;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -33,13 +34,19 @@ final class IdentityHostedApplicationBrandingController extends Controller
         $actor = (string) $request->user('sanctum')?->getAuthIdentifier();
         $projectId = (string) $request->route('project');
         $applicationId = (string) $request->route('hosted_application');
+        $logo = $validated['logo'];
 
         return response()->json([
             'data' => $this->applications->uploadHostedApplicationLogo(
                 $actor,
                 $projectId,
                 $applicationId,
-                $validated['logo'],
+                new UploadedAsset(
+                    path: (string) $logo->getRealPath(),
+                    originalName: $logo->getClientOriginalName(),
+                    mimeType: $logo->getMimeType() ?? 'application/octet-stream',
+                    extension: $logo->extension() ?: 'png',
+                ),
             ),
         ], 201);
     }

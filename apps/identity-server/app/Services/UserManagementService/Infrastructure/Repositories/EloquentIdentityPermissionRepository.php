@@ -11,57 +11,76 @@ use App\Services\UserManagementService\Domain\ValueObjects\IdentityPermissionId;
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityProjectId;
 use App\Services\UserManagementService\Infrastructure\Mappers\IdentityPermissionMapper;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectPermission;
+use Zolta\Cqrs\Repositories\BaseRepository;
+use Zolta\Cqrs\Repositories\Query\RepositoryConstraint;
+use Zolta\Cqrs\Repositories\Query\RepositoryQuery;
 
-final class EloquentIdentityPermissionRepository implements IdentityPermissionRepository
+final class EloquentIdentityPermissionRepository extends BaseRepository implements IdentityPermissionRepository
 {
+    protected array $allowedConstraintFields = ['id', 'project_id', 'key', 'source_client_id'];
+
+    protected bool $enableReadCaching = false;
+
+    protected function modelClass(): string
+    {
+        return IdentityProjectPermission::class;
+    }
+
     public function findForProject(
         IdentityProjectId $projectId,
         IdentityPermissionId $permissionId,
     ): ?DomainIdentityPermission {
-        $model = IdentityProjectPermission::query()
-            ->where('project_id', $projectId->toString())
-            ->find($permissionId->toString());
+        $model = $this->first(RepositoryQuery::fromOptions([])->withConstraints(
+            RepositoryConstraint::equals('id', $permissionId->toString()),
+            RepositoryConstraint::equals('project_id', $projectId->toString()),
+        ));
 
-        return $model ? IdentityPermissionMapper::toDomain($model) : null;
+        return $model instanceof IdentityProjectPermission ? IdentityPermissionMapper::toDomain($model) : null;
     }
 
     public function findByKey(
         IdentityProjectId $projectId,
         string $key,
     ): ?DomainIdentityPermission {
-        $model = IdentityProjectPermission::query()
-            ->where('project_id', $projectId->toString())
-            ->where('key', $key)
-            ->first();
+        $model = $this->first(RepositoryQuery::fromOptions([])->withConstraints(
+            RepositoryConstraint::equals('project_id', $projectId->toString()),
+            RepositoryConstraint::equals('key', $key),
+        ));
 
-        return $model ? IdentityPermissionMapper::toDomain($model) : null;
+        return $model instanceof IdentityProjectPermission ? IdentityPermissionMapper::toDomain($model) : null;
     }
 
     public function findForManifestClient(
         IdentityProjectId $projectId,
         IdentityClientId $clientId,
     ): array {
-        return IdentityProjectPermission::query()
-            ->where('project_id', $projectId->toString())
-            ->where('source_client_id', $clientId->toString())
-            ->get()
+        $models = $this->all(RepositoryQuery::fromOptions([])->withConstraints(
+            RepositoryConstraint::equals('project_id', $projectId->toString()),
+            RepositoryConstraint::equals('source_client_id', $clientId->toString()),
+        ));
+
+        return collect($models)
             ->map(static fn (IdentityProjectPermission $model): DomainIdentityPermission => IdentityPermissionMapper::toDomain($model))
             ->all();
     }
 
     public function save(DomainIdentityPermission $permission): void
     {
-        $model = IdentityProjectPermission::query()->find($permission->id()->toString())
-            ?? new IdentityProjectPermission;
+        $existing = $this->show($permission->id()->toString());
+        $model = $existing instanceof IdentityProjectPermission ? $existing : new IdentityProjectPermission;
 
-        IdentityPermissionMapper::fill($model, $permission)->save();
+        $model = IdentityPermissionMapper::fill($model, $permission);
+        $existing instanceof IdentityProjectPermission ? $this->update($model) : $this->create($model);
     }
 
-    public function delete(DomainIdentityPermission $permission): void
+    public function remove(DomainIdentityPermission $permission): void
     {
-        IdentityProjectPermission::query()
-            ->where('project_id', $permission->projectId()->toString())
-            ->whereKey($permission->id()->toString())
-            ->delete();
+        $model = $this->first(RepositoryQuery::fromOptions([])->withConstraints(
+            RepositoryConstraint::equals('id', $permission->id()->toString()),
+            RepositoryConstraint::equals('project_id', $permission->projectId()->toString()),
+        ));
+        if ($model instanceof IdentityProjectPermission) {
+            parent::delete($model);
+        }
     }
 }

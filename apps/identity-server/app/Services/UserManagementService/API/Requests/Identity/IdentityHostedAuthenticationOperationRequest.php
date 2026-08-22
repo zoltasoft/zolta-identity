@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\UserManagementService\API\Requests\Identity;
 
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ResolveIdentityHostedApplicationContext;
 use App\Services\UserManagementService\Application\Exceptions\IdentityResourceNotFoundException;
-use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHostedApplication;
 
 final class IdentityHostedAuthenticationOperationRequest extends IdentityOperationRequest
 {
@@ -57,43 +57,34 @@ final class IdentityHostedAuthenticationOperationRequest extends IdentityOperati
     /** @return array<string, mixed> */
     public function trustedData(): array
     {
-        $application = IdentityHostedApplication::query()
-            ->with(['primaryClient.project', 'sandboxClient.project'])
-            ->where('key', (string) $this->route('application'))
-            ->where('status', 'active')
-            ->first();
-        if ($application === null) {
-            throw new IdentityResourceNotFoundException('Identity hosted application');
-        }
-
         $sandbox = $this->operation() === 'auth.sandbox-session'
             || in_array($this->operation(), ['auth.context', 'auth.handoff.create'], true)
                 && $this->input('connection') === 'sandbox';
-        $client = $sandbox ? $application->sandboxClient : $application->primaryClient;
-        if ($client === null || $client->status !== 'active' || $client->project?->status !== 'active') {
-            throw new IdentityResourceNotFoundException('Identity hosted application');
-        }
+        $context = app(ResolveIdentityHostedApplicationContext::class)->resolve(
+            (string) $this->route('application'),
+            $sandbox,
+        ) ?? throw new IdentityResourceNotFoundException('Identity hosted application');
 
         $input = $this->validated() + [
-            'client_id' => $client->id,
+            'client_id' => $context->clientId,
             'client_secret' => '',
         ];
         if (in_array($this->operation(), ['auth.authorization.intent.consume', 'auth.account.intent.create', 'auth.account.intent.consume', 'auth.logout.intent.consume'], true)) {
-            $input['hosted_application_id'] = $application->id;
+            $input['hosted_application_id'] = $context->applicationId;
         }
         if (in_array($this->operation(), ['auth.register', 'auth.social'], true)) {
-            $authentication = $application->authentication ?? [];
+            $authentication = $context->authentication;
             if ($this->operation() === 'auth.register'
                 && ($authentication['terms_required'] ?? false)
                 && ! ($input['terms_accepted'] ?? false)) {
                 abort(422, 'You must accept the terms of service to create an account.');
             }
-            $input['hosted_application_id'] = $application->id;
+            $input['hosted_application_id'] = $context->applicationId;
             $input['terms_required'] = (bool) ($authentication['terms_required'] ?? false);
             $input['terms_url'] = $authentication['terms_url'] ?? null;
         }
         if ($this->operation() === 'auth.handoff.create') {
-            $input['redirect_uri'] = $application->callback_url;
+            $input['redirect_uri'] = $context->callbackUrl;
         }
 
         return [

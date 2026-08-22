@@ -23,7 +23,7 @@ interface IdentityMembershipRepository
 
     public function save(IdentityMembership $membership): void;
 
-    public function delete(IdentityMembership $membership): void;
+    public function remove(IdentityMembership $membership): void;
 
     public function incrementAuthorizationVersionForProject(IdentityProjectId $projectId): void;
 }

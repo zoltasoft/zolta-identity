@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\UserManagementService\Application\Commands\Authentication\SocialLogin;
 
+use App\Services\UserManagementService\Application\Contracts\SecretGenerator;
 use App\Services\UserManagementService\Application\Payloads\Users\UserPayload;
 use App\Services\UserManagementService\Domain\Factories\UserFactory;
 use App\Services\UserManagementService\Domain\Repositories\UserRepository;
-use Illuminate\Support\Str;
 use Zolta\Cqrs\Attributes\HandlesCommand;
 use Zolta\Cqrs\Services\Result;
 use Zolta\Domain\ValueObjects\Email;
@@ -19,6 +19,7 @@ final readonly class ResolveSocialUserCommandHandler
     public function __construct(
         private UserRepository $userRepository,
         private UserFactory $userFactory,
+        private SecretGenerator $secretGenerator,
     ) {}
 
     public function __invoke(ResolveSocialUserCommand $resolveSocialUserCommand): Result
@@ -28,10 +29,12 @@ final readonly class ResolveSocialUserCommandHandler
 
         if (! $user) {
             $user = $this->userFactory->create([
-                'username' => $resolveSocialUserCommand->name !== '' ? $resolveSocialUserCommand->name : Str::before($resolveSocialUserCommand->email, '@'),
+                'username' => $resolveSocialUserCommand->name !== ''
+                    ? $resolveSocialUserCommand->name
+                    : strstr($resolveSocialUserCommand->email, '@', true),
                 'email' => $resolveSocialUserCommand->email,
                 'email_verified_at' => new \DateTimeImmutable,
-                'password' => Str::random(40),
+                'password' => $this->secretGenerator->generate(40),
                 'terms' => Terms::accepted,
                 'credit' => 0,
             ]);

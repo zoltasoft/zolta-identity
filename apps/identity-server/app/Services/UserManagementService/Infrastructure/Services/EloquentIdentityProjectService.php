@@ -16,6 +16,7 @@ use App\Services\UserManagementService\Application\Contracts\Identity\Projects\M
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityWebhooks;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ReadIdentityProjects;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ResolveIdentityHostedApplications;
+use App\Services\UserManagementService\Application\DTOs\External\UploadedAsset;
 use App\Services\UserManagementService\Application\Exceptions\IdentityAccessDependencyException;
 use App\Services\UserManagementService\Application\Exceptions\IdentityAuthorizationException;
 use App\Services\UserManagementService\Application\Exceptions\IdentityProjectLifecycleException;
@@ -69,11 +70,11 @@ use App\Services\UserManagementService\Infrastructure\Services\Identity\Identity
 use App\Services\UserManagementService\Infrastructure\Services\Identity\IdentityWebhookDestinationValidator;
 use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 use Zolta\Domain\ValueObjects\UserId;
 
 final readonly class EloquentIdentityProjectService implements ConfigureIdentityProjectEnvironment, ConfigureIdentityProjectRegistration, CreateIdentityProject, ManageIdentityClients, ManageIdentityHostedApplications, ManageIdentityProjectAccess, ManageIdentityProjectCatalog, ManageIdentityProjectDeletion, ManageIdentityProjectSuspension, ManageIdentityWebhooks, ReadIdentityProjects, ResolveIdentityHostedApplications
@@ -403,7 +404,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
     {
         $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
         $webhook = $this->findWebhook($projectId, $webhookId);
-        $this->webhookAggregates->delete($webhook);
+        $this->webhookAggregates->remove($webhook);
         $this->audit->record(
             'webhook.deleted',
             $projectId,
@@ -541,20 +542,24 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
         string $actorUserId,
         string $projectId,
         string $applicationId,
-        UploadedFile $logo,
+        UploadedAsset $logo,
     ): array {
         $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
         $application = $this->findHostedApplication($projectId, $applicationId);
         $disk = (string) config('zolta.identity.hosted_applications.branding_disk', 'public');
-        $extension = $logo->extension() ?: 'png';
+        $extension = $logo->extension;
         $path = "identity/hosted-applications/{$application->id}/".Str::uuid().".{$extension}";
 
-        Storage::disk($disk)->putFileAs(
-            dirname($path),
-            $logo,
-            basename($path),
-            ['visibility' => 'public'],
-        );
+        $stream = fopen($logo->path, 'rb');
+        if ($stream === false) {
+            throw new RuntimeException('The uploaded logo could not be read.');
+        }
+
+        try {
+            Storage::disk($disk)->put($path, $stream, ['visibility' => 'public']);
+        } finally {
+            fclose($stream);
+        }
 
         $previousPath = $application->logo_path;
         $application->forceFill(['logo_path' => $path])->save();
@@ -737,7 +742,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
                 $clientId,
                 ['name' => $client->name(), 'secret_prefix' => $client->secretPrefix()],
             );
-            $this->clientAggregates->delete($client);
+            $this->clientAggregates->remove($client);
         });
     }
 
@@ -954,7 +959,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
                     'catalog_origin' => $roleModel->catalog_origin,
                 ],
             );
-            $this->roleAggregates->delete($role);
+            $this->roleAggregates->remove($role);
         });
     }
 
@@ -1056,7 +1061,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
                     'catalog_origin' => $permissionModel->catalog_origin,
                 ],
             );
-            $this->permissionAggregates->delete($permission);
+            $this->permissionAggregates->remove($permission);
             $this->membershipAggregates->incrementAuthorizationVersionForProject(
                 IdentityProjectId::fromString($projectId),
             );
@@ -1209,7 +1214,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
         }
 
         $userId = $membership->userId()->toString();
-        $this->membershipAggregates->delete($membership);
+        $this->membershipAggregates->remove($membership);
         $this->tokens->revokeProjectUser($projectId, $userId);
         $this->audit->record(
             'membership.removed',

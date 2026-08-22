@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\UserManagementService\Application\Contracts\Identity\Projects;
 
-use Illuminate\Http\UploadedFile;
+use App\Services\UserManagementService\Application\DTOs\External\UploadedAsset;
 
 interface ManageIdentityHostedApplications
 {
@@ -17,7 +17,7 @@ interface ManageIdentityHostedApplications
     public function removeHostedApplication(string $actorUserId, string $projectId, string $applicationId): void;
 
     /** @return array<string, mixed> */
-    public function uploadHostedApplicationLogo(string $actorUserId, string $projectId, string $applicationId, UploadedFile $logo): array;
+    public function uploadHostedApplicationLogo(string $actorUserId, string $projectId, string $applicationId, UploadedAsset $logo): array;
 
     public function removeHostedApplicationLogo(string $actorUserId, string $projectId, string $applicationId): void;
 }

@@ -27,9 +27,11 @@ use App\Services\UserManagementService\Application\Contracts\Identity\Projects\M
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityProjectSuspension;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityWebhooks;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ReadIdentityProjects;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ResolveIdentityHostedApplicationContext;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ResolveIdentityHostedApplications;
 use App\Services\UserManagementService\Application\Contracts\IdentityInstallationServiceInterface;
 use App\Services\UserManagementService\Application\Contracts\IdentityLifecyclePublisherInterface;
+use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityHostedApplicationContextRepository;
 use App\Services\UserManagementService\Infrastructure\Services\EloquentIdentityAuthenticationService;
 use App\Services\UserManagementService\Infrastructure\Services\EloquentIdentityInstallationService;
 use App\Services\UserManagementService\Infrastructure\Services\EloquentIdentityProjectService;
@@ -63,6 +65,7 @@ final class IdentityAccessServiceProvider extends ServiceProvider
         $this->app->bind(ManageIdentityProjectCatalog::class, EloquentIdentityProjectService::class);
         $this->app->bind(ReadIdentityProjects::class, EloquentIdentityProjectService::class);
         $this->app->bind(ResolveIdentityHostedApplications::class, EloquentIdentityProjectService::class);
+        $this->app->bind(ResolveIdentityHostedApplicationContext::class, EloquentIdentityHostedApplicationContextRepository::class);
         $this->app->bind(IdentityLifecyclePublisherInterface::class, IdentityWebhookPublisher::class);
 
         $configPath = config_path('zolta.php');

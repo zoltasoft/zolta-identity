@@ -13,6 +13,7 @@ use App\Services\UserManagementService\Application\Contracts\Identity\Authentica
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\RecoverIdentityPassword;
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\SyncIdentityClientManifest;
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\VerifyIdentityEmail;
+use App\Services\UserManagementService\Application\Contracts\OAuthGateway;
 use App\Services\UserManagementService\Application\Exceptions\IdentityAuthenticationException;
 use App\Services\UserManagementService\Application\Exceptions\IdentityAuthorizationException;
 use App\Services\UserManagementService\Application\Exceptions\IdentityResourceNotFoundException;
@@ -61,7 +62,7 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
         private IdentityTokenManager $tokens,
         private IdentityPayloadFactory $payloads,
         private IdentityAuditRecorder $audit,
-        private OAuthProviderFactory $oauthProviders,
+        private OAuthGateway $oauthGateway,
     ) {}
 
     public function login(
@@ -541,8 +542,10 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             throw new IdentityAuthorizationException('This project does not accept social sign-in.');
         }
 
-        $remote = $this->oauthProviders->make((string) $attributes['provider'])
-            ->fetchOAuthUser((string) $attributes['access_token']);
+        $remote = $this->oauthGateway->fetchUser(
+            (string) $attributes['provider'],
+            (string) $attributes['access_token'],
+        );
         if ($remote->email === '') {
             throw new IdentityAuthenticationException('Google did not return an email address.');
         }
