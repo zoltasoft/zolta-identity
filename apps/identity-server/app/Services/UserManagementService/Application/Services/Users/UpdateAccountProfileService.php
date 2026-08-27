@@ -32,7 +32,6 @@ final readonly class UpdateAccountProfileService
 
         $userResult = $this->applicationService->runAndCapture(GetUserByIdQuery::class, [
             'id' => new UserId($updateAccountProfileDTO->userId),
-            'options' => ['include' => ['permissions', 'role']],
         ])->getOrFail(static fn (): RuntimeException => new RuntimeException('Unable to reload user profile.'));
 
         $user = $userResult['user'];

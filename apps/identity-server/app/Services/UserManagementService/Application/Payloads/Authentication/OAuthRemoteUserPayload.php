@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\UserManagementService\Application\Payloads\Authentication;
 
-use App\Services\UserManagementService\Infrastructure\DTOs\OAuthUser;
+use App\Services\UserManagementService\Application\DTOs\External\OAuthUser;
 use Zolta\Cqrs\Contracts\MessagePayloadInterface;
 
 final readonly class OAuthRemoteUserPayload implements MessagePayloadInterface

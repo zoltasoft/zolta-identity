@@ -9,7 +9,6 @@ use App\Services\UserManagementService\Application\DTOs\Input\LoginDTO;
 use App\Services\UserManagementService\Application\DTOs\Output\LoginResponseDTO;
 use App\Services\UserManagementService\Application\Queries\Authentication\GenerateTokenFromUser\GenerateTokenFromUserQuery;
 use App\Services\UserManagementService\Application\Queries\Authentication\GetAuthenticatedUser\GetAuthenticatedUserQuery;
-use App\Services\UserManagementService\Application\Queries\Roles\GetRoleById\GetRoleByIdQuery;
 use Zolta\Cqrs\Services\Pipeline\ApplicationService;
 use Zolta\Support\Application\Attributes\AsApplicationService;
 
@@ -28,7 +27,6 @@ final readonly class LoginService
         ])->getOrFail();
         $this->applicationService->runAndCapture(GetAuthenticatedUserQuery::class)->getOrFail();
         $this->applicationService->runAndCapture(GenerateTokenFromUserQuery::class, ['id' => map('user.id.value')])->getOrNull();
-        $this->applicationService->runAndCapture(GetRoleByIdQuery::class, ['id' => map('user.roleId.value')])->getOrNull();
 
         return LoginResponseDTO::fromDomain(
             user: $this->applicationService->get('user'),

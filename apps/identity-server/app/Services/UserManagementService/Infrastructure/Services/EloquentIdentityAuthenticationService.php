@@ -13,6 +13,7 @@ use App\Services\UserManagementService\Application\Contracts\Identity\Authentica
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\RecoverIdentityPassword;
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\SyncIdentityClientManifest;
 use App\Services\UserManagementService\Application\Contracts\Identity\Authentication\VerifyIdentityEmail;
+use App\Services\UserManagementService\Application\Contracts\OAuthGateway;
 use App\Services\UserManagementService\Application\Exceptions\IdentityAuthenticationException;
 use App\Services\UserManagementService\Application\Exceptions\IdentityAuthorizationException;
 use App\Services\UserManagementService\Application\Exceptions\IdentityResourceNotFoundException;
@@ -20,14 +21,15 @@ use App\Services\UserManagementService\Domain\Aggregates\IdentityMembership as D
 use App\Services\UserManagementService\Domain\Repositories\IdentityMembershipRepository;
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityProjectId;
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityRoleId;
-use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAuthorizationCode;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAccountPortalIntent;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAuthorizationCode;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAuthorizationIntent;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHostedApplication;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHostedApplicationConsent;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityLogoutIntent;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectInvitation;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityRefreshToken;
-use App\Services\UserManagementService\Infrastructure\Models\Eloquent\Role;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\SocialAccount;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\SocialProvider;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
@@ -60,7 +62,7 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
         private IdentityTokenManager $tokens,
         private IdentityPayloadFactory $payloads,
         private IdentityAuditRecorder $audit,
-        private OAuthProviderFactory $oauthProviders,
+        private OAuthGateway $oauthGateway,
     ) {}
 
     public function login(
@@ -269,6 +271,78 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
         });
     }
 
+    public function createAuthorizationIntent(array $input, ?string $ipAddress = null, ?string $userAgent = null): array
+    {
+        $client = $this->clients->authenticate((string) $input['client_id'], (string) $input['client_secret']);
+        $application = IdentityHostedApplication::query()
+            ->with('sandboxClient.project')
+            ->where('key', (string) $input['hosted_application'])
+            ->where('primary_client_id', $client->id)
+            ->where('status', 'active')
+            ->firstOrFail();
+        $sandboxClient = $application->sandboxClient;
+        $demoAccountEnabled = (bool) $input['demo_account_enabled']
+            && $sandboxClient !== null
+            && $sandboxClient->status === 'active'
+            && $sandboxClient->project?->status === 'active'
+            && $sandboxClient->project?->mode === 'sandbox';
+        $intent = Str::random(96);
+
+        IdentityAuthorizationIntent::query()->create([
+            'hosted_application_id' => $application->id,
+            'intent_hash' => hash('sha256', $intent),
+            'state' => (string) $input['state'],
+            'demo_account_enabled' => $demoAccountEnabled,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+        $this->audit->record(
+            'auth.authorization_intent_created',
+            $application->project_id,
+            $application->primary_client_id,
+            null,
+            'hosted_application',
+            $application->id,
+            ['demo_account_enabled' => $demoAccountEnabled],
+            $ipAddress,
+            $userAgent,
+        );
+
+        return ['intent' => $intent, 'expires_in' => 600];
+    }
+
+    public function consumeAuthorizationIntent(array $input, ?string $ipAddress = null, ?string $userAgent = null): array
+    {
+        return DB::transaction(function () use ($input, $ipAddress, $userAgent): array {
+            $intent = IdentityAuthorizationIntent::query()
+                ->where('intent_hash', hash('sha256', (string) $input['intent']))
+                ->lockForUpdate()
+                ->first();
+            if (! $intent || $intent->consumed_at !== null || $intent->expires_at->isPast()
+                || (string) $intent->hosted_application_id !== (string) $input['hosted_application_id']) {
+                throw new IdentityAuthenticationException('The hosted authorization request is invalid or expired.');
+            }
+
+            $intent->forceFill(['consumed_at' => now()])->save();
+            $application = IdentityHostedApplication::query()->findOrFail($intent->hosted_application_id);
+            $this->audit->record(
+                'auth.authorization_intent_consumed',
+                $application->project_id,
+                $application->primary_client_id,
+                null,
+                'hosted_application',
+                $application->id,
+                ['demo_account_enabled' => $intent->demo_account_enabled],
+                $ipAddress,
+                $userAgent,
+            );
+
+            return [
+                'state' => $intent->state,
+                'features' => ['demo_account' => $intent->demo_account_enabled],
+            ];
+        });
+    }
+
     public function createAccountPortalIntent(string $userId, string $accessToken, array $input, ?string $ipAddress = null, ?string $userAgent = null): array
     {
         $application = IdentityHostedApplication::query()->with('primaryClient')
@@ -309,7 +383,56 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             $intent->forceFill(['consumed_at' => now()])->save();
             $application = IdentityHostedApplication::query()->findOrFail($intent->hosted_application_id);
             $this->audit->record('auth.account_portal_intent_consumed', $application->project_id, $application->primary_client_id, $intent->user_id, 'hosted_application', $application->id, [], $ipAddress, $userAgent);
+
             return ['authorized' => true];
+        });
+    }
+
+    public function createLogoutIntent(array $input, ?string $ipAddress = null, ?string $userAgent = null): array
+    {
+        $client = $this->clients->authenticate((string) $input['client_id'], (string) $input['client_secret']);
+        $application = IdentityHostedApplication::query()
+            ->where('key', (string) $input['hosted_application'])
+            ->where('primary_client_id', $client->id)
+            ->where('status', 'active')
+            ->firstOrFail();
+        $returnTo = (string) $input['return_to'];
+        if (! str_starts_with($returnTo, '/') || str_starts_with($returnTo, '//') || str_contains($returnTo, '\\')) {
+            throw new IdentityAuthenticationException('The logout return destination is invalid.');
+        }
+        $intent = Str::random(96);
+        $applicationUrl = parse_url((string) $application->application_url);
+        $applicationOrigin = ($applicationUrl['scheme'] ?? 'https').'://'.($applicationUrl['host'] ?? '');
+        if (isset($applicationUrl['port'])) {
+            $applicationOrigin .= ':'.$applicationUrl['port'];
+        }
+        IdentityLogoutIntent::query()->create([
+            'hosted_application_id' => $application->id,
+            'intent_hash' => hash('sha256', $intent),
+            'return_url' => $applicationOrigin.$returnTo,
+            'expires_at' => now()->addMinutes(2),
+        ]);
+        $this->audit->record('auth.logout_intent_created', $application->project_id, $application->primary_client_id, null, 'hosted_application', $application->id, [], $ipAddress, $userAgent);
+
+        return ['intent' => $intent, 'expires_in' => 120];
+    }
+
+    public function consumeLogoutIntent(array $input, ?string $ipAddress = null, ?string $userAgent = null): array
+    {
+        return DB::transaction(function () use ($input, $ipAddress, $userAgent): array {
+            $intent = IdentityLogoutIntent::query()
+                ->where('intent_hash', hash('sha256', (string) $input['intent']))
+                ->lockForUpdate()
+                ->first();
+            if (! $intent || $intent->consumed_at !== null || $intent->expires_at->isPast()
+                || (string) $intent->hosted_application_id !== (string) $input['hosted_application_id']) {
+                throw new IdentityAuthenticationException('The logout request is invalid or expired.');
+            }
+            $intent->forceFill(['consumed_at' => now()])->save();
+            $application = IdentityHostedApplication::query()->findOrFail($intent->hosted_application_id);
+            $this->audit->record('auth.logout_intent_consumed', $application->project_id, $application->primary_client_id, null, 'hosted_application', $application->id, [], $ipAddress, $userAgent);
+
+            return ['redirect_url' => $intent->return_url];
         });
     }
 
@@ -360,10 +483,6 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
                 'username' => (string) $attributes['username'],
                 'email' => $email,
                 'password' => (string) $attributes['password'],
-                'role_id' => Role::query()->firstOrCreate(
-                    ['role' => 'User'],
-                    ['description' => 'Default global identity role'],
-                )->id,
                 'terms' => 'accepted',
                 'email_verified_at' => $project->email_verification_required ? null : now(),
             ]);
@@ -428,8 +547,10 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             throw new IdentityAuthorizationException('This project does not accept social sign-in.');
         }
 
-        $remote = $this->oauthProviders->make((string) $attributes['provider'])
-            ->fetchOAuthUser((string) $attributes['access_token']);
+        $remote = $this->oauthGateway->fetchUser(
+            (string) $attributes['provider'],
+            (string) $attributes['access_token'],
+        );
         if ($remote->email === '') {
             throw new IdentityAuthenticationException('Google did not return an email address.');
         }
@@ -456,7 +577,6 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
                     'username' => Str::limit($remote->name !== '' ? $remote->name : Str::before($remote->email, '@'), 100, ''),
                     'email' => Str::lower($remote->email),
                     'password' => Str::random(64),
-                    'role_id' => Role::query()->firstOrCreate(['role' => 'User'], ['description' => 'Default global identity role'])->id,
                     'terms' => 'accepted',
                     'email_verified_at' => now(),
                 ]);
@@ -531,10 +651,6 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
                 'username' => "Sandbox Guest {$suffix}",
                 'email' => "sandbox-{$id}@identity.invalid",
                 'password' => Str::random(64),
-                'role_id' => Role::query()->firstOrCreate(
-                    ['role' => 'User'],
-                    ['description' => 'Default global identity role'],
-                )->id,
                 'terms' => 'accepted',
                 'email_verified_at' => now(),
                 'is_temporary' => true,
@@ -858,7 +974,7 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
         }
 
         if ($token->identity_refresh_family_id) {
-            $this->tokens->revokeFamily($token->identity_refresh_family_id);
+            $this->tokens->revokeFamily((string) $token->identity_refresh_family_id);
 
             return;
         }
@@ -983,7 +1099,6 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
                     'username' => $attributes['username'],
                     'email' => $invitation->email,
                     'password' => $attributes['password'],
-                    'role_id' => Role::query()->value('id'),
                     'terms' => 'accepted',
                     'email_verified_at' => now(),
                 ]);

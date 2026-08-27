@@ -4,7 +4,10 @@ import type { FormSubmitEvent } from '@nuxt/ui'
 import type { IdentityAuthenticationContext } from '../../../../shared/types/identity-auth'
 import { useIdentityMutation } from '../../../../app/composables/useIdentityMutation'
 
-definePageMeta({ layout: 'identity-auth' })
+definePageMeta({
+  layout: 'identity-auth',
+  middleware: 'identity-live-auth'
+})
 
 const route = useRoute()
 const config = useRuntimeConfig()
@@ -38,7 +41,11 @@ const {
   () => (hosted.value ? '/api/hosted-auth/context' : '/api/auth/context'),
   {
     query: computed(() =>
-      hosted.value ? { application: hostedApplication.value } : {}
+      hosted.value
+        ? {
+            application: hostedApplication.value
+          }
+        : {}
     )
   }
 )
@@ -46,7 +53,7 @@ const {
 const primary = computed(() => experience.value?.primary ?? null)
 const liveEnabled = computed(() => primary.value?.project.mode === 'live')
 const demoContext = computed<IdentityAuthenticationContext | null>(() => {
-  if (!config.public.identityAuth.sandboxEnabled) return null
+  if (!hosted.value && !config.public.identityAuth.sandboxEnabled) return null
   if (primary.value?.project.mode === 'sandbox') return primary.value
   if (experience.value?.sandbox?.project.mode === 'sandbox')
     return experience.value.sandbox

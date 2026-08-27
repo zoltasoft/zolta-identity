@@ -10,10 +10,16 @@ use App\Services\UserManagementService\Application\Contracts\Identity\Projects\C
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityClients;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityHostedApplications;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityProjectAccess;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityProjectCatalog;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityProjectDeletion;
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityProjectSuspension;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ManageIdentityWebhooks;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ReadIdentityProjects;
 use App\Services\UserManagementService\Application\Contracts\Identity\Projects\ResolveIdentityHostedApplications;
+use App\Services\UserManagementService\Application\DTOs\External\UploadedAsset;
+use App\Services\UserManagementService\Application\Exceptions\IdentityAccessDependencyException;
 use App\Services\UserManagementService\Application\Exceptions\IdentityAuthorizationException;
+use App\Services\UserManagementService\Application\Exceptions\IdentityProjectLifecycleException;
 use App\Services\UserManagementService\Application\Exceptions\IdentityResourceNotFoundException;
 use App\Services\UserManagementService\Domain\Aggregates\IdentityClient as DomainIdentityClient;
 use App\Services\UserManagementService\Domain\Aggregates\IdentityMembership as DomainIdentityMembership;
@@ -39,11 +45,16 @@ use App\Services\UserManagementService\Domain\ValueObjects\IdentityPermissionId;
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityProjectId;
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityRoleId;
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityWebhookId;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAccessCatalogPermission;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAccessCatalogRole;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAuditEvent;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHostedApplication;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectClient;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectInvitation;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectMembership;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectPermission;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectRole;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
 use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityAuditEventRepository;
 use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityProjectClientRepository;
@@ -57,14 +68,16 @@ use App\Services\UserManagementService\Infrastructure\Services\Identity\Identity
 use App\Services\UserManagementService\Infrastructure\Services\Identity\IdentityPermissionManifestSynchronizer;
 use App\Services\UserManagementService\Infrastructure\Services\Identity\IdentityTokenManager;
 use App\Services\UserManagementService\Infrastructure\Services\Identity\IdentityWebhookDestinationValidator;
+use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use RuntimeException;
 use Zolta\Domain\ValueObjects\UserId;
 
-final readonly class EloquentIdentityProjectService implements ConfigureIdentityProjectEnvironment, ConfigureIdentityProjectRegistration, CreateIdentityProject, ManageIdentityClients, ManageIdentityHostedApplications, ManageIdentityProjectAccess, ManageIdentityWebhooks, ReadIdentityProjects, ResolveIdentityHostedApplications
+final readonly class EloquentIdentityProjectService implements ConfigureIdentityProjectEnvironment, ConfigureIdentityProjectRegistration, CreateIdentityProject, ManageIdentityClients, ManageIdentityHostedApplications, ManageIdentityProjectAccess, ManageIdentityProjectCatalog, ManageIdentityProjectDeletion, ManageIdentityProjectSuspension, ManageIdentityWebhooks, ReadIdentityProjects, ResolveIdentityHostedApplications
 {
     public function __construct(
         private EloquentIdentityProjectMembershipRepository $memberships,
@@ -137,6 +150,116 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
 
             return $this->payloads->projectAggregate($project);
         });
+    }
+
+    public function scheduleProjectDeletion(string $actorUserId, string $projectId, string $confirmation): array
+    {
+        $this->authorization->assertInstallationAdministrator($actorUserId);
+        $project = $this->projects->find(IdentityProjectId::fromString($projectId))
+            ?? throw new IdentityResourceNotFoundException('Identity project');
+
+        if ($confirmation !== $project->slug()) {
+            throw ValidationException::withMessages(['confirmation' => ['Type the exact project slug to confirm deletion.']]);
+        }
+        if (in_array($project->slug(), $this->protectedProjectSlugs(), true)) {
+            throw new IdentityProjectLifecycleException('This protected project cannot be scheduled for deletion.');
+        }
+        if ($project->status()->value === 'pending_deletion') {
+            return $this->payloads->projectAggregate($project);
+        }
+
+        $scheduledAt = (new DateTimeImmutable)->modify('+'.$this->projectDeletionGraceDays().' days');
+        $project->scheduleDeletion($scheduledAt);
+
+        DB::transaction(function () use ($project, $projectId, $actorUserId): void {
+            $this->projects->save($project);
+            DB::table('personal_access_tokens')->where('identity_project_id', $projectId)->delete();
+            DB::table('identity_refresh_tokens')->where('project_id', $projectId)->delete();
+            DB::table('identity_authorization_codes')->where('project_id', $projectId)->delete();
+            $this->audit->record(
+                'project.deletion_scheduled',
+                $projectId,
+                null,
+                $actorUserId,
+                'project',
+                $projectId,
+                ['deletion_scheduled_at' => $project->deletionScheduledAt()?->format(DATE_ATOM)],
+            );
+        });
+
+        return $this->payloads->projectAggregate($project);
+    }
+
+    public function cancelProjectDeletion(string $actorUserId, string $projectId): array
+    {
+        $this->authorization->assertInstallationAdministrator($actorUserId);
+        $project = $this->projects->find(IdentityProjectId::fromString($projectId))
+            ?? throw new IdentityResourceNotFoundException('Identity project');
+        if ($project->status()->value !== 'pending_deletion') {
+            throw new IdentityProjectLifecycleException('This project is not scheduled for deletion.');
+        }
+
+        $project->cancelDeletion();
+        DB::transaction(function () use ($project, $projectId, $actorUserId): void {
+            $this->projects->save($project);
+            $this->audit->record('project.deletion_cancelled', $projectId, null, $actorUserId, 'project', $projectId);
+        });
+
+        return $this->payloads->projectAggregate($project);
+    }
+
+    public function suspendProject(string $actorUserId, string $projectId, string $confirmation): array
+    {
+        $this->authorization->assertInstallationAdministrator($actorUserId);
+        $project = $this->projects->find(IdentityProjectId::fromString($projectId))
+            ?? throw new IdentityResourceNotFoundException('Identity project');
+
+        if ($confirmation !== $project->slug()) {
+            throw ValidationException::withMessages(['confirmation' => ['Type the exact project slug to confirm suspension.']]);
+        }
+        if (in_array($project->slug(), $this->protectedProjectSlugs(), true)) {
+            throw new IdentityProjectLifecycleException('This protected project cannot be suspended.');
+        }
+        if ($project->status()->value === 'pending_deletion') {
+            throw new IdentityProjectLifecycleException(
+                'Project deletion is scheduled. Cancel deletion before suspending this project.',
+            );
+        }
+        if (! $project->suspend()) {
+            return $this->payloads->projectAggregate($project);
+        }
+
+        DB::transaction(function () use ($project, $projectId, $actorUserId): void {
+            $this->projects->save($project);
+            $this->tokens->revokeProject($projectId);
+            DB::table('identity_authorization_codes')->where('project_id', $projectId)->delete();
+            $this->audit->record('project.suspended', $projectId, null, $actorUserId, 'project', $projectId);
+        });
+
+        return $this->payloads->projectAggregate($project);
+    }
+
+    public function reactivateProject(string $actorUserId, string $projectId): array
+    {
+        $this->authorization->assertInstallationAdministrator($actorUserId);
+        $project = $this->projects->find(IdentityProjectId::fromString($projectId))
+            ?? throw new IdentityResourceNotFoundException('Identity project');
+
+        if ($project->status()->value === 'pending_deletion') {
+            throw new IdentityProjectLifecycleException(
+                'Project deletion is scheduled. Cancel deletion before reactivating this project.',
+            );
+        }
+        if (! $project->reactivate()) {
+            return $this->payloads->projectAggregate($project);
+        }
+
+        DB::transaction(function () use ($project, $projectId, $actorUserId): void {
+            $this->projects->save($project);
+            $this->audit->record('project.reactivated', $projectId, null, $actorUserId, 'project', $projectId);
+        });
+
+        return $this->payloads->projectAggregate($project);
     }
 
     public function updateProjectRegistration(
@@ -281,7 +404,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
     {
         $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
         $webhook = $this->findWebhook($projectId, $webhookId);
-        $this->webhookAggregates->delete($webhook);
+        $this->webhookAggregates->remove($webhook);
         $this->audit->record(
             'webhook.deleted',
             $projectId,
@@ -294,7 +417,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
 
     public function projectDetails(string $actorUserId, string $projectId): array
     {
-        $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
+        $this->authorization->assertProjectAdministrator($actorUserId, $projectId, false);
         $project = IdentityProject::query()->findOrFail($projectId);
 
         return $this->payloads->project($project) + [
@@ -419,20 +542,24 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
         string $actorUserId,
         string $projectId,
         string $applicationId,
-        UploadedFile $logo,
+        UploadedAsset $logo,
     ): array {
         $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
         $application = $this->findHostedApplication($projectId, $applicationId);
         $disk = (string) config('zolta.identity.hosted_applications.branding_disk', 'public');
-        $extension = $logo->extension() ?: 'png';
+        $extension = $logo->extension;
         $path = "identity/hosted-applications/{$application->id}/".Str::uuid().".{$extension}";
 
-        Storage::disk($disk)->putFileAs(
-            dirname($path),
-            $logo,
-            basename($path),
-            ['visibility' => 'public'],
-        );
+        $stream = fopen($logo->path, 'rb');
+        if ($stream === false) {
+            throw new RuntimeException('The uploaded logo could not be read.');
+        }
+
+        try {
+            Storage::disk($disk)->put($path, $stream, ['visibility' => 'public']);
+        } finally {
+            fclose($stream);
+        }
 
         $previousPath = $application->logo_path;
         $application->forceFill(['logo_path' => $path])->save();
@@ -572,6 +699,53 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
         );
     }
 
+    public function deleteClient(
+        string $actorUserId,
+        string $projectId,
+        string $clientId,
+        string $confirmation,
+    ): void {
+        $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
+        $client = $this->findClient($projectId, $clientId);
+        if ($confirmation !== $client->name()) {
+            throw ValidationException::withMessages(['confirmation' => ['Type the exact client name to confirm deletion.']]);
+        }
+
+        $hostedApplications = IdentityHostedApplication::query()
+            ->where('project_id', $projectId)
+            ->where(static fn (Builder $query): Builder => $query
+                ->where('primary_client_id', $clientId)
+                ->orWhere('sandbox_client_id', $clientId))
+            ->pluck('name')
+            ->all();
+        if ($hostedApplications !== []) {
+            throw new IdentityProjectLifecycleException(
+                'This client is used by hosted application(s): '.implode(', ', $hostedApplications).'.',
+            );
+        }
+
+        DB::transaction(function () use ($actorUserId, $projectId, $clientId, $client): void {
+            $this->tokens->revokeClient($clientId);
+            foreach ($this->permissionAggregates->findForManifestClient(
+                IdentityProjectId::fromString($projectId),
+                IdentityClientId::fromString($clientId),
+            ) as $permission) {
+                $permission->convertToManual();
+                $this->permissionAggregates->save($permission);
+            }
+            $this->audit->record(
+                'client.deleted',
+                $projectId,
+                $clientId,
+                $actorUserId,
+                'client',
+                $clientId,
+                ['name' => $client->name(), 'secret_prefix' => $client->secretPrefix()],
+            );
+            $this->clientAggregates->remove($client);
+        });
+    }
+
     public function syncPermissionManifest(
         string $actorUserId,
         string $projectId,
@@ -594,6 +768,128 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
         return $permissions;
     }
 
+    public function catalog(string $actorUserId): array
+    {
+        return [
+            'permissions' => IdentityAccessCatalogPermission::query()->where('status', 'active')->orderBy('key')->get()->map(fn (IdentityAccessCatalogPermission $permission) => $this->catalogPermissionPayload($permission))->all(),
+            'roles' => IdentityAccessCatalogRole::query()->with('permissions')->where('status', 'active')->orderBy('name')->get()->map(fn (IdentityAccessCatalogRole $role) => $this->catalogRolePayload($role))->all(),
+        ];
+    }
+
+    public function createCatalogPermission(string $actorUserId, array $attributes): array
+    {
+        $this->authorization->assertInstallationAdministrator($actorUserId);
+        $permission = IdentityAccessCatalogPermission::query()->create([
+            'key' => $attributes['key'], 'name' => $attributes['name'] ?? $attributes['key'],
+            'description' => $attributes['description'] ?? null, 'status' => 'active', 'version' => 1,
+        ]);
+        $this->audit->record('access_catalog.permission_created', null, null, $actorUserId, 'access_catalog_permission', $permission->id);
+
+        return $this->catalogPermissionPayload($permission);
+    }
+
+    public function createCatalogRole(string $actorUserId, array $attributes): array
+    {
+        $this->authorization->assertInstallationAdministrator($actorUserId);
+        $permissionIds = array_values(array_unique((array) ($attributes['permission_ids'] ?? [])));
+        $permissions = IdentityAccessCatalogPermission::query()->where('status', 'active')->whereIn('id', $permissionIds)->get();
+        if ($permissions->count() !== count($permissionIds)) {
+            throw new IdentityAuthorizationException('Every catalog permission must be active.');
+        }
+        $role = DB::transaction(function () use ($attributes, $permissionIds): IdentityAccessCatalogRole {
+            $role = IdentityAccessCatalogRole::query()->create([
+                'slug' => $attributes['slug'], 'name' => $attributes['name'], 'description' => $attributes['description'] ?? null,
+                'status' => 'active', 'version' => 1,
+            ]);
+            $role->permissions()->sync($permissionIds);
+
+            return $role->load('permissions');
+        });
+        $this->audit->record('access_catalog.role_created', null, null, $actorUserId, 'access_catalog_role', $role->id);
+
+        return $this->catalogRolePayload($role);
+    }
+
+    public function importCatalogItems(string $actorUserId, string $projectId, array $permissionIds, array $roleIds): array
+    {
+        $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
+        $permissionIds = array_values(array_unique($permissionIds));
+        $roles = IdentityAccessCatalogRole::query()->with('permissions')->where('status', 'active')->whereIn('id', array_values(array_unique($roleIds)))->get();
+        if ($roles->count() !== count(array_unique($roleIds))) {
+            throw new IdentityResourceNotFoundException('Access catalog role');
+        }
+        $requiredPermissionIds = array_values(array_unique([...$permissionIds, ...$roles->flatMap(fn (IdentityAccessCatalogRole $role) => $role->permissions->pluck('id'))->all()]));
+        $permissions = IdentityAccessCatalogPermission::query()->where('status', 'active')->whereIn('id', $requiredPermissionIds)->get()->keyBy('id');
+        if ($permissions->count() !== count($requiredPermissionIds)) {
+            throw new IdentityResourceNotFoundException('Access catalog permission');
+        }
+
+        return DB::transaction(function () use ($projectId, $permissions, $roles, $actorUserId): array {
+            $projectPermissions = [];
+            foreach ($permissions as $catalogPermission) {
+                $projectPermission = IdentityProjectPermission::query()->where('project_id', $projectId)->where('key', $catalogPermission->key)->first();
+                if ($projectPermission === null) {
+                    $projectPermission = IdentityProjectPermission::query()->create([
+                        'project_id' => $projectId, 'catalog_permission_id' => $catalogPermission->id, 'catalog_version' => $catalogPermission->version, 'catalog_origin' => 'imported',
+                        'key' => $catalogPermission->key, 'name' => $catalogPermission->name, 'description' => $catalogPermission->description,
+                        'source' => 'catalog', 'status' => 'active',
+                    ]);
+                }
+                $projectPermissions[$catalogPermission->id] = $projectPermission;
+            }
+            $importedRoles = [];
+            foreach ($roles as $catalogRole) {
+                $role = IdentityProjectRole::query()->where('project_id', $projectId)->where('slug', $catalogRole->slug)->first();
+                if ($role === null) {
+                    $role = IdentityProjectRole::query()->create([
+                        'project_id' => $projectId, 'catalog_role_id' => $catalogRole->id, 'catalog_version' => $catalogRole->version, 'catalog_origin' => 'imported',
+                        'name' => $catalogRole->name, 'slug' => $catalogRole->slug, 'description' => $catalogRole->description,
+                    ]);
+                    $role->permissions()->sync($catalogRole->permissions->map(fn (IdentityAccessCatalogPermission $permission) => $projectPermissions[$permission->id]->id)->all());
+                }
+                $importedRoles[] = $role->id;
+            }
+            $this->membershipAggregates->incrementAuthorizationVersionForProject(IdentityProjectId::fromString($projectId));
+            $this->audit->record('access_catalog.imported', $projectId, null, $actorUserId, 'project', $projectId, ['role_ids' => $importedRoles]);
+
+            return ['permission_ids' => array_map(fn (IdentityProjectPermission $permission) => $permission->id, $projectPermissions), 'role_ids' => $importedRoles];
+        });
+    }
+
+    public function publishProjectPermission(string $actorUserId, string $projectId, string $permissionId): array
+    {
+        $this->authorization->assertInstallationAdministrator($actorUserId);
+        $permission = IdentityProjectPermission::query()->where('project_id', $projectId)->find($permissionId) ?? throw new IdentityResourceNotFoundException('Identity project permission');
+        $catalog = IdentityAccessCatalogPermission::query()->where('key', $permission->key)->first();
+        if ($catalog !== null && ($catalog->name !== $permission->name || $catalog->description !== $permission->description)) {
+            throw new IdentityProjectLifecycleException('A catalog permission with this key already exists with different details.');
+        }
+        $catalog ??= IdentityAccessCatalogPermission::query()->create(['key' => $permission->key, 'name' => $permission->name, 'description' => $permission->description, 'status' => 'active', 'version' => 1]);
+        $permission->forceFill(['catalog_permission_id' => $catalog->id, 'catalog_version' => $catalog->version, 'catalog_origin' => 'published'])->save();
+        $this->audit->record('access_catalog.permission_published', $projectId, null, $actorUserId, 'permission', $permissionId);
+
+        return $this->catalogPermissionPayload($catalog);
+    }
+
+    public function publishProjectRole(string $actorUserId, string $projectId, string $roleId): array
+    {
+        $this->authorization->assertInstallationAdministrator($actorUserId);
+        $role = IdentityProjectRole::query()->with('permissions')->where('project_id', $projectId)->find($roleId) ?? throw new IdentityResourceNotFoundException('Identity project role');
+        $catalogPermissions = $role->permissions->map(fn (IdentityProjectPermission $permission) => $this->publishProjectPermission($actorUserId, $projectId, $permission->id));
+        $catalogPermissionIds = $catalogPermissions->pluck('id')->all();
+        $catalog = IdentityAccessCatalogRole::query()->where('slug', $role->slug)->first();
+        if ($catalog !== null && ($catalog->name !== $role->name || $catalog->description !== $role->description)) {
+            throw new IdentityProjectLifecycleException('A catalog role with this slug already exists with different details.');
+        }
+        $catalog ??= IdentityAccessCatalogRole::query()->create(['slug' => $role->slug, 'name' => $role->name, 'description' => $role->description, 'status' => 'active', 'version' => 1]);
+        $catalog->permissions()->sync($catalogPermissionIds);
+        $role->forceFill(['catalog_role_id' => $catalog->id, 'catalog_version' => $catalog->version, 'catalog_origin' => 'published'])->save();
+        $catalog->load('permissions');
+        $this->audit->record('access_catalog.role_published', $projectId, null, $actorUserId, 'role', $roleId);
+
+        return $this->catalogRolePayload($catalog);
+    }
+
     public function createRole(string $actorUserId, string $projectId, array $attributes): array
     {
         $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
@@ -608,6 +904,63 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
         $this->audit->record('role.created', $projectId, null, $actorUserId, 'role', $roleId);
 
         return $this->payloads->roleAggregate($role);
+    }
+
+    public function deleteRole(
+        string $actorUserId,
+        string $projectId,
+        string $roleId,
+        string $confirmation,
+    ): void {
+        $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
+
+        DB::transaction(function () use ($actorUserId, $projectId, $roleId, $confirmation): void {
+            $project = IdentityProject::query()->whereKey($projectId)->lockForUpdate()->first()
+                ?? throw new IdentityResourceNotFoundException('Identity project');
+            $roleModel = IdentityProjectRole::query()
+                ->where('project_id', $projectId)
+                ->whereKey($roleId)
+                ->lockForUpdate()
+                ->first()
+                ?? throw new IdentityResourceNotFoundException('Identity project role');
+
+            if ($confirmation !== $roleModel->slug) {
+                throw new \Zolta\Exceptions\ValidationException([
+                    'confirmation' => ['Type the exact role slug to confirm deletion.'],
+                ]);
+            }
+
+            $memberships = $roleModel->memberships()->with('user')->orderBy('identity_project_memberships.id')->get();
+            $isRegistrationDefault = $project->registration_role_id === $roleId;
+            if ($memberships->isNotEmpty() || $isRegistrationDefault) {
+                throw new IdentityAccessDependencyException('role', $roleId, [
+                    'memberships' => $memberships
+                        ->map(fn (IdentityProjectMembership $membership): array => $this->membershipDependencyPayload($membership))
+                        ->all(),
+                    'roles' => [],
+                    'registration_default' => $isRegistrationDefault,
+                    'manifest_client' => null,
+                ]);
+            }
+
+            $role = $this->findRole($projectId, $roleId);
+            $this->audit->record(
+                'role.deleted',
+                $projectId,
+                null,
+                $actorUserId,
+                'role',
+                $roleId,
+                [
+                    'name' => $roleModel->name,
+                    'slug' => $roleModel->slug,
+                    'permission_ids' => $roleModel->permissions()->pluck('identity_project_permissions.id')->all(),
+                    'catalog_role_id' => $roleModel->catalog_role_id,
+                    'catalog_origin' => $roleModel->catalog_origin,
+                ],
+            );
+            $this->roleAggregates->remove($role);
+        });
     }
 
     public function createPermission(
@@ -638,6 +991,81 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
         );
 
         return $this->payloads->permissionAggregate($permission);
+    }
+
+    public function deletePermission(
+        string $actorUserId,
+        string $projectId,
+        string $permissionId,
+        string $confirmation,
+    ): void {
+        $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
+
+        DB::transaction(function () use ($actorUserId, $projectId, $permissionId, $confirmation): void {
+            IdentityProject::query()->whereKey($projectId)->lockForUpdate()->first()
+                ?? throw new IdentityResourceNotFoundException('Identity project');
+            $permissionModel = IdentityProjectPermission::query()
+                ->where('project_id', $projectId)
+                ->whereKey($permissionId)
+                ->lockForUpdate()
+                ->first()
+                ?? throw new IdentityResourceNotFoundException('Identity project permission');
+
+            if ($confirmation !== $permissionModel->key) {
+                throw new \Zolta\Exceptions\ValidationException([
+                    'confirmation' => ['Type the exact permission key to confirm deletion.'],
+                ]);
+            }
+
+            $roles = $permissionModel->roles()->orderBy('identity_project_roles.name')->get();
+            $memberships = $permissionModel->memberships()->with('user')->orderBy('identity_project_memberships.id')->get();
+            $isManifestManaged = $permissionModel->source === 'manifest' && $permissionModel->status === 'active';
+            $manifestClient = $isManifestManaged
+                ? IdentityProjectClient::query()->where('project_id', $projectId)->find($permissionModel->source_client_id)
+                : null;
+            if ($roles->isNotEmpty() || $memberships->isNotEmpty() || $isManifestManaged) {
+                throw new IdentityAccessDependencyException('permission', $permissionId, [
+                    'memberships' => $memberships
+                        ->map(fn (IdentityProjectMembership $membership): array => $this->membershipDependencyPayload($membership))
+                        ->all(),
+                    'roles' => $roles->map(static fn (IdentityProjectRole $role): array => [
+                        'id' => (string) $role->id,
+                        'name' => (string) $role->name,
+                        'slug' => (string) $role->slug,
+                    ])->all(),
+                    'registration_default' => false,
+                    'manifest_client' => ! $isManifestManaged ? null : [
+                        'id' => (string) ($manifestClient?->id ?? $permissionModel->source_client_id),
+                        'name' => (string) ($manifestClient?->name ?? 'Unknown client'),
+                    ],
+                ]);
+            }
+
+            $permission = $this->permissionAggregates->findForProject(
+                IdentityProjectId::fromString($projectId),
+                IdentityPermissionId::fromString($permissionId),
+            ) ?? throw new IdentityResourceNotFoundException('Identity project permission');
+            $this->audit->record(
+                'permission.deleted',
+                $projectId,
+                null,
+                $actorUserId,
+                'permission',
+                $permissionId,
+                [
+                    'key' => $permissionModel->key,
+                    'name' => $permissionModel->name,
+                    'source' => $permissionModel->source,
+                    'status' => $permissionModel->status,
+                    'catalog_permission_id' => $permissionModel->catalog_permission_id,
+                    'catalog_origin' => $permissionModel->catalog_origin,
+                ],
+            );
+            $this->permissionAggregates->remove($permission);
+            $this->membershipAggregates->incrementAuthorizationVersionForProject(
+                IdentityProjectId::fromString($projectId),
+            );
+        });
     }
 
     public function setRolePermissions(
@@ -786,7 +1214,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
         }
 
         $userId = $membership->userId()->toString();
-        $this->membershipAggregates->delete($membership);
+        $this->membershipAggregates->remove($membership);
         $this->tokens->revokeProjectUser($projectId, $userId);
         $this->audit->record(
             'membership.removed',
@@ -803,7 +1231,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
         string $projectId,
         int $limit = 100,
     ): array {
-        $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
+        $this->authorization->assertProjectAdministrator($actorUserId, $projectId, false);
 
         return $this->auditEvents
             ->listForProject(
@@ -822,6 +1250,47 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
                 'ip_address' => $event->ip_address,
                 'created_at' => $event->created_at?->toIso8601String(),
             ])->all();
+    }
+
+    private function projectDeletionGraceDays(): int
+    {
+        $days = (int) config('zolta.identity.project_deletion_grace_days', 30);
+        if ($days < 1 || $days > 365) {
+            throw new IdentityProjectLifecycleException('Project deletion grace period must be between 1 and 365 days.');
+        }
+
+        return $days;
+    }
+
+    /** @return list<string> */
+    private function protectedProjectSlugs(): array
+    {
+        return array_values(array_filter((array) config('zolta.identity.protected_project_slugs', [])));
+    }
+
+    /** @return array<string, mixed> */
+    private function catalogPermissionPayload(IdentityAccessCatalogPermission $permission): array
+    {
+        return ['id' => $permission->id, 'key' => $permission->key, 'name' => $permission->name, 'description' => $permission->description, 'status' => $permission->status, 'version' => $permission->version];
+    }
+
+    /** @return array<string, mixed> */
+    private function catalogRolePayload(IdentityAccessCatalogRole $role): array
+    {
+        return ['id' => $role->id, 'slug' => $role->slug, 'name' => $role->name, 'description' => $role->description, 'status' => $role->status, 'version' => $role->version, 'permission_ids' => $role->permissions()->pluck('identity_access_catalog_permissions.id')->all()];
+    }
+
+    /** @return array{id: string, user_id: string, label: string, status: string} */
+    private function membershipDependencyPayload(IdentityProjectMembership $membership): array
+    {
+        $user = $membership->user;
+
+        return [
+            'id' => (string) $membership->id,
+            'user_id' => (string) $membership->user_id,
+            'label' => (string) ($user?->username ?: $user?->email ?: $membership->user_id),
+            'status' => (string) $membership->status,
+        ];
     }
 
     private function findClient(string $projectId, string $clientId): DomainIdentityClient
@@ -849,7 +1318,10 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
 
         $application->loadMissing(['project', 'primaryClient', 'sandboxClient.project']);
         $client = $application->primaryClient;
-        if ($client === null || $client->status !== 'active') {
+        if ($application->project === null
+            || $application->project->status !== 'active'
+            || $client === null
+            || $client->status !== 'active') {
             throw new IdentityResourceNotFoundException('Identity hosted application');
         }
 

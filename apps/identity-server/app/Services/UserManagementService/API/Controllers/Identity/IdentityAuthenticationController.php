@@ -8,8 +8,6 @@ use App\Services\UserManagementService\API\Requests\Identity\IdentityAuthenticat
 use App\Services\UserManagementService\Application\DTOs\Input\IdentityOperationDTO;
 use App\Services\UserManagementService\Application\Services\Identity\ExecuteIdentityAuthenticationService;
 use App\Services\UserManagementService\Application\Services\Identity\ReadIdentityAuthenticationService;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Zolta\Http\Controller\Controller;
 use Zolta\Http\Request\Attributes\Request as RequestAttribute;
 use Zolta\Http\Router\Attributes\Route;
@@ -17,8 +15,6 @@ use Zolta\Http\Service\Attributes\Service;
 
 final class IdentityAuthenticationController extends Controller
 {
-    public function __construct(private readonly ReadIdentityAuthenticationService $readIdentity) {}
-
     #[Route('v1/identity/auth/context', methods: ['POST'], middleware: ['api', 'throttle:120,1'], name: 'identity.auth.context')]
     #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ReadIdentityAuthenticationService::class, 'Authentication context resolved.')]
@@ -54,22 +50,25 @@ final class IdentityAuthenticationController extends Controller
     #[Service(ExecuteIdentityAuthenticationService::class, 'Password reset completed.')]
     public function resetPassword(): void {}
 
-    #[Route('v1/identity/auth/introspect', methods: ['POST'], middleware: ['api', 'throttle:300,1'], name: 'identity.auth.introspect')]
-    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
-    public function introspect(Request $request, IdentityOperationDTO $dto): JsonResponse
-    {
-        return response()->json(($this->readIdentity)($dto));
-    }
-
     #[Route('v1/identity/auth/handoff', methods: ['POST'], middleware: ['api', 'auth:sanctum', 'identity.token', 'throttle:30,1'], name: 'identity.auth.handoff.create')]
     #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityAuthenticationService::class, 'Authorization handoff created.', 201)]
     public function createHandoff(): void {}
 
+    #[Route('v1/identity/auth/authorization/intent', methods: ['POST'], middleware: ['api', 'throttle:identity-authorization-intent'], name: 'identity.auth.authorization.intent')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Hosted authorization intent created.', 201)]
+    public function createAuthorizationIntent(): void {}
+
     #[Route('v1/identity/auth/account/intent', methods: ['POST'], middleware: ['api', 'auth:sanctum', 'identity.token', 'throttle:30,1'], name: 'identity.auth.account.intent.create')]
     #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
     #[Service(ExecuteIdentityAuthenticationService::class, 'Account portal intent created.', 201)]
     public function createAccountIntent(): void {}
+
+    #[Route('v1/identity/auth/logout/intent', methods: ['POST'], middleware: ['api', 'throttle:identity-logout-intent'], name: 'identity.auth.logout.intent')]
+    #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]
+    #[Service(ExecuteIdentityAuthenticationService::class, 'Logout intent created.', 201)]
+    public function createLogoutIntent(): void {}
 
     #[Route('v1/identity/auth/handoff/exchange', methods: ['POST'], middleware: ['api', 'throttle:60,1'], name: 'identity.auth.handoff.exchange')]
     #[RequestAttribute(IdentityAuthenticationOperationRequest::class, IdentityOperationDTO::class)]

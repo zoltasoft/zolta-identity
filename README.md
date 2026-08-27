@@ -234,10 +234,9 @@ The identity server exposes account-level, installation-level, and project-scope
 
 - `/api/auth/*`: registration, credential/social login, logout, refresh, verification, password recovery/change, sessions, export, deletion, and temporary accounts
 - `/api/users/*`: account profile/security preferences and system-administrator user management
-- `/api/roles/*` and `/api/permissions/*`: installation-wide RBAC
-- `/api/v1/identity/*`: confidential clients, project memberships, project RBAC, rotating sessions, introspection, and audit
+- `/api/v1/identity/*`: confidential clients, project memberships, project RBAC, the reusable access catalog, rotating sessions, introspection, and audit
 
-Installation-wide user, role, and permission routes enforce `is_system_admin` inside Laravel. Project administrators use project-scoped endpoints and cannot elevate themselves to installation administrators.
+Installation-wide user routes enforce `is_system_admin` inside Laravel. Project administrators use project-scoped endpoints and cannot elevate themselves to installation administrators.
 
 ## Commands and checks
 

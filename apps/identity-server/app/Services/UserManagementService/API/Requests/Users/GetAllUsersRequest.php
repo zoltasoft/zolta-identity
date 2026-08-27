@@ -11,8 +11,6 @@ class GetAllUsersRequest extends BaseRequest
      */
     public function authorize(): bool
     {
-        $this->authorizeAction(['admin.access']);
-
         return true;
     }
 

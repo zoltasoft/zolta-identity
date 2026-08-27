@@ -9,21 +9,30 @@ use App\Services\UserManagementService\Domain\Repositories\IdentityProjectReposi
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityProjectId;
 use App\Services\UserManagementService\Infrastructure\Mappers\IdentityProjectMapper;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject as EloquentIdentityProject;
+use Zolta\Cqrs\Repositories\BaseRepository;
 
-final class EloquentIdentityProjectRepository implements IdentityProjectRepository
+final class EloquentIdentityProjectRepository extends BaseRepository implements IdentityProjectRepository
 {
+    protected bool $enableReadCaching = false;
+
+    protected function modelClass(): string
+    {
+        return EloquentIdentityProject::class;
+    }
+
     public function find(IdentityProjectId $projectId): ?DomainIdentityProject
     {
-        $model = EloquentIdentityProject::query()->find($projectId->toString());
+        $model = $this->show($projectId->toString());
 
-        return $model ? IdentityProjectMapper::toDomain($model) : null;
+        return $model instanceof EloquentIdentityProject ? IdentityProjectMapper::toDomain($model) : null;
     }
 
     public function save(DomainIdentityProject $project): void
     {
-        $model = EloquentIdentityProject::query()->find($project->id()->toString())
-            ?? new EloquentIdentityProject;
+        $existing = $this->show($project->id()->toString());
+        $model = $existing instanceof EloquentIdentityProject ? $existing : new EloquentIdentityProject;
 
-        IdentityProjectMapper::fill($model, $project)->save();
+        $model = IdentityProjectMapper::fill($model, $project);
+        $existing instanceof EloquentIdentityProject ? $this->update($model) : $this->create($model);
     }
 }

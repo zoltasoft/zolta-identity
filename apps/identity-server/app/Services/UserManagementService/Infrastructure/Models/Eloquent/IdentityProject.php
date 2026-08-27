@@ -15,12 +15,13 @@ final class IdentityProject extends Model
     protected $table = 'identity_projects';
 
     protected $fillable = [
-        'name', 'slug', 'description', 'status', 'mode', 'sandbox_ttl_minutes', 'registration_mode', 'registration_role_id', 'email_verification_required',
+        'name', 'slug', 'description', 'status', 'mode', 'sandbox_ttl_minutes', 'registration_mode', 'registration_role_id', 'email_verification_required', 'deletion_scheduled_at', 'deletion_previous_status',
     ];
 
     protected $casts = [
         'sandbox_ttl_minutes' => 'integer',
         'email_verification_required' => 'boolean',
+        'deletion_scheduled_at' => 'datetime',
     ];
 
     public function clients(): HasMany

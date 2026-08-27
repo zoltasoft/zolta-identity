@@ -41,4 +41,20 @@ final class IdentityPermissionTest extends TestCase
             'Read documents',
         );
     }
+
+    public function test_manifest_permission_can_be_retained_as_a_manual_project_permission(): void
+    {
+        $permission = IdentityPermission::createFromManifest(
+            new IdentityProjectId,
+            new IdentityClientId,
+            'documents.read',
+            'Read documents',
+        );
+
+        $permission->convertToManual();
+
+        $this->assertNull($permission->sourceClientId());
+        $this->assertSame(IdentityPermissionSource::Manual, $permission->source());
+        $this->assertSame(IdentityPermissionStatus::Active, $permission->status());
+    }
 }

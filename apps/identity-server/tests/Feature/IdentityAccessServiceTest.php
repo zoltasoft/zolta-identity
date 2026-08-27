@@ -5,12 +5,17 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Services\UserManagementService\Infrastructure\Jobs\DeliverIdentityWebhook;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAccessCatalogPermission;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAccessCatalogRole;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAuthorizationIntent;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHostedApplication;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityLogoutIntent;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectClient;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectMembership;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectPermission;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectRole;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityRefreshToken;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityWebhookDelivery;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityWebhookEndpoint;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
@@ -113,7 +118,7 @@ final class IdentityAccessServiceTest extends TestCase
         ])->assertOk()->assertJsonPath('active', false);
     }
 
-    public function test_logout_revokes_all_identity_sessions_for_the_current_project(): void
+    public function test_logout_revokes_only_the_current_refresh_family(): void
     {
         [$user, $project, $client, $secret] = $this->identityFixture();
         $firstSession = $this->login($user, $project, $client, $secret);
@@ -123,13 +128,26 @@ final class IdentityAccessServiceTest extends TestCase
             ->postJson('/api/v1/identity/auth/logout')
             ->assertOk();
 
-        foreach ([$firstSession, $secondSession] as $session) {
-            $this->postJson('/api/v1/identity/auth/introspect', [
-                'client_id' => $client->id,
-                'client_secret' => $secret,
-                'token' => $session['access_token'],
-            ])->assertOk()->assertJsonPath('active', false);
-        }
+        $this->postJson('/api/v1/identity/auth/introspect', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'token' => $firstSession['access_token'],
+        ])->assertOk()->assertJsonPath('active', false);
+        $this->postJson('/api/v1/identity/auth/introspect', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'token' => $secondSession['access_token'],
+        ])->assertOk()->assertJsonPath('active', true);
+        $this->postJson('/api/v1/identity/auth/refresh', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'refresh_token' => $firstSession['refresh_token'],
+        ])->assertUnauthorized();
+        $this->postJson('/api/v1/identity/auth/refresh', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'refresh_token' => $secondSession['refresh_token'],
+        ])->assertOk();
     }
 
     public function test_hosted_authentication_handoff_is_client_bound_and_single_use(): void
@@ -176,6 +194,220 @@ final class IdentityAccessServiceTest extends TestCase
             'client_secret' => $secret,
             'token' => $login['access_token'],
         ])->assertOk()->assertJsonPath('active', false);
+    }
+
+    public function test_logout_intent_is_client_bound_local_path_only_and_single_use(): void
+    {
+        [, $project, $client, $secret] = $this->identityFixture();
+        IdentityHostedApplication::query()->create([
+            'project_id' => $project->id,
+            'primary_client_id' => $client->id,
+            'key' => 'portfolio',
+            'name' => 'Portfolio',
+            'application_url' => 'https://portfolio.example.test/dashboard',
+            'callback_url' => 'https://portfolio.example.test/api/identity/portfolio/auth/callback',
+            'status' => 'active',
+        ]);
+        config()->set('identity.hosted_applications.internal_token', 'hosted-application-test-token');
+
+        $this->postJson('/api/v1/identity/auth/logout/intent', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'hosted_application' => 'portfolio',
+            'return_to' => 'https://attacker.example',
+        ])->assertUnprocessable();
+
+        $intent = $this->postJson('/api/v1/identity/auth/logout/intent', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'hosted_application' => 'portfolio',
+            'return_to' => '/auth/login',
+        ])->assertCreated()->json('data.intent');
+
+        $consume = fn () => $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->postJson('/api/v1/identity/hosted-applications/portfolio/auth/logout/intent/consume', ['intent' => $intent]);
+
+        $consume()->assertOk()->assertJsonPath('data.redirect_url', 'https://portfolio.example.test/auth/login');
+        $consume()->assertUnauthorized();
+
+        $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->postJson('/api/v1/identity/hosted-applications/portfolio/auth/logout/intent/consume', [
+                'intent' => Str::random(96),
+            ])->assertUnauthorized();
+
+        $expired = $this->postJson('/api/v1/identity/auth/logout/intent', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'hosted_application' => 'portfolio',
+            'return_to' => '/auth/login',
+        ])->assertCreated()->json('data.intent');
+        IdentityLogoutIntent::query()->where('intent_hash', hash('sha256', $expired))
+            ->update(['expires_at' => now()->subSecond()]);
+        $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->postJson('/api/v1/identity/hosted-applications/portfolio/auth/logout/intent/consume', [
+                'intent' => $expired,
+            ])->assertUnauthorized();
+    }
+
+    public function test_intent_creation_throttles_are_isolated_from_other_api_traffic(): void
+    {
+        [, $project, $client, $secret] = $this->identityFixture();
+        IdentityHostedApplication::query()->create([
+            'project_id' => $project->id,
+            'primary_client_id' => $client->id,
+            'key' => 'job-tracker',
+            'name' => 'Job Tracker',
+            'application_url' => 'https://portfolio.example.test/dashboard',
+            'callback_url' => 'https://portfolio.example.test/api/identity/job-tracker/auth/callback',
+            'status' => 'active',
+        ]);
+
+        $clientCredentials = [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+        ];
+
+        for ($attempt = 0; $attempt < 30; $attempt++) {
+            $this->postJson('/api/v1/identity/auth/context', $clientCredentials)
+                ->assertOk();
+        }
+
+        $this->postJson('/api/v1/identity/auth/authorization/intent', [
+            ...$clientCredentials,
+            'hosted_application' => 'job-tracker',
+            'state' => Str::random(48),
+            'demo_account_enabled' => false,
+        ])->assertCreated();
+
+        $this->postJson('/api/v1/identity/auth/logout/intent', [
+            ...$clientCredentials,
+            'hosted_application' => 'job-tracker',
+            'return_to' => '/en/auth/login',
+        ])->assertCreated();
+    }
+
+    public function test_authorization_intent_carries_the_client_bound_demo_policy_once(): void
+    {
+        [, $project, $client, $secret] = $this->identityFixture();
+        $sandboxProject = IdentityProject::query()->create([
+            'name' => 'Portfolio sandbox',
+            'slug' => 'portfolio-sandbox-'.Str::random(6),
+            'status' => 'active',
+            'mode' => 'sandbox',
+            'sandbox_ttl_minutes' => 60,
+            'registration_mode' => 'invite_only',
+        ]);
+        $sandboxSecret = Str::random(64);
+        $sandboxClient = IdentityProjectClient::query()->create([
+            'project_id' => $sandboxProject->id,
+            'name' => 'Portfolio sandbox BFF',
+            'secret_hash' => hash('sha256', $sandboxSecret),
+            'secret_prefix' => Str::substr($sandboxSecret, 0, 8),
+            'status' => 'active',
+        ]);
+        IdentityHostedApplication::query()->create([
+            'project_id' => $project->id,
+            'primary_client_id' => $client->id,
+            'sandbox_client_id' => $sandboxClient->id,
+            'key' => 'portfolio-auth',
+            'name' => 'Portfolio Auth',
+            'application_url' => 'https://portfolio.example.test',
+            'callback_url' => 'https://portfolio.example.test/api/identity/portfolio/auth/callback',
+            'status' => 'active',
+        ]);
+        config()->set('identity.hosted_applications.internal_token', 'hosted-application-test-token');
+        $state = Str::random(48);
+
+        $intent = $this->postJson('/api/v1/identity/auth/authorization/intent', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'hosted_application' => 'portfolio-auth',
+            'state' => $state,
+            'demo_account_enabled' => true,
+        ])->assertCreated()->json('data.intent');
+
+        $consume = fn () => $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->postJson('/api/v1/identity/hosted-applications/portfolio-auth/auth/authorization/intent/consume', [
+                'intent' => $intent,
+            ]);
+
+        $consume()->assertOk()
+            ->assertJsonPath('data.state', $state)
+            ->assertJsonPath('data.features.demo_account', true);
+        $consume()->assertUnauthorized();
+
+        $disabledIntent = $this->postJson('/api/v1/identity/auth/authorization/intent', [
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'hosted_application' => 'portfolio-auth',
+            'state' => Str::random(48),
+            'demo_account_enabled' => false,
+        ])->assertCreated()->json('data.intent');
+
+        $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->postJson('/api/v1/identity/hosted-applications/portfolio-auth/auth/authorization/intent/consume', [
+                'intent' => $disabledIntent,
+            ])->assertOk()->assertJsonPath('data.features.demo_account', false);
+
+        $withoutSandboxSecret = Str::random(64);
+        $withoutSandboxClient = IdentityProjectClient::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Portfolio without sandbox BFF',
+            'secret_hash' => hash('sha256', $withoutSandboxSecret),
+            'secret_prefix' => Str::substr($withoutSandboxSecret, 0, 8),
+            'status' => 'active',
+        ]);
+        IdentityHostedApplication::query()->create([
+            'project_id' => $project->id,
+            'primary_client_id' => $withoutSandboxClient->id,
+            'key' => 'portfolio-without-sandbox',
+            'name' => 'Portfolio without sandbox',
+            'application_url' => 'https://portfolio.example.test',
+            'callback_url' => 'https://portfolio.example.test/api/identity/portfolio/auth/callback',
+            'status' => 'active',
+        ]);
+        $unavailableIntent = $this->postJson('/api/v1/identity/auth/authorization/intent', [
+            'client_id' => $withoutSandboxClient->id,
+            'client_secret' => $withoutSandboxSecret,
+            'hosted_application' => 'portfolio-without-sandbox',
+            'state' => Str::random(48),
+            'demo_account_enabled' => true,
+        ])->assertCreated()->json('data.intent');
+
+        $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->postJson('/api/v1/identity/hosted-applications/portfolio-without-sandbox/auth/authorization/intent/consume', [
+                'intent' => $unavailableIntent,
+            ])->assertOk()->assertJsonPath('data.features.demo_account', false);
+
+        $this->assertSame(3, IdentityAuthorizationIntent::query()->count());
+    }
+
+    public function test_account_portal_intent_still_authorizes_entry_without_authenticating_the_hosted_session(): void
+    {
+        [$user, $project, $client, $secret] = $this->identityFixture();
+        $login = $this->login($user, $project, $client, $secret);
+        IdentityHostedApplication::query()->create([
+            'project_id' => $project->id,
+            'primary_client_id' => $client->id,
+            'key' => 'account-portal',
+            'name' => 'Account portal',
+            'application_url' => 'https://portfolio.example.test',
+            'callback_url' => 'https://portfolio.example.test/api/identity/account-portal/auth/callback',
+            'status' => 'active',
+        ]);
+        config()->set('identity.hosted_applications.internal_token', 'hosted-application-test-token');
+
+        $intent = $this->withToken($login['access_token'])
+            ->postJson('/api/v1/identity/auth/account/intent', [
+                'client_id' => $client->id,
+                'client_secret' => $secret,
+                'hosted_application' => 'account-portal',
+            ])->assertCreated()->json('data.intent');
+
+        $this->withHeader('X-Internal-Token', 'hosted-application-test-token')
+            ->postJson('/api/v1/identity/hosted-applications/account-portal/auth/account/intent/consume', [
+                'intent' => $intent,
+            ])->assertOk()->assertJsonPath('data.authorized', true);
     }
 
     public function test_public_project_registration_assigns_the_default_role(): void
@@ -443,6 +675,30 @@ final class IdentityAccessServiceTest extends TestCase
         $this->assertDatabaseCount('identity_project_clients', 1);
     }
 
+    public function test_bootstrap_accepts_stable_console_credentials_and_is_idempotent_when_requested(): void
+    {
+        $clientId = '02e92e58-0e50-4681-9d57-b122cac61b77';
+        $clientSecret = 'stable-local-console-client-secret-1234567890';
+        $arguments = [
+            'email' => 'owner@example.com',
+            '--name' => 'Owner',
+            '--password' => 'strong-password-123',
+            '--client-id' => $clientId,
+            '--client-secret' => $clientSecret,
+            '--if-needed' => true,
+        ];
+
+        $this->artisan('identity:bootstrap', $arguments)->assertSuccessful();
+        $this->artisan('identity:bootstrap', $arguments)->assertSuccessful();
+
+        $this->assertDatabaseCount('users', 1);
+        $this->assertDatabaseCount('identity_project_clients', 1);
+        $this->assertDatabaseHas('identity_project_clients', [
+            'id' => $clientId,
+            'secret_hash' => hash('sha256', $clientSecret),
+        ]);
+    }
+
     public function test_client_from_another_project_cannot_introspect_a_token(): void
     {
         [$user, $project, $client, $secret] = $this->identityFixture();
@@ -546,6 +802,118 @@ final class IdentityAccessServiceTest extends TestCase
         ]);
     }
 
+    public function test_system_administrator_can_schedule_and_cancel_project_deletion(): void
+    {
+        [$administrator, $project, $client, $secret] = $this->identityFixture(true);
+        $administrator->forceFill(['is_system_admin' => true])->save();
+        $accessToken = $this->login($administrator, $project, $client, $secret)['access_token'];
+
+        $projectId = $this->withToken($accessToken)
+            ->postJson('/api/v1/identity/projects', [
+                'name' => 'Disposable Project',
+                'slug' => 'disposable-project',
+            ])
+            ->assertCreated()
+            ->json('data.id');
+
+        $this->withToken($accessToken)
+            ->deleteJson("/api/v1/identity/projects/{$projectId}", ['confirmation' => 'disposable-project'])
+            ->assertAccepted()
+            ->assertJsonPath('data.status', 'pending_deletion')
+            ->assertJsonPath('data.deletion_scheduled_at', fn (?string $value): bool => $value !== null);
+        $this->assertDatabaseHas('identity_projects', ['id' => $projectId, 'status' => 'pending_deletion']);
+
+        $this->withToken($accessToken)
+            ->patchJson("/api/v1/identity/projects/{$projectId}/environment", [
+                'mode' => 'sandbox',
+                'sandbox_ttl_minutes' => 60,
+            ])
+            ->assertConflict();
+
+        $this->withToken($accessToken)
+            ->postJson("/api/v1/identity/projects/{$projectId}/deletion/cancel")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'active');
+        $this->assertDatabaseHas('identity_projects', ['id' => $projectId, 'status' => 'active']);
+    }
+
+    public function test_system_administrator_can_suspend_a_project_and_revoke_its_sessions(): void
+    {
+        [$administrator, $project, $client, $secret] = $this->identityFixture(true);
+        $administrator->forceFill(['is_system_admin' => true])->save();
+        $session = $this->login($administrator, $project, $client, $secret);
+        $accessToken = $session['access_token'];
+
+        $this->withToken($accessToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/suspension", ['confirmation' => $project->slug])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'suspended');
+
+        $this->assertDatabaseHas('identity_projects', ['id' => $project->id, 'status' => 'suspended']);
+        $this->assertNull(PersonalAccessToken::findToken($accessToken));
+        $this->assertDatabaseHas('identity_refresh_tokens', [
+            'project_id' => $project->id,
+            'token_hash' => hash('sha256', $session['refresh_token']),
+        ]);
+        $this->assertNotNull(
+            IdentityRefreshToken::query()
+                ->where('project_id', $project->id)
+                ->value('revoked_at'),
+        );
+
+        $this->postJson('/api/v1/identity/auth/login', [
+            'project' => $project->slug,
+            'client_id' => $client->id,
+            'client_secret' => $secret,
+            'email' => $administrator->email,
+            'password' => 'correct-password',
+        ])->assertUnauthorized();
+    }
+
+    public function test_project_administrator_cannot_suspend_a_project(): void
+    {
+        [$administrator, $project, $client, $secret] = $this->identityFixture(true);
+        $accessToken = $this->login($administrator, $project, $client, $secret)['access_token'];
+
+        $this->withToken($accessToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/suspension", ['confirmation' => $project->slug])
+            ->assertForbidden();
+    }
+
+    public function test_project_administrator_can_use_catalog_items_created_by_a_system_administrator(): void
+    {
+        [$administrator, $project, $client, $secret] = $this->identityFixture(true);
+        $administrator->forceFill(['is_system_admin' => true])->save();
+        $accessToken = $this->login($administrator, $project, $client, $secret)['access_token'];
+
+        $permission = $this->withToken($accessToken)
+            ->postJson('/api/v1/identity/project-access-catalog/permissions', [
+                'key' => 'documents.read', 'name' => 'Read documents',
+            ])->assertCreated()->json('data');
+        $role = $this->withToken($accessToken)
+            ->postJson('/api/v1/identity/project-access-catalog/roles', [
+                'name' => 'Reader', 'slug' => 'reader', 'permission_ids' => [$permission['id']],
+            ])->assertCreated()->json('data');
+
+        $administrator->forceFill(['is_system_admin' => false])->save();
+        $this->withToken($accessToken)
+            ->getJson('/api/v1/identity/project-access-catalog')
+            ->assertOk()
+            ->assertJsonPath('data.roles.0.id', $role['id']);
+
+        $this->withToken($accessToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/access-catalog/import", [
+                'permission_ids' => [], 'role_ids' => [$role['id']],
+            ])->assertOk();
+
+        $this->assertDatabaseHas('identity_project_permissions', [
+            'project_id' => $project->id, 'key' => 'documents.read', 'catalog_permission_id' => $permission['id'], 'catalog_origin' => 'imported',
+        ]);
+        $this->assertDatabaseHas('identity_project_roles', [
+            'project_id' => $project->id, 'slug' => 'reader', 'catalog_role_id' => $role['id'], 'catalog_origin' => 'imported',
+        ]);
+    }
+
     public function test_client_and_webhook_lifecycle_writes_preserve_the_public_api_contract(): void
     {
         [$administrator, $project, $client, $secret] = $this->identityFixture(true);
@@ -631,6 +999,79 @@ final class IdentityAccessServiceTest extends TestCase
         $this->assertDatabaseMissing('identity_webhook_endpoints', [
             'id' => $createdWebhook['id'],
         ]);
+    }
+
+    public function test_project_administrator_can_delete_a_client_without_losing_project_permissions(): void
+    {
+        [$administrator, $project, $managementClient, $managementSecret] = $this->identityFixture(true);
+        $managementToken = $this->login($administrator, $project, $managementClient, $managementSecret)['access_token'];
+        $victim = $this->withToken($managementToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/clients", ['name' => 'Retired API'])
+            ->assertCreated()
+            ->json('data');
+        $victimClient = IdentityProjectClient::query()->findOrFail($victim['id']);
+        $victimToken = $this->login($administrator, $project, $victimClient, $victim['client_secret'])['access_token'];
+        $permission = IdentityProjectPermission::query()->create([
+            'project_id' => $project->id,
+            'source_client_id' => $victimClient->id,
+            'key' => 'documents.read',
+            'name' => 'Read documents',
+            'source' => 'manifest',
+            'status' => 'active',
+        ]);
+        $role = IdentityProjectRole::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Reader',
+            'slug' => 'reader',
+        ]);
+        $role->permissions()->attach($permission);
+
+        $this->withToken($managementToken)
+            ->deleteJson("/api/v1/identity/projects/{$project->id}/clients/{$victimClient->id}", ['confirmation' => 'Retired API'])
+            ->assertOk();
+
+        $this->assertDatabaseMissing('identity_project_clients', ['id' => $victimClient->id]);
+        $this->assertNull(PersonalAccessToken::findToken($victimToken));
+        $this->assertDatabaseHas('identity_project_permissions', [
+            'id' => $permission->id,
+            'source_client_id' => null,
+            'source' => 'manual',
+            'status' => 'active',
+        ]);
+        $this->assertDatabaseHas('identity_project_role_permission', [
+            'role_id' => $role->id,
+            'permission_id' => $permission->id,
+        ]);
+
+        $replacement = $this->withToken($managementToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/clients", ['name' => 'Retired API'])
+            ->assertCreated()
+            ->json('data');
+        $this->assertNotSame($victimClient->id, $replacement['id']);
+    }
+
+    public function test_client_deletion_is_blocked_when_a_hosted_application_uses_it(): void
+    {
+        [$administrator, $project, $managementClient, $managementSecret] = $this->identityFixture(true);
+        $managementToken = $this->login($administrator, $project, $managementClient, $managementSecret)['access_token'];
+        $client = $this->withToken($managementToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/clients", ['name' => 'Hosted API'])
+            ->assertCreated()
+            ->json('data');
+        IdentityHostedApplication::query()->create([
+            'project_id' => $project->id,
+            'primary_client_id' => $client['id'],
+            'key' => 'hosted-api',
+            'name' => 'Hosted API',
+            'application_url' => 'https://hosted.example.com',
+            'callback_url' => 'https://hosted.example.com/callback',
+            'status' => 'active',
+        ]);
+
+        $this->withToken($managementToken)
+            ->deleteJson("/api/v1/identity/projects/{$project->id}/clients/{$client['id']}", ['confirmation' => 'Hosted API'])
+            ->assertConflict();
+        $this->assertDatabaseHas('identity_project_clients', ['id' => $client['id']]);
     }
 
     public function test_project_administrator_can_manage_a_hosted_application_and_the_nuxt_host_can_resolve_it(): void
@@ -895,6 +1336,198 @@ final class IdentityAccessServiceTest extends TestCase
         $this->assertDatabaseMissing('identity_project_memberships', [
             'id' => $membership->id,
         ]);
+    }
+
+    public function test_project_administrator_can_delete_unused_roles_and_permissions(): void
+    {
+        [$administrator, $project, $client, $secret, $membership] = $this->identityFixture(true);
+        $accessToken = $this->login($administrator, $project, $client, $secret)['access_token'];
+        $role = $this->withToken($accessToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/roles", [
+                'name' => 'Temporary editor',
+                'slug' => 'temporary-editor',
+            ])
+            ->assertCreated()
+            ->json('data');
+        $permission = $this->withToken($accessToken)
+            ->postJson("/api/v1/identity/projects/{$project->id}/permissions", [
+                'key' => 'temporary.edit',
+                'name' => 'Temporary edit',
+            ])
+            ->assertCreated()
+            ->json('data');
+        $catalogRole = IdentityAccessCatalogRole::query()->create([
+            'name' => 'Temporary editor',
+            'slug' => 'temporary-editor',
+            'status' => 'active',
+            'version' => 1,
+        ]);
+        $catalogPermission = IdentityAccessCatalogPermission::query()->create([
+            'key' => 'temporary.edit',
+            'name' => 'Temporary edit',
+            'status' => 'active',
+            'version' => 1,
+        ]);
+        IdentityProjectRole::query()->findOrFail($role['id'])->forceFill([
+            'catalog_role_id' => $catalogRole->id,
+            'catalog_version' => 1,
+            'catalog_origin' => 'imported',
+        ])->save();
+        IdentityProjectPermission::query()->findOrFail($permission['id'])->forceFill([
+            'source' => 'catalog',
+            'catalog_permission_id' => $catalogPermission->id,
+            'catalog_version' => 1,
+            'catalog_origin' => 'imported',
+        ])->save();
+        IdentityProjectRole::query()->findOrFail($role['id'])->permissions()->attach($permission['id']);
+
+        $this->withToken($accessToken)
+            ->deleteJson("/api/v1/identity/projects/{$project->id}/roles/{$role['id']}", [
+                'confirmation' => 'temporary-editor',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.message', 'Role deleted.');
+        $this->assertDatabaseMissing('identity_project_roles', ['id' => $role['id']]);
+
+        $authorizationVersion = $membership->fresh()->authorization_version;
+        $this->withToken($accessToken)
+            ->deleteJson("/api/v1/identity/projects/{$project->id}/permissions/{$permission['id']}", [
+                'confirmation' => 'temporary.edit',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.message', 'Permission deleted.');
+        $this->assertDatabaseMissing('identity_project_permissions', ['id' => $permission['id']]);
+        $this->assertDatabaseHas('identity_access_catalog_roles', ['id' => $catalogRole->id]);
+        $this->assertDatabaseHas('identity_access_catalog_permissions', ['id' => $catalogPermission->id]);
+        $this->assertSame($authorizationVersion + 1, $membership->fresh()->authorization_version);
+        $this->assertDatabaseHas('identity_audit_events', ['event' => 'role.deleted', 'target_id' => $role['id']]);
+        $this->assertDatabaseHas('identity_audit_events', ['event' => 'permission.deleted', 'target_id' => $permission['id']]);
+    }
+
+    public function test_role_deletion_reports_membership_and_registration_dependencies(): void
+    {
+        [$administrator, $project, $client, $secret, $membership] = $this->identityFixture(true);
+        $accessToken = $this->login($administrator, $project, $client, $secret)['access_token'];
+        $role = IdentityProjectRole::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Default member',
+            'slug' => 'default-member',
+        ]);
+        $membership->roles()->attach($role);
+        $project->forceFill(['registration_role_id' => $role->id])->save();
+
+        $this->withToken($accessToken)
+            ->deleteJson("/api/v1/identity/projects/{$project->id}/roles/{$role->id}", [
+                'confirmation' => 'default-member',
+            ])
+            ->assertConflict()
+            ->assertJsonPath('errors.public.code', 'identity.access_dependency_conflict')
+            ->assertJsonPath('errors.public.resource_type', 'role')
+            ->assertJsonPath('errors.public.resource_id', $role->id)
+            ->assertJsonPath('errors.public.dependencies.registration_default', true)
+            ->assertJsonPath('errors.public.dependencies.memberships.0.id', $membership->id);
+        $this->assertDatabaseHas('identity_project_roles', ['id' => $role->id]);
+    }
+
+    public function test_permission_deletion_reports_grants_and_respects_manifest_ownership(): void
+    {
+        [$administrator, $project, $client, $secret, $membership] = $this->identityFixture(true);
+        $accessToken = $this->login($administrator, $project, $client, $secret)['access_token'];
+        $permission = IdentityProjectPermission::query()->create([
+            'project_id' => $project->id,
+            'key' => 'documents.archive',
+            'name' => 'Archive documents',
+            'source' => 'manual',
+            'status' => 'active',
+        ]);
+        $role = IdentityProjectRole::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Archivist',
+            'slug' => 'archivist',
+        ]);
+        $role->permissions()->attach($permission);
+        $membership->permissions()->attach($permission);
+
+        $this->withToken($accessToken)
+            ->deleteJson("/api/v1/identity/projects/{$project->id}/permissions/{$permission->id}", [
+                'confirmation' => 'documents.archive',
+            ])
+            ->assertConflict()
+            ->assertJsonPath('errors.public.code', 'identity.access_dependency_conflict')
+            ->assertJsonPath('errors.public.dependencies.roles.0.id', $role->id)
+            ->assertJsonPath('errors.public.dependencies.memberships.0.id', $membership->id);
+
+        $manifestPermission = IdentityProjectPermission::query()->create([
+            'project_id' => $project->id,
+            'source_client_id' => $client->id,
+            'key' => 'manifest.owned',
+            'name' => 'Manifest owned',
+            'source' => 'manifest',
+            'status' => 'active',
+        ]);
+        $this->withToken($accessToken)
+            ->deleteJson("/api/v1/identity/projects/{$project->id}/permissions/{$manifestPermission->id}", [
+                'confirmation' => 'manifest.owned',
+            ])
+            ->assertConflict()
+            ->assertJsonPath('errors.public.dependencies.manifest_client.id', $client->id);
+
+        $manifestPermission->forceFill(['status' => 'stale'])->save();
+        $this->withToken($accessToken)
+            ->deleteJson("/api/v1/identity/projects/{$project->id}/permissions/{$manifestPermission->id}", [
+                'confirmation' => 'manifest.owned',
+            ])
+            ->assertOk();
+        $this->assertDatabaseMissing('identity_project_permissions', ['id' => $manifestPermission->id]);
+    }
+
+    public function test_access_deletion_validates_confirmation_scope_and_project_administration(): void
+    {
+        [$administrator, $project, $client, $secret] = $this->identityFixture(true);
+        $accessToken = $this->login($administrator, $project, $client, $secret)['access_token'];
+        $role = IdentityProjectRole::query()->create([
+            'project_id' => $project->id,
+            'name' => 'Protected role',
+            'slug' => 'protected-role',
+        ]);
+
+        $this->withToken($accessToken)
+            ->deleteJson("/api/v1/identity/projects/{$project->id}/roles/{$role->id}", [
+                'confirmation' => 'wrong-role',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.public.code', 'validation.failed')
+            ->assertJsonPath('errors.public.errors.confirmation.0', 'Type the exact role slug to confirm deletion.');
+
+        [, $otherProject] = $this->identityFixture();
+        $this->withToken($accessToken)
+            ->deleteJson("/api/v1/identity/projects/{$project->id}/roles/".IdentityProjectRole::query()->create([
+                'project_id' => $otherProject->id,
+                'name' => 'Other role',
+                'slug' => 'other-role',
+            ])->id, ['confirmation' => 'other-role'])
+            ->assertNotFound();
+
+        [$member, $memberProject, $memberClient, $memberSecret] = $this->identityFixture();
+        $memberToken = $this->login($member, $memberProject, $memberClient, $memberSecret)['access_token'];
+        $memberProjectRole = IdentityProjectRole::query()->create([
+            'project_id' => $memberProject->id,
+            'name' => 'Member project role',
+            'slug' => 'member-project-role',
+        ]);
+        $this->withToken($memberToken)
+            ->deleteJson("/api/v1/identity/projects/{$memberProject->id}/roles/{$memberProjectRole->id}", [
+                'confirmation' => 'member-project-role',
+            ])
+            ->assertForbidden();
+
+        $project->forceFill(['status' => 'suspended'])->save();
+        $this->withToken($accessToken)
+            ->deleteJson("/api/v1/identity/projects/{$project->id}/roles/{$role->id}", [
+                'confirmation' => 'protected-role',
+            ])
+            ->assertConflict();
+        $this->assertDatabaseHas('identity_project_roles', ['id' => $role->id]);
     }
 
     public function test_permission_manifest_sync_reactivates_current_and_stales_removed_permissions(): void

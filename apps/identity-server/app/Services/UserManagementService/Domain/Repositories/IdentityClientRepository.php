@@ -16,4 +16,6 @@ interface IdentityClientRepository
     ): ?IdentityClient;
 
     public function save(IdentityClient $client): void;
+
+    public function remove(IdentityClient $client): void;
 }

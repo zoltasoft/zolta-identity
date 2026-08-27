@@ -18,7 +18,6 @@ class AuthenticatedUserMapper
             'email' => $user->getEmail()->get('address'),
             'email_verified_at' => $user->getEmail()->get('verifiedAt')?->format('Y-m-d H:i:s'),
             'username' => (string) $user->getUsername()->get('username'),
-            'role_id' => (string) $user->getRoleId()->get(),
             'credit' => $user->getCredit()->get()['amount'],
             'terms' => $user->getTerms()->value,
         ];

@@ -10,25 +10,50 @@ use App\Services\UserManagementService\Domain\ValueObjects\IdentityClientId;
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityProjectId;
 use App\Services\UserManagementService\Infrastructure\Mappers\IdentityClientMapper;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectClient;
+use Zolta\Cqrs\Repositories\BaseRepository;
+use Zolta\Cqrs\Repositories\Query\RepositoryConstraint;
+use Zolta\Cqrs\Repositories\Query\RepositoryQuery;
 
-final class EloquentIdentityClientRepository implements IdentityClientRepository
+final class EloquentIdentityClientRepository extends BaseRepository implements IdentityClientRepository
 {
+    protected array $allowedConstraintFields = ['id', 'project_id'];
+
+    protected bool $enableReadCaching = false;
+
+    protected function modelClass(): string
+    {
+        return IdentityProjectClient::class;
+    }
+
     public function findForProject(
         IdentityProjectId $projectId,
         IdentityClientId $clientId,
     ): ?DomainIdentityClient {
-        $model = IdentityProjectClient::query()
-            ->where('project_id', $projectId->toString())
-            ->find($clientId->toString());
+        $model = $this->first(RepositoryQuery::fromOptions([])->withConstraints(
+            RepositoryConstraint::equals('id', $clientId->toString()),
+            RepositoryConstraint::equals('project_id', $projectId->toString()),
+        ));
 
-        return $model ? IdentityClientMapper::toDomain($model) : null;
+        return $model instanceof IdentityProjectClient ? IdentityClientMapper::toDomain($model) : null;
     }
 
     public function save(DomainIdentityClient $client): void
     {
-        $model = IdentityProjectClient::query()->find($client->id()->toString())
-            ?? new IdentityProjectClient;
+        $existing = $this->show($client->id()->toString());
+        $model = $existing instanceof IdentityProjectClient ? $existing : new IdentityProjectClient;
 
-        IdentityClientMapper::fill($model, $client)->save();
+        $model = IdentityClientMapper::fill($model, $client);
+        $existing instanceof IdentityProjectClient ? $this->update($model) : $this->create($model);
+    }
+
+    public function remove(DomainIdentityClient $client): void
+    {
+        $model = $this->findForProject($client->projectId(), $client->id());
+        if ($model !== null) {
+            $persisted = $this->show($model->id()->toString());
+            if ($persisted instanceof IdentityProjectClient) {
+                parent::delete($persisted);
+            }
+        }
     }
 }

@@ -8,17 +8,15 @@ final class ListUsersRequest extends BaseRequest
 {
     public function authorize(): bool
     {
-        $this->authorizeAction(['admin.access']);
-
         return true;
     }
 
     public function queryOptions(): array
     {
         return [
-            'include' => ['role'],
-            'filters' => ['email', 'username', 'role'],
-            'sorts' => ['email', 'username', 'created_at', 'role.id'],
+            'include' => ['socialAccounts'],
+            'filters' => ['email', 'username'],
+            'sorts' => ['email', 'username', 'created_at'],
             'strict' => true,
         ];
     }

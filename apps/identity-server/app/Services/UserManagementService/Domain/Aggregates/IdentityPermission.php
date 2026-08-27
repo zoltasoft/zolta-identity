@@ -126,6 +126,17 @@ final class IdentityPermission extends AggregateRoot
         $this->touch();
     }
 
+    public function convertToManual(): void
+    {
+        if ($this->source === IdentityPermissionSource::Manual) {
+            return;
+        }
+
+        $this->sourceClientId = null;
+        $this->source = IdentityPermissionSource::Manual;
+        $this->touch();
+    }
+
     public function id(): IdentityPermissionId
     {
         return $this->id;

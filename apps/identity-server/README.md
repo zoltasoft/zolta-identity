@@ -1,6 +1,6 @@
 # Identity API
 
-This Laravel 13 application is the independently deployable API for [ZoltaSoft's Laravel Zolta Identity](https://github.com/zoltasoft/zolta-identity). Its `UserManagementService` slice provides authentication and account lifecycle, global user/role/permission administration, social accounts, project access management, confidential clients, rotating sessions, audit, and consumer introspection.
+This Laravel 13 application is the independently deployable API for [ZoltaSoft's Laravel Zolta Identity](https://github.com/zoltasoft/zolta-identity). Its `UserManagementService` slice provides authentication and account lifecycle, installation-user administration, social accounts, project access management, a reusable access catalog, confidential clients, rotating sessions, audit, and consumer introspection.
 
 ## Local setup
 
@@ -21,9 +21,9 @@ Requirements are PHP 8.3+, Composer 2, and SQLite, MySQL, or PostgreSQL. For a r
 ## API groups
 
 - `/api/auth/*`: authentication and account-lifecycle endpoints
-- `/api/users/*`, `/api/roles/*`, `/api/permissions/*`: installation-level administration protected by Laravel system-administrator enforcement
+- `/api/users/*`: installation-level user administration protected by Laravel system-administrator enforcement
 - `/api/v1/identity/auth/*`: register, login, credentialless sandbox sessions, refresh, introspect, current identity, sessions, and logout
-- `/api/v1/identity/projects/*`: projects, live/sandbox settings, clients, permission manifests, roles, permissions, invitations, memberships, cleanup webhooks, and audit events
+- `/api/v1/identity/projects/*`: projects, live/sandbox settings, clients, permission manifests, roles, permissions, reusable access catalog, invitations, memberships, cleanup webhooks, and audit events
 - `/api/v1/identity/users/*`: installation-level user administration
 - `/api/v1/identity/invitations/accept`: invitation acceptance
 

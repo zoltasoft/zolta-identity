@@ -6,7 +6,6 @@ namespace Tests\Feature;
 
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -25,6 +24,9 @@ final class AuthenticationLoginTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.user.id', $user->id)
             ->assertJsonPath('data.user.email', $user->email)
+            ->assertJsonMissingPath('data.user.role')
+            ->assertJsonMissingPath('data.user.role_id')
+            ->assertJsonMissingPath('data.user.permissions')
             ->assertJsonStructure(['data' => ['access_token']]);
 
         $this->assertDatabaseCount('personal_access_tokens', 1);
@@ -54,7 +56,6 @@ final class AuthenticationLoginTest extends TestCase
             'username' => 'login-user',
             'email' => 'login-user@example.com',
             'password' => 'correct-password',
-            'role_id' => (string) DB::table('roles')->value('id'),
             'terms' => 'accepted',
             'email_verified_at' => now(),
         ]);

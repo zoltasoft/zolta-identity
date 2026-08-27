@@ -17,5 +17,5 @@ interface IdentityWebhookRepository
 
     public function save(IdentityWebhook $webhook): void;
 
-    public function delete(IdentityWebhook $webhook): void;
+    public function remove(IdentityWebhook $webhook): void;
 }

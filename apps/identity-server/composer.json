@@ -70,7 +70,7 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "php artisan serve --host=127.0.0.1 --port=8100"
+            "npx concurrently \"php artisan queue:work --tries=3 --timeout=60\" \"php artisan serve --host=127.0.0.1 --port=8100\" \"php artisan schedule:work\""
         ],
         "test": [
             "@php artisan config:clear --ansi",

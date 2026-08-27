@@ -25,6 +25,8 @@ final class IdentityProject extends AggregateRoot
         private IdentityProjectRegistrationMode $registrationMode,
         private ?string $registrationRoleId,
         private bool $emailVerificationRequired,
+        private ?DateTimeImmutable $deletionScheduledAt,
+        private ?IdentityProjectStatus $deletionPreviousStatus,
         private readonly DateTimeImmutable $createdAt,
         private DateTimeImmutable $updatedAt,
     ) {
@@ -46,6 +48,8 @@ final class IdentityProject extends AggregateRoot
             IdentityProjectRegistrationMode::InviteOnly,
             null,
             true,
+            null,
+            null,
             $now,
             $now,
         );
@@ -62,6 +66,8 @@ final class IdentityProject extends AggregateRoot
         IdentityProjectRegistrationMode $registrationMode,
         ?string $registrationRoleId,
         bool $emailVerificationRequired,
+        ?DateTimeImmutable $deletionScheduledAt,
+        ?IdentityProjectStatus $deletionPreviousStatus,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt,
     ): self {
@@ -76,6 +82,8 @@ final class IdentityProject extends AggregateRoot
             $registrationMode,
             $registrationRoleId,
             $emailVerificationRequired,
+            $deletionScheduledAt,
+            $deletionPreviousStatus,
             $createdAt,
             $updatedAt,
         );
@@ -111,6 +119,66 @@ final class IdentityProject extends AggregateRoot
         $this->touch();
     }
 
+    public function scheduleDeletion(DateTimeImmutable $scheduledAt): void
+    {
+        if ($this->status === IdentityProjectStatus::PendingDeletion) {
+            return;
+        }
+
+        $this->deletionPreviousStatus = $this->status;
+        $this->status = IdentityProjectStatus::PendingDeletion;
+        $this->deletionScheduledAt = $scheduledAt;
+        $this->touch();
+    }
+
+    public function suspend(): bool
+    {
+        if ($this->status === IdentityProjectStatus::Suspended) {
+            return false;
+        }
+
+        if ($this->status === IdentityProjectStatus::PendingDeletion) {
+            throw new InvalidIdentityProjectConfigurationException(
+                'A project scheduled for deletion must have its deletion cancelled before it can be suspended.',
+            );
+        }
+
+        $this->status = IdentityProjectStatus::Suspended;
+        $this->touch();
+
+        return true;
+    }
+
+    public function reactivate(): bool
+    {
+        if ($this->status === IdentityProjectStatus::Active) {
+            return false;
+        }
+
+        if ($this->status === IdentityProjectStatus::PendingDeletion) {
+            throw new InvalidIdentityProjectConfigurationException(
+                'A project scheduled for deletion must have its deletion cancelled before it can be reactivated.',
+            );
+        }
+
+        $this->status = IdentityProjectStatus::Active;
+        $this->touch();
+
+        return true;
+    }
+
+    public function cancelDeletion(): void
+    {
+        if ($this->status !== IdentityProjectStatus::PendingDeletion || $this->deletionPreviousStatus === null) {
+            throw new InvalidIdentityProjectConfigurationException('This project is not scheduled for deletion.');
+        }
+
+        $this->status = $this->deletionPreviousStatus;
+        $this->deletionPreviousStatus = null;
+        $this->deletionScheduledAt = null;
+        $this->touch();
+    }
+
     public function id(): IdentityProjectId
     {
         return $this->id;
@@ -134,6 +202,16 @@ final class IdentityProject extends AggregateRoot
     public function status(): IdentityProjectStatus
     {
         return $this->status;
+    }
+
+    public function deletionScheduledAt(): ?DateTimeImmutable
+    {
+        return $this->deletionScheduledAt;
+    }
+
+    public function deletionPreviousStatus(): ?IdentityProjectStatus
+    {
+        return $this->deletionPreviousStatus;
     }
 
     public function mode(): IdentityProjectMode

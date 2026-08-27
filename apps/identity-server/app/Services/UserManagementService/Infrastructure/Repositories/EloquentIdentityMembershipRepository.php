@@ -11,39 +11,53 @@ use App\Services\UserManagementService\Domain\ValueObjects\IdentityProjectId;
 use App\Services\UserManagementService\Infrastructure\Mappers\IdentityMembershipMapper;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectMembership;
 use Illuminate\Support\Facades\DB;
+use Zolta\Cqrs\Repositories\BaseRepository;
+use Zolta\Cqrs\Repositories\Query\RepositoryConstraint;
+use Zolta\Cqrs\Repositories\Query\RepositoryQuery;
 use Zolta\Domain\ValueObjects\UserId;
 
-final class EloquentIdentityMembershipRepository implements IdentityMembershipRepository
+final class EloquentIdentityMembershipRepository extends BaseRepository implements IdentityMembershipRepository
 {
+    protected array $allowedConstraintFields = ['id', 'project_id', 'user_id'];
+
+    protected bool $enableReadCaching = false;
+
+    protected function modelClass(): string
+    {
+        return IdentityProjectMembership::class;
+    }
+
     public function findForProject(
         IdentityProjectId $projectId,
         IdentityMembershipId $membershipId,
     ): ?DomainIdentityMembership {
-        $model = IdentityProjectMembership::query()
-            ->where('project_id', $projectId->toString())
-            ->find($membershipId->toString());
+        $model = $this->first(RepositoryQuery::fromOptions([])->withConstraints(
+            RepositoryConstraint::equals('id', $membershipId->toString()),
+            RepositoryConstraint::equals('project_id', $projectId->toString()),
+        ));
 
-        return $model ? IdentityMembershipMapper::toDomain($model) : null;
+        return $model instanceof IdentityProjectMembership ? IdentityMembershipMapper::toDomain($model) : null;
     }
 
     public function findForProjectUser(
         IdentityProjectId $projectId,
         UserId $userId,
     ): ?DomainIdentityMembership {
-        $model = IdentityProjectMembership::query()
-            ->where('project_id', $projectId->toString())
-            ->where('user_id', $userId->toString())
-            ->first();
+        $model = $this->first(RepositoryQuery::fromOptions([])->withConstraints(
+            RepositoryConstraint::equals('project_id', $projectId->toString()),
+            RepositoryConstraint::equals('user_id', $userId->toString()),
+        ));
 
-        return $model ? IdentityMembershipMapper::toDomain($model) : null;
+        return $model instanceof IdentityProjectMembership ? IdentityMembershipMapper::toDomain($model) : null;
     }
 
     public function save(DomainIdentityMembership $membership): void
     {
         DB::transaction(function () use ($membership): void {
-            $model = IdentityProjectMembership::query()->find($membership->id()->toString())
-                ?? new IdentityProjectMembership;
-            IdentityMembershipMapper::fill($model, $membership)->save();
+            $existing = $this->show($membership->id()->toString());
+            $model = $existing instanceof IdentityProjectMembership ? $existing : new IdentityProjectMembership;
+            $model = IdentityMembershipMapper::fill($model, $membership);
+            $existing instanceof IdentityProjectMembership ? $this->update($model) : $this->create($model);
             $model->roles()->sync(
                 array_map(
                     static fn ($id): string => $id->toString(),
@@ -59,12 +73,15 @@ final class EloquentIdentityMembershipRepository implements IdentityMembershipRe
         });
     }
 
-    public function delete(DomainIdentityMembership $membership): void
+    public function remove(DomainIdentityMembership $membership): void
     {
-        IdentityProjectMembership::query()
-            ->where('project_id', $membership->projectId()->toString())
-            ->whereKey($membership->id()->toString())
-            ->delete();
+        $model = $this->first(RepositoryQuery::fromOptions([])->withConstraints(
+            RepositoryConstraint::equals('id', $membership->id()->toString()),
+            RepositoryConstraint::equals('project_id', $membership->projectId()->toString()),
+        ));
+        if ($model instanceof IdentityProjectMembership) {
+            parent::delete($model);
+        }
     }
 
     public function incrementAuthorizationVersionForProject(IdentityProjectId $projectId): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\UserManagementService\Application\Services\Identity;
 
+use App\Services\UserManagementService\Application\Commands\Identity\CancelIdentityProjectDeletion\CancelIdentityProjectDeletionCommand;
 use App\Services\UserManagementService\Application\Commands\Identity\ConfigureIdentityProjectEnvironment\ConfigureIdentityProjectEnvironmentCommand;
 use App\Services\UserManagementService\Application\Commands\Identity\ConfigureIdentityProjectRegistration\ConfigureIdentityProjectRegistrationCommand;
 use App\Services\UserManagementService\Application\Commands\Identity\CreateIdentityProject\CreateIdentityProjectCommand;
@@ -11,6 +12,9 @@ use App\Services\UserManagementService\Application\Commands\Identity\ExecuteIden
 use App\Services\UserManagementService\Application\Commands\Identity\ExecuteIdentityHostedApplication\ExecuteIdentityHostedApplicationCommand;
 use App\Services\UserManagementService\Application\Commands\Identity\ExecuteIdentityProjectAccess\ExecuteIdentityProjectAccessCommand;
 use App\Services\UserManagementService\Application\Commands\Identity\ExecuteIdentityWebhook\ExecuteIdentityWebhookCommand;
+use App\Services\UserManagementService\Application\Commands\Identity\ReactivateIdentityProject\ReactivateIdentityProjectCommand;
+use App\Services\UserManagementService\Application\Commands\Identity\ScheduleIdentityProjectDeletion\ScheduleIdentityProjectDeletionCommand;
+use App\Services\UserManagementService\Application\Commands\Identity\SuspendIdentityProject\SuspendIdentityProjectCommand;
 use App\Services\UserManagementService\Application\DTOs\Input\IdentityOperationDTO;
 use App\Services\UserManagementService\Application\Enums\Identity\IdentityClientOperation;
 use App\Services\UserManagementService\Application\Enums\Identity\IdentityHostedApplicationOperation;
@@ -64,6 +68,36 @@ final readonly class ExecuteIdentityProjectService
                 'projectId' => IdentityProjectId::fromString((string) $dto->input['project']),
                 'mode' => IdentityProjectMode::from((string) $dto->input['mode']),
                 'sandboxTtlMinutes' => (int) $dto->input['sandbox_ttl_minutes'],
+            ]);
+        }
+
+        if ($dto->operation === 'projects.destroy') {
+            return $this->execute(ScheduleIdentityProjectDeletionCommand::class, [
+                'actorUserId' => $actorUserId,
+                'projectId' => IdentityProjectId::fromString((string) $dto->input['project']),
+                'confirmation' => (string) $dto->input['confirmation'],
+            ]);
+        }
+
+        if ($dto->operation === 'projects.deletion.cancel') {
+            return $this->execute(CancelIdentityProjectDeletionCommand::class, [
+                'actorUserId' => $actorUserId,
+                'projectId' => IdentityProjectId::fromString((string) $dto->input['project']),
+            ]);
+        }
+
+        if ($dto->operation === 'projects.suspension.store') {
+            return $this->execute(SuspendIdentityProjectCommand::class, [
+                'actorUserId' => $actorUserId,
+                'projectId' => IdentityProjectId::fromString((string) $dto->input['project']),
+                'confirmation' => (string) $dto->input['confirmation'],
+            ]);
+        }
+
+        if ($dto->operation === 'projects.reactivation.store') {
+            return $this->execute(ReactivateIdentityProjectCommand::class, [
+                'actorUserId' => $actorUserId,
+                'projectId' => IdentityProjectId::fromString((string) $dto->input['project']),
             ]);
         }
 

@@ -17,7 +17,7 @@ final class IdentityProjectOperationRequest extends IdentityOperationRequest
     public function routeParams(): array
     {
         $params = [];
-        foreach (['project', 'client', 'webhook', 'role', 'membership', 'hosted_application'] as $parameter) {
+        foreach (['project', 'client', 'webhook', 'role', 'permission', 'membership', 'hosted_application'] as $parameter) {
             if ($this->route($parameter) !== null) {
                 $params[$parameter] = ['type' => 'string', 'required' => true];
             }
@@ -36,6 +36,21 @@ final class IdentityProjectOperationRequest extends IdentityOperationRequest
                 'slug' => ['required', 'alpha_dash:ascii', 'max:100', Rule::unique('identity_projects', 'slug')],
                 'description' => ['nullable', 'string', 'max:2000'],
             ],
+            'projects.destroy' => ['confirmation' => ['required', 'string', 'max:100']],
+            'projects.deletion.cancel' => [],
+            'projects.suspension.store' => ['confirmation' => ['required', 'string', 'max:100']],
+            'projects.reactivation.store' => [],
+            'project_access_catalog.permissions.store' => [
+                'key' => ['required', 'string', 'regex:/^[a-z0-9]+(?:[._:-][a-z0-9]+)*$/', 'max:160', Rule::unique('identity_access_catalog_permissions', 'key')],
+                'name' => ['nullable', 'string', 'max:255'], 'description' => ['nullable', 'string', 'max:2000'],
+            ],
+            'project_access_catalog.roles.store' => [
+                'name' => ['required', 'string', 'max:255'], 'slug' => ['required', 'alpha_dash:ascii', 'max:100', Rule::unique('identity_access_catalog_roles', 'slug')],
+                'description' => ['nullable', 'string', 'max:2000'], 'permission_ids' => ['present', 'array'], 'permission_ids.*' => ['uuid', 'distinct'],
+            ],
+            'projects.access_catalog.import' => ['permission_ids' => ['present', 'array'], 'permission_ids.*' => ['uuid', 'distinct'], 'role_ids' => ['present', 'array'], 'role_ids.*' => ['uuid', 'distinct']],
+            'projects.permissions.publish' => [],
+            'projects.roles.publish' => [],
             'projects.registration.update' => [
                 'registration_mode' => ['required', Rule::in(['invite_only', 'public'])],
                 'registration_role_id' => ['nullable', 'uuid'],
@@ -52,6 +67,7 @@ final class IdentityProjectOperationRequest extends IdentityOperationRequest
             ],
             'projects.clients.store' => ['name' => ['required', 'string', 'max:255']],
             'projects.clients.status' => ['status' => ['required', Rule::in(['active', 'disabled'])]],
+            'projects.clients.destroy' => ['confirmation' => ['required', 'string', 'max:255']],
             'projects.clients.manifest' => $this->manifestRules(),
             'projects.hosted_applications.store' => [
                 'name' => ['required', 'string', 'max:200'],
@@ -78,10 +94,16 @@ final class IdentityProjectOperationRequest extends IdentityOperationRequest
                 'slug' => ['required', 'alpha_dash:ascii', 'max:100', Rule::unique('identity_project_roles', 'slug')->where('project_id', (string) $this->route('project'))],
                 'description' => ['nullable', 'string', 'max:2000'],
             ],
+            'projects.roles.destroy' => [
+                'confirmation' => ['required', 'string', 'max:100'],
+            ],
             'projects.permissions.store' => [
                 'key' => ['required', 'string', 'regex:/^[a-z0-9]+(?:[._:-][a-z0-9]+)*$/', 'max:160', Rule::unique('identity_project_permissions', 'key')->where('project_id', (string) $this->route('project'))],
                 'name' => ['nullable', 'string', 'max:255'],
                 'description' => ['nullable', 'string', 'max:2000'],
+            ],
+            'projects.permissions.destroy' => [
+                'confirmation' => ['required', 'string', 'max:160'],
             ],
             'projects.roles.permissions' => [
                 'permission_ids' => ['present', 'array'],

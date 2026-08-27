@@ -28,7 +28,7 @@ const { data: experience } = await useAsyncData<HostedBrand | null>(
   async () => {
     if (!applicationKey.value && !clientId.value) return null
     const response = await $fetch<{ application: HostedBrand }>(
-      '/api/hosted-auth/context',
+      '/api/hosted-auth/application',
       {
         query: applicationKey.value
           ? { application: applicationKey.value }
@@ -62,7 +62,12 @@ provide('identity-auth-brand', brand)
     :class="`identity-auth-layout--${backgroundPreset}`"
     :style="brandStyle"
   >
-    <UHeader class="identity-auth-header">
+    <UHeader
+      class="identity-auth-header"
+      :ui="{
+        root: 'border-b-0'
+      }"
+    >
       <template #left>
         <div class="identity-auth-header-brand">
           <span class="identity-auth-header-logo">

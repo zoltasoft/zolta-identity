@@ -6,7 +6,6 @@ namespace App\Services\UserManagementService\Infrastructure\Services;
 
 use App\Services\UserManagementService\Application\Contracts\AccountDataEraserInterface;
 use App\Services\UserManagementService\Application\Contracts\TemporaryAccountManagerInterface;
-use App\Services\UserManagementService\Infrastructure\Models\Eloquent\Role;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
 use App\Services\UserManagementService\Infrastructure\Webhooks\IdentityWebhookPublisher;
 use Illuminate\Support\Facades\DB;
@@ -28,11 +27,6 @@ final readonly class EloquentTemporaryAccountManager implements TemporaryAccount
         }
 
         return DB::transaction(function (): array {
-            $roleId = Role::query()->where('role', 'User')->value('id');
-            if (! is_string($roleId) || $roleId === '') {
-                throw new RuntimeException('The demo user role is not configured.');
-            }
-
             $id = (string) Str::uuid();
             $suffix = Str::lower(Str::random(8));
             $password = 'Demo!'.Str::random(20);
@@ -43,7 +37,6 @@ final readonly class EloquentTemporaryAccountManager implements TemporaryAccount
                 'username' => "Portfolio Guest {$suffix}",
                 'email' => "demo-{$id}@portfolio.invalid",
                 'password' => $password,
-                'role_id' => $roleId,
                 'terms' => 'accepted',
                 'email_verified_at' => now(),
                 'is_temporary' => true,

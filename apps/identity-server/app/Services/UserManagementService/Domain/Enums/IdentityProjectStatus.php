@@ -8,4 +8,5 @@ enum IdentityProjectStatus: string
 {
     case Active = 'active';
     case Suspended = 'suspended';
+    case PendingDeletion = 'pending_deletion';
 }

@@ -121,8 +121,7 @@
     "nav": {
       "projects": "Projects",
       "users": "Users",
-      "globalRoles": "Global roles",
-      "globalPermissions": "Global permissions",
+      "accessCatalog": "Access catalog",
       "account": "My account"
     },
     "accessibility": {

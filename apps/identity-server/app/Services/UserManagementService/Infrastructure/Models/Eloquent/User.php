@@ -24,7 +24,6 @@ use Laravel\Sanctum\HasApiTokens;
  * @property string|null $backup_email
  * @property string|null $theme_preference
  * @property string|null $language_preference
- * @property string|null $role_id
  * @property float|null $credit
  * @property string|null $terms
  * @property string|null $provider_id
@@ -42,8 +41,6 @@ use Laravel\Sanctum\HasApiTokens;
  * @property string|null $avatar_url
  * @property bool $is_temporary
  * @property Carbon|null $demo_expires_at
- * @property-read Role|null $role
- * @property-read Collection<int, Permission> $permissions
  * @property-read Collection<int, SocialAccount> $socialAccounts
  */
 class User extends Authenticatable implements MustVerifyEmail
@@ -66,7 +63,6 @@ class User extends Authenticatable implements MustVerifyEmail
         'backup_email',
         'theme_preference',
         'language_preference',
-        'role_id',
         'credit',
         'terms',
         'provider_id',
@@ -133,28 +129,6 @@ class User extends Authenticatable implements MustVerifyEmail
         'locked' => 'boolean',
         'lock_expiry' => 'datetime',
     ];
-
-    public function role()
-    {
-        return $this->belongsTo(Role::class);
-    }
-
-    public function permissions()
-    {
-        return $this->belongsToMany(Permission::class, 'permission_user');
-    }
-
-    // Check for permission
-    public function hasPermission(string $permissionName): bool
-    {
-        // 1. Check role permissions
-        $rolePermission = $this->role?->permissions()->where('name', $permissionName)->exists();
-
-        // 2. Check user-specific permissions
-        $userPermission = $this->permissions()->where('name', $permissionName)->exists();
-
-        return $rolePermission || $userPermission;
-    }
 
     public function socialAccounts()
     {

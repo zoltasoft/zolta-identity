@@ -10,16 +10,24 @@ use Illuminate\Support\Str;
 final class IdentityClientProvisioner
 {
     /** @return array{0: IdentityProjectClient, 1: string} */
-    public function create(string $projectId, string $name): array
-    {
-        $secret = Str::random(64);
-        $client = IdentityProjectClient::query()->create([
+    public function create(
+        string $projectId,
+        string $name,
+        ?string $clientId = null,
+        ?string $clientSecret = null,
+    ): array {
+        $secret = $clientSecret ?? Str::random(64);
+        $client = new IdentityProjectClient([
             'project_id' => $projectId,
             'name' => $name,
             'secret_hash' => hash('sha256', $secret),
             'secret_prefix' => Str::substr($secret, 0, 8),
             'status' => 'active',
         ]);
+        if ($clientId !== null) {
+            $client->id = $clientId;
+        }
+        $client->save();
 
         return [$client, $secret];
     }

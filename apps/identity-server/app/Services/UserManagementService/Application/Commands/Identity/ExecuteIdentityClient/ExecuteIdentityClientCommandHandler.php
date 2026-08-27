@@ -29,6 +29,7 @@ final readonly class ExecuteIdentityClientCommandHandler
                 (string) $command->input['client'],
             ),
             IdentityClientOperation::SetStatus => $this->setStatus($command),
+            IdentityClientOperation::Delete => $this->delete($command),
             IdentityClientOperation::SyncPermissionManifest => $this->clients->syncPermissionManifest(
                 $command->actorUserId,
                 $command->projectId,
@@ -51,5 +52,18 @@ final readonly class ExecuteIdentityClientCommandHandler
         );
 
         return ['message' => 'Client status updated.'];
+    }
+
+    /** @return array{message: string} */
+    private function delete(ExecuteIdentityClientCommand $command): array
+    {
+        $this->clients->deleteClient(
+            $command->actorUserId,
+            $command->projectId,
+            (string) $command->input['client'],
+            (string) $command->input['confirmation'],
+        );
+
+        return ['message' => 'Client deleted.'];
     }
 }

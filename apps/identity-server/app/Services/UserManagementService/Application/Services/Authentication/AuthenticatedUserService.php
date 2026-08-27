@@ -25,11 +25,10 @@ final readonly class AuthenticatedUserService
 
         ['user' => $user] = $this->applicationService->cqrs()->run(GetUserByIdQuery::class, [
             'id' => $refreshDTO->userId,
-            'options' => ['include' => ['role', 'permissions', 'role.permissions']],
         ])->getOrFail(static fn (): RuntimeException => new RuntimeException('Authenticated user not found.'));
 
         return new AuthenticatedUserResponseDTO(
-            user: AuthenticatedUser::fromDomain($user, $user->role)
+            user: AuthenticatedUser::fromDomain($user)
         );
     }
 }

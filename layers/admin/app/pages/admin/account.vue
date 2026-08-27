@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { NavigationMenuItem, TableColumn } from '@nuxt/ui'
 import type { IdentityAccountSession } from '#admin/types/identity-access'
+import { formatIdentityDate } from '#admin/app/utils/identity-formatters'
 
 definePageMeta({ layout: 'identity-admin', middleware: ['identity-admin'] })
 

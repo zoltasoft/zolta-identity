@@ -8,4 +8,5 @@ enum IdentityPermissionSource: string
 {
     case Manual = 'manual';
     case Manifest = 'manifest';
+    case Catalog = 'catalog';
 }

@@ -20,9 +20,7 @@ final readonly class GetAuthenticatedUserQueryHandler
 
     public function __invoke(GetAuthenticatedUserQuery $getAuthenticatedUserQuery): Option
     {
-        $queryOptions = $this->queryOptionsFactory->make([
-            'include' => ['role', 'role.permissions'],
-        ]);
+        $queryOptions = $this->queryOptionsFactory->make();
         $user = $this->authenticationService->getAuthenticatedUser($queryOptions);
 
         if ($user === null) {

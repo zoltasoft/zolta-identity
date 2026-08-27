@@ -14,6 +14,8 @@ interface ManageIdentityClients
 
     public function setClientStatus(string $actorUserId, string $projectId, string $clientId, string $status): void;
 
+    public function deleteClient(string $actorUserId, string $projectId, string $clientId, string $confirmation): void;
+
     /** @param list<array{key: string, name?: string, description?: string}> $manifest @return list<array<string, mixed>> */
     public function syncPermissionManifest(string $actorUserId, string $projectId, string $clientId, array $manifest): array;
 }

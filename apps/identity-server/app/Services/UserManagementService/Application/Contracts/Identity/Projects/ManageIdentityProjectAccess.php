@@ -9,8 +9,12 @@ interface ManageIdentityProjectAccess
     /** @param array<string, mixed> $attributes @return array<string, mixed> */
     public function createRole(string $actorUserId, string $projectId, array $attributes): array;
 
+    public function deleteRole(string $actorUserId, string $projectId, string $roleId, string $confirmation): void;
+
     /** @param array<string, mixed> $attributes @return array<string, mixed> */
     public function createPermission(string $actorUserId, string $projectId, array $attributes): array;
+
+    public function deletePermission(string $actorUserId, string $projectId, string $permissionId, string $confirmation): void;
 
     /** @param list<string> $permissionIds */
     public function setRolePermissions(string $actorUserId, string $projectId, string $roleId, array $permissionIds): void;

@@ -27,6 +27,14 @@ type HostedApplication = {
   sandbox?: HostedConnection
 }
 
+export type HostedApplicationPublicMetadata = {
+  key: string
+  name: string
+  returnUrl: string
+  appearance: HostedApplicationAppearance
+  authentication: HostedApplicationAuthentication
+}
+
 type HostedApplicationAuthentication = {
   googleEnabled: boolean
   termsRequired: boolean
@@ -45,6 +53,14 @@ type HostedFlow = {
   application: string
   state: string
   identity: IdentityLoginData
+}
+
+type HostedAuthorizationFlow = {
+  application: string
+  state: string
+  features: {
+    demoAccount: boolean
+  }
 }
 
 type HostedSocialFlow = {
@@ -66,13 +82,6 @@ type HostedAccount = {
 type IdentityEnvelope<T> = { data: T }
 
 const identityPrefix = '/api/v1/identity'
-
-function sandboxFeatureEnabled(event: H3Event): boolean {
-  const publicConfig = useRuntimeConfig(event).public as {
-    identityAuth?: { sandboxEnabled?: boolean }
-  }
-  return publicConfig.identityAuth?.sandboxEnabled === true
-}
 
 function requiresEmailVerification(identity: IdentityLoginData): boolean {
   return identity.identity.project.email_verification_required
@@ -197,6 +206,28 @@ export async function identityHostedApplicationByClient(
   return await resolveHostedApplication(event, `/hosted-clients/${encodeURIComponent(clientId)}/configuration`)
 }
 
+function publicApplicationMetadata(application: HostedApplication): HostedApplicationPublicMetadata {
+  return {
+    key: application.key,
+    name: application.name,
+    returnUrl: application.applicationUrl ?? new URL(application.callbackUrl).origin,
+    appearance: application.appearance,
+    authentication: application.authentication
+  }
+}
+
+export async function identityHostedApplicationMetadata(
+  event: H3Event,
+  applicationKey?: string,
+  clientId?: string
+): Promise<HostedApplicationPublicMetadata> {
+  const application = applicationKey
+    ? await identityHostedApplication(event, applicationKey)
+    : await identityHostedApplicationByClient(event, clientId ?? '')
+
+  return publicApplicationMetadata(application)
+}
+
 function requestTarget(connection: HostedConnection, path: string) {
   const baseURL = connection.apiUrl.replace(/\/+$/, '')
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
@@ -316,6 +347,7 @@ async function handoff(
   identity: IdentityLoginData,
   state: string
 ): Promise<{ redirectUrl: string }> {
+  await requireHostedAuthorization(event, application, state)
   const connection = application.sandbox?.clientId === identity.identity.client.id
     ? 'sandbox'
     : 'primary'
@@ -330,6 +362,7 @@ async function handoff(
   redirect.searchParams.set('code', result.code)
   redirect.searchParams.set('state', assertState(state))
   redirect.searchParams.set('connection', connection)
+  await (await authorizationFlowSession(event)).clear()
 
   return { redirectUrl: redirect.toString() }
 }
@@ -352,6 +385,97 @@ function flowSession(event: H3Event) {
       secure: process.env.NODE_ENV === 'production'
     }
   })
+}
+
+function authorizationFlowSession(event: H3Event) {
+  const config = useRuntimeConfig(event)
+  const password = String(config.session?.password ?? '')
+  if (password.length < 32) {
+    throw createError({ statusCode: 503, statusMessage: 'Identity hosted sessions are not configured.' })
+  }
+
+  return useSession<HostedAuthorizationFlow>(event, {
+    password,
+    name: 'identity-hosted-authorization-flow',
+    maxAge: 60 * 10,
+    cookie: {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production'
+    }
+  })
+}
+
+async function hostedAuthorization(
+  event: H3Event,
+  application: HostedApplication,
+  intent?: string,
+  expectedState?: string
+): Promise<HostedAuthorizationFlow> {
+  const session = await authorizationFlowSession(event)
+  const existingState = session.data.state
+
+  if (
+    session.data.application === application.key
+    && existingState
+    && session.data.features
+    && (!expectedState || existingState === assertState(expectedState))
+  ) {
+    return session.data
+  }
+
+  if (intent) {
+    const authorization = await hostedRequest<{
+      state: string
+      features: { demo_account: boolean }
+    }>(event, application, '/authorization/intent/consume', { intent })
+    const state = assertState(authorization.state)
+    if (expectedState && state !== assertState(expectedState)) {
+      throw createError({ statusCode: 401, statusMessage: 'The hosted authentication request is invalid or expired.' })
+    }
+    await session.update({
+      application: application.key,
+      state,
+      features: { demoAccount: authorization.features.demo_account === true }
+    })
+  }
+
+  if (
+    session.data.application !== application.key
+    || !session.data.state
+    || !session.data.features
+  ) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: 'Open sign in from the application to continue.'
+    })
+  }
+
+  return session.data
+}
+
+export async function establishIdentityHostedAuthorization(
+  event: H3Event,
+  applicationKey: string,
+  intent: string,
+  state: string
+): Promise<void> {
+  const application = await identityHostedApplication(event, applicationKey)
+  await hostedAuthorization(event, application, intent, state)
+}
+
+async function requireHostedAuthorization(
+  event: H3Event,
+  application: HostedApplication,
+  state: string
+): Promise<HostedAuthorizationFlow> {
+  const authorization = await hostedAuthorization(event, application)
+  if (authorization.state !== assertState(state)) {
+    throw createError({ statusCode: 401, statusMessage: 'The hosted authentication request is invalid or expired.' })
+  }
+
+  return authorization
 }
 
 function socialFlowSession(event: H3Event) {
@@ -380,7 +504,8 @@ export async function identityHostedExperience(
   applicationKey: string
 ): Promise<IdentityAuthenticationExperience & { application: { key: string, name: string, returnUrl: string, appearance: HostedApplicationAppearance, authentication: HostedApplicationAuthentication } }> {
   const application = await identityHostedApplication(event, applicationKey)
-  return await hostedExperience(event, application)
+  const authorization = await hostedAuthorization(event, application)
+  return await hostedExperience(event, application, authorization.features.demoAccount)
 }
 
 export async function identityHostedExperienceByClient(
@@ -388,13 +513,13 @@ export async function identityHostedExperienceByClient(
   clientId: string
 ): Promise<IdentityAuthenticationExperience & { application: { key: string, name: string, returnUrl: string, appearance: HostedApplicationAppearance, authentication: HostedApplicationAuthentication } }> {
   const application = await identityHostedApplicationByClient(event, clientId)
-  return await hostedExperience(event, application)
+  return await hostedExperience(event, application, false)
 }
 
-async function hostedExperience(event: H3Event, application: HostedApplication) {
-  const sandboxEnabled = sandboxFeatureEnabled(event) && Boolean(application.sandbox)
+async function hostedExperience(event: H3Event, application: HostedApplication, demoAccountEnabled: boolean) {
+  const sandboxEnabled = demoAccountEnabled && Boolean(application.sandbox)
   return {
-    application: { key: application.key, name: application.name, returnUrl: application.applicationUrl ?? new URL(application.callbackUrl).origin, appearance: application.appearance, authentication: application.authentication },
+    application: publicApplicationMetadata(application),
     primary: await context(event, application, 'primary'),
     sandbox: sandboxEnabled ? await context(event, application, 'sandbox') : null
   }
@@ -437,7 +562,7 @@ export async function identityHostedAccountContext(
       name: application.name,
       returnUrl: application.applicationUrl ?? new URL(application.callbackUrl).origin,
       authentication: application.authentication,
-      sandboxEnabled: sandboxFeatureEnabled(event) && Boolean(application.sandbox)
+      sandboxEnabled: account.connection === 'sandbox'
     },
     project: primary.project,
     entryAuthorized,
@@ -486,16 +611,47 @@ export async function identityHostedAccountLogout(event: H3Event): Promise<void>
       const connection = account.connection === 'sandbox'
         ? assertConnection(application.sandbox)
         : application.primary
+      let accessToken = account.identity.access_token
+      const accessExpiresAt = Date.parse(account.identity.access_token_expires_at)
+      const refreshExpiresAt = Date.parse(account.identity.refresh_token_expires_at)
+      if (Number.isFinite(accessExpiresAt) && accessExpiresAt <= Date.now()
+        && Number.isFinite(refreshExpiresAt) && refreshExpiresAt > Date.now()) {
+        const identity = await hostedRequest<IdentityLoginData>(event, application, '/refresh', {
+          refresh_token: account.identity.refresh_token
+        })
+        await session.update({ ...account, identity })
+        accessToken = identity.access_token
+      }
       await connectionRequest(connection, '/auth/logout', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${account.identity.access_token}` }
+        headers: { Authorization: `Bearer ${accessToken}` }
       })
     }
-  } catch {
-    // Clearing the encrypted browser session remains authoritative here.
+  } catch (error) {
+    console.warn('[zolta-identity] Hosted account revocation failed.', {
+      application: account.application,
+      status: identityErrorStatus(error)
+    })
   } finally {
     await session.clear()
   }
+}
+
+export async function identityHostedLogoutHandoff(
+  event: H3Event,
+  applicationKey: string,
+  intent: string
+): Promise<string> {
+  const application = await identityHostedApplication(event, applicationKey)
+  const result = await hostedRequest<{ redirect_url: string }>(
+    event,
+    application,
+    '/logout/intent/consume',
+    { intent }
+  )
+  await identityHostedAccountLogout(event)
+
+  return result.redirect_url
 }
 
 export async function identityHostedAccountRequest<T>(
@@ -593,10 +749,11 @@ export async function identityHostedSandbox(
   applicationKey: string,
   state: string
 ) {
-  if (!sandboxFeatureEnabled(event)) {
-    throw createError({ statusCode: 403, statusMessage: 'Demo sandbox accounts are disabled.' })
-  }
   const application = await identityHostedApplication(event, applicationKey)
+  const authorization = await requireHostedAuthorization(event, application, state)
+  if (!authorization.features.demoAccount) {
+    throw createError({ statusCode: 403, statusMessage: 'Demo sandbox accounts are disabled for this application.' })
+  }
   assertConnection(application.sandbox)
   const identity = await hostedRequest<IdentityLoginData>(event, application, '/sandbox-session')
 
@@ -634,8 +791,9 @@ export async function identityHostedGoogleStart(
   state: string
 ) {
   const application = await identityHostedApplication(event, applicationKey)
+  const hostedEntry = await requireHostedAuthorization(event, application, state)
   const google = useRuntimeConfig(event).identityGoogle
-  if (sandboxFeatureEnabled(event) && application.sandbox) {
+  if (hostedEntry.features.demoAccount && application.sandbox) {
     throw createError({ statusCode: 403, statusMessage: 'Google sign-in is disabled while the demo sandbox is enabled.' })
   }
   if (!application.authentication.googleEnabled || !google?.clientId || !google?.clientSecret) {
@@ -665,7 +823,7 @@ export async function identityHostedAccountGoogleStart(
   if (account.data.application !== applicationKey || typeof account.data.entryAuthorizedAt !== 'number') {
     throw createError({ statusCode: 403, statusMessage: 'Open account settings from your application to sign in.' })
   }
-  if (sandboxFeatureEnabled(event) && application.sandbox) {
+  if (account.data.connection === 'sandbox') {
     throw createError({ statusCode: 403, statusMessage: 'Google sign-in is disabled while the demo sandbox is enabled.' })
   }
   const google = useRuntimeConfig(event).identityGoogle
@@ -693,9 +851,6 @@ export async function identityHostedGoogleCallback(event: H3Event, code: string,
     throw createError({ statusCode: 401, statusMessage: 'The Google sign-in request has expired. Please try again.' })
   }
   const application = await identityHostedApplication(event, flow.application)
-  if (sandboxFeatureEnabled(event) && application.sandbox) {
-    throw createError({ statusCode: 403, statusMessage: 'Google sign-in is disabled while the demo sandbox is enabled.' })
-  }
   const google = useRuntimeConfig(event).identityGoogle
   const redirectUri = new URL('/api/hosted-auth/google/callback', getRequestURL(event).origin).toString()
   const response = await $fetch<{ access_token?: string }>('https://oauth2.googleapis.com/token', {

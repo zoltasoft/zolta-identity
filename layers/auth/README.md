@@ -89,8 +89,10 @@ The ready-made pages resolve their experience from Identity at runtime:
 
 - a live primary project renders sign-in, public registration, email
   verification, password recovery, and password reset
-- an optional sandbox client adds a **Create instant demo account** action; its
-  callback is exchanged by the consumer's sandbox BFF client
+- a hosted consumer may enable the **Create instant demo account** action per
+  application; Identity carries that client-authenticated policy in a one-time
+  authorization intent and exposes it only when the hosted application has a
+  valid sandbox client
 - a sandbox primary project hides permanent-account forms, immediately creates a
   temporary identity, and shows its generated name, email, and expiry before the
   user continues

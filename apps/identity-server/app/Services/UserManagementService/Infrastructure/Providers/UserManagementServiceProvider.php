@@ -19,8 +19,6 @@ class UserManagementServiceProvider extends ServiceProvider
         $this->app->register(RepositoryProviderServiceProvider::class);
         $this->app->register(RepositorySocialAccountServiceProvider::class);
         $this->app->register(RepositoryUserServiceProvider::class);
-        $this->app->register(RepositoryRoleServiceProvider::class);
-        $this->app->register(RepositoryPermissionServiceProvider::class);
         $this->app->register(MailerServiceProvider::class);
     }
 

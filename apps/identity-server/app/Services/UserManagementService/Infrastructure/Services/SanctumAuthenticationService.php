@@ -52,10 +52,7 @@ class SanctumAuthenticationService extends EloquentBaseRepository implements Aut
     ];
 
     /** @var array<string, list<string>> */
-    protected array $filterableRelations = [
-        'role' => ['name', 'slug'],
-        'permissions' => ['name'],
-    ];
+    protected array $filterableRelations = [];
 
     protected function modelClass(): string
     {
@@ -64,7 +61,7 @@ class SanctumAuthenticationService extends EloquentBaseRepository implements Aut
 
     protected function getAllowedRelations(): array
     {
-        return ['role', 'permissions'];
+        return ['socialAccounts'];
     }
 
     // -------------------- Authentication Methods --------------------

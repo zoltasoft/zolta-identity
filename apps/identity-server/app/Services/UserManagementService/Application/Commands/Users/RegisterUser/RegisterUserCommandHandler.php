@@ -26,7 +26,7 @@ final readonly class RegisterUserCommandHandler
             'password' => $registerUserCommand->password,
             'terms' => $registerUserCommand->terms,
         ];
-        $user = $this->userFactory->create($registerData, $registerUserCommand->role);
+        $user = $this->userFactory->create($registerData);
         $this->userRepository->saveUser($user);
 
         return Result::success(new UserPayload($user));
