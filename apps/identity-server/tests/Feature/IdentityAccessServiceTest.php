@@ -675,6 +675,30 @@ final class IdentityAccessServiceTest extends TestCase
         $this->assertDatabaseCount('identity_project_clients', 1);
     }
 
+    public function test_bootstrap_accepts_stable_console_credentials_and_is_idempotent_when_requested(): void
+    {
+        $clientId = '02e92e58-0e50-4681-9d57-b122cac61b77';
+        $clientSecret = 'stable-local-console-client-secret-1234567890';
+        $arguments = [
+            'email' => 'owner@example.com',
+            '--name' => 'Owner',
+            '--password' => 'strong-password-123',
+            '--client-id' => $clientId,
+            '--client-secret' => $clientSecret,
+            '--if-needed' => true,
+        ];
+
+        $this->artisan('identity:bootstrap', $arguments)->assertSuccessful();
+        $this->artisan('identity:bootstrap', $arguments)->assertSuccessful();
+
+        $this->assertDatabaseCount('users', 1);
+        $this->assertDatabaseCount('identity_project_clients', 1);
+        $this->assertDatabaseHas('identity_project_clients', [
+            'id' => $clientId,
+            'secret_hash' => hash('sha256', $clientSecret),
+        ]);
+    }
+
     public function test_client_from_another_project_cannot_introspect_a_token(): void
     {
         [$user, $project, $client, $secret] = $this->identityFixture();

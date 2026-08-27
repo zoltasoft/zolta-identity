@@ -22,7 +22,10 @@ final class BootstrapIdentity extends Command
         {--name= : Installation owner display name}
         {--password= : Owner password; omit to enter it securely}
         {--project=Identity Console : Initial management project name}
-        {--client=Identity Console BFF : Initial confidential client name}';
+        {--client=Identity Console BFF : Initial confidential client name}
+        {--client-id= : UUID to assign to the initial confidential client}
+        {--client-secret= : Secret to assign to the initial confidential client}
+        {--if-needed : Exit successfully when the installation is already bootstrapped}';
 
     protected $description = 'Create the first identity installation owner, project, and confidential console client';
 
@@ -31,6 +34,12 @@ final class BootstrapIdentity extends Command
         IdentityMembershipRepository $memberships,
     ): int {
         if (User::query()->where('is_system_admin', true)->exists()) {
+            if ($this->option('if-needed')) {
+                $this->info('Identity installation is already bootstrapped.');
+
+                return self::SUCCESS;
+            }
+
             $this->error('This identity installation has already been bootstrapped.');
 
             return self::FAILURE;
@@ -45,7 +54,21 @@ final class BootstrapIdentity extends Command
             return self::FAILURE;
         }
 
-        [$user, $project, $client, $secret] = DB::transaction(function () use ($clients, $memberships, $email, $name, $password): array {
+        $clientId = $this->option('client-id');
+        if ($clientId !== null && ! Str::isUuid((string) $clientId)) {
+            $this->error('The client ID must be a UUID.');
+
+            return self::FAILURE;
+        }
+
+        $clientSecret = $this->option('client-secret');
+        if ($clientSecret !== null && mb_strlen((string) $clientSecret) < 32) {
+            $this->error('The client secret must be at least 32 characters.');
+
+            return self::FAILURE;
+        }
+
+        [$user, $project, $client, $secret] = DB::transaction(function () use ($clients, $memberships, $email, $name, $password, $clientId, $clientSecret): array {
             $user = User::query()->firstOrNew(['email' => $email]);
             $user->fill([
                 'id' => $user->id ?: (string) Str::uuid(),
@@ -67,7 +90,12 @@ final class BootstrapIdentity extends Command
                 ?? DomainIdentityMembership::create($projectId, $userId, true);
             $membership->acceptInvitation(true);
             $memberships->save($membership);
-            [$client, $secret] = $clients->create($project->id, (string) $this->option('client'));
+            [$client, $secret] = $clients->create(
+                $project->id,
+                (string) $this->option('client'),
+                $clientId === null ? null : (string) $clientId,
+                $clientSecret === null ? null : (string) $clientSecret,
+            );
 
             return [$user, $project, $client, $secret];
         });
