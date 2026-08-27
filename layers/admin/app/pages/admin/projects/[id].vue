@@ -11,6 +11,7 @@ import type {
   IdentityRole,
   IdentityWebhook
 } from '#admin/types/identity-access'
+import { formatIdentityDate } from '#admin/app/utils/identity-formatters'
 
 definePageMeta({ layout: 'identity-admin', middleware: ['identity-admin'] })
 
@@ -2437,25 +2438,25 @@ function selectMembership(membership: IdentityMembership) {
             class="space-y-5"
             @submit.prevent="saveRolePermissions"
           >
-            <div class="max-h-96 space-y-2 overflow-y-auto rounded-xl border border-default p-3">
-              <label
-                v-for="permission in rolePermissionChoices"
-                :key="permission.value"
-                class="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 hover:bg-elevated"
+            <div class="max-h-96 overflow-y-auto rounded-xl border border-default p-3">
+              <UCheckboxGroup
+                v-model="selectedRole.permissionIds"
+                :items="rolePermissionChoices"
+                class="space-y-2"
               >
-                <UCheckbox
-                  v-model="selectedRole.permissionIds"
-                  :value="permission.value"
-                  :label="permission.label"
-                />
-                <UBadge
-                  v-if="permission.global"
-                  color="primary"
-                  variant="soft"
-                >
-                  Catalog
-                </UBadge>
-              </label>
+                <template #label="{ item: permission }">
+                  <span class="flex items-center justify-between gap-3">
+                    <span>{{ permission.label }}</span>
+                    <UBadge
+                      v-if="permission.global"
+                      color="primary"
+                      variant="soft"
+                    >
+                      Catalog
+                    </UBadge>
+                  </span>
+                </template>
+              </UCheckboxGroup>
               <p
                 v-if="rolePermissionChoices.length === 0"
                 class="py-5 text-center text-sm text-muted"
