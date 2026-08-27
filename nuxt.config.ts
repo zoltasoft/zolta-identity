@@ -32,7 +32,7 @@ export default defineNuxtConfig({
     langDir: 'locales'
   },
   compatibilityDate: '2025-07-15',
-  devtools: { enabled: true },
+  devtools: { enabled: process.env.NODE_ENV === 'development' },
   devServer: {
     port: 3100
   },
