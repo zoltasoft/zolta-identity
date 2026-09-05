@@ -137,10 +137,7 @@ async function submit({ data }: FormSubmitEvent<LoginSchema>) {
   } catch (error) {
     toast.add({
       title: 'Unable to sign in',
-      description: identityAuthErrorMessage(
-        error,
-        'We could not sign you in with those credentials.'
-      ),
+      description: identityLoginErrorMessage(error),
       color: 'error'
     })
   } finally {
