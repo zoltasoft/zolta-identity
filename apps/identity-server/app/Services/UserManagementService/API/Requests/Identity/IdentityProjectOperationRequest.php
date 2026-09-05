@@ -110,6 +110,7 @@ final class IdentityProjectOperationRequest extends IdentityOperationRequest
                 'permission_ids.*' => ['uuid', 'distinct'],
             ],
             'projects.invitations.store' => [
+                'hosted_application_id' => ['required', 'uuid'],
                 'email' => ['required', 'email'],
                 'is_admin' => ['sometimes', 'boolean'],
             ],

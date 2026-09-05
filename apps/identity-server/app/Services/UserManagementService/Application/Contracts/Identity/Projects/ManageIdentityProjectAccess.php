@@ -20,7 +20,7 @@ interface ManageIdentityProjectAccess
     public function setRolePermissions(string $actorUserId, string $projectId, string $roleId, array $permissionIds): void;
 
     /** @return array<string, mixed> */
-    public function invite(string $actorUserId, string $projectId, string $email, bool $isAdmin): array;
+    public function invite(string $actorUserId, string $projectId, string $hostedApplicationId, string $email, bool $isAdmin): array;
 
     /** @param list<string> $roleIds @param list<string> $permissionIds */
     public function setMembershipAccess(

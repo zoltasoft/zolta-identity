@@ -14,5 +14,6 @@ final class ExecuteIdentityVerificationCommand extends Command
         public readonly IdentityVerificationOperation $operation,
         public readonly array $input,
         public readonly string $actorUserId,
+        public readonly string $accessToken,
     ) {}
 }

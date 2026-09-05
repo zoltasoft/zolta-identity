@@ -12,6 +12,7 @@ use App\Services\UserManagementService\Domain\Aggregates\IdentityRole as DomainI
 use App\Services\UserManagementService\Domain\Aggregates\IdentityWebhook as DomainIdentityWebhook;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHostedApplication;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectAccount;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectClient;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectMembership;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectPermission;
@@ -125,14 +126,20 @@ final class IdentityPayloadFactory
         IdentityProject $project,
         IdentityProjectClient $client,
         IdentityProjectMembership $membership,
+        ?IdentityProjectAccount $account = null,
     ): array {
+        $account ??= IdentityProjectAccount::query()
+            ->where('project_id', $project->id)
+            ->where('user_id', $user->id)
+            ->first();
+
         return [
             'user' => [
                 'id' => $user->id,
                 'email' => $user->email,
-                'username' => $user->username,
+                'username' => $account?->username ?? $user->username,
                 'avatar_url' => $user->avatar_url,
-                'email_verified' => $user->email_verified_at !== null,
+                'email_verified' => ($account?->email_verified_at ?? $user->email_verified_at) !== null,
                 'is_system_admin' => $user->is_system_admin,
                 'is_temporary' => $user->is_temporary,
                 'temporary_expires_at' => $user->demo_expires_at?->toIso8601String(),
@@ -157,6 +164,7 @@ final class IdentityPayloadFactory
             'registration_mode' => $project->registration_mode,
             'registration_role_id' => $project->registration_role_id,
             'email_verification_required' => $project->email_verification_required,
+            'google_social_authentication_enabled' => $project->google_social_authentication_enabled,
             'deletion_scheduled_at' => $project->deletion_scheduled_at?->toIso8601String(),
         ];
     }
@@ -213,7 +221,7 @@ final class IdentityPayloadFactory
         $authentication = $application->authentication ?? [];
 
         return [
-            'google_enabled' => (bool) ($authentication['google_enabled'] ?? false),
+            'google_enabled' => (bool) $application->project?->google_social_authentication_enabled,
             'terms_required' => (bool) ($authentication['terms_required'] ?? false),
             'terms_url' => $authentication['terms_url'] ?? null,
             'privacy_url' => $authentication['privacy_url'] ?? null,

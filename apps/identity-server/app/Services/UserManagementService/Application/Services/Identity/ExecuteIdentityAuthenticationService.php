@@ -45,6 +45,7 @@ final readonly class ExecuteIdentityAuthenticationService
                     ?? throw new InvalidArgumentException(
                         'An authenticated Identity actor is required.',
                     ),
+                'accessToken' => $dto->accessToken ?? throw new InvalidArgumentException('An Identity access token is required.'),
             ]);
         }
 

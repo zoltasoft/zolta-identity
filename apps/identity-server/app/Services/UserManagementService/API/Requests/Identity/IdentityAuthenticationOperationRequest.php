@@ -80,6 +80,7 @@ final class IdentityAuthenticationOperationRequest extends IdentityOperationRequ
                 'invitation_token' => ['required', 'string', 'min:64'],
                 'username' => ['required', 'string', 'max:255'],
                 'password' => ['required', 'string', 'min:12'],
+                'password_confirmation' => ['required', 'same:password'],
             ],
             'auth.verification.verify' => ['code' => ['required', 'digits:6']],
             'auth.sessions.revoke' => ['session' => ['required', 'string', 'max:255']],

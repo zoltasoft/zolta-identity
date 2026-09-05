@@ -28,6 +28,7 @@ use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHo
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHostedApplicationConsent;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityLogoutIntent;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectAccount;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectInvitation;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityRefreshToken;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\SocialAccount;
@@ -89,10 +90,13 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
         $user = User::query()
             ->whereRaw('lower(email) = ?', [Str::lower((string) $credentials['email'])])
             ->first();
-        $isLocked = $user?->locked
-            && ($user->lock_expiry === null || $user->lock_expiry->isFuture());
+        $account = $user ? IdentityProjectAccount::query()
+            ->where('project_id', $project->id)
+            ->where('user_id', $user->id)
+            ->where('status', 'active')
+            ->first() : null;
 
-        if (! $user || $isLocked || ! Hash::check((string) $credentials['password'], $user->password)) {
+        if (! $user || ! $account || ! Hash::check((string) $credentials['password'], $account->password)) {
             $this->audit->record(
                 'auth.login_failed',
                 $project->id,
@@ -107,16 +111,13 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             throw new IdentityAuthenticationException('Invalid credentials.');
         }
 
-        if ($user->locked) {
-            $user->forceFill(['locked' => false, 'lock_expiry' => null])->save();
-        }
-
         $membership = $this->memberships->findActiveForProjectUser($project->id, $user->id);
         if (! $membership || $project->status !== 'active') {
             throw new IdentityAuthenticationException('This account does not have access to the project.');
         }
 
         $tokens = $this->tokens->issuePair($user, $project, $client, $membership);
+        $account->forceFill(['last_authenticated_at' => now()])->save();
         $this->audit->record(
             'auth.login_succeeded',
             $project->id,
@@ -130,7 +131,7 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
         );
 
         return $tokens + [
-            'identity' => $this->payloads->identity($user, $project, $client, $membership),
+            'identity' => $this->payloads->identity($user, $project, $client, $membership, $account),
         ];
     }
 
@@ -473,18 +474,31 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             $userAgent,
         ): array {
             $email = Str::lower((string) $attributes['email']);
-            if (User::query()->whereRaw('lower(email) = ?', [$email])->exists()) {
+            $user = User::query()->whereRaw('lower(email) = ?', [$email])->lockForUpdate()->first();
+            if ($user !== null && IdentityProjectAccount::query()
+                ->where('project_id', $project->id)
+                ->where('user_id', $user->id)
+                ->exists()) {
                 throw new IdentityAuthenticationException(
-                    'An account with this email already exists. Sign in instead.',
+                    'An account with this email already exists in this project. Sign in instead.',
                 );
             }
 
-            $user = User::query()->create([
+            $user ??= User::query()->create([
                 'username' => (string) $attributes['username'],
                 'email' => $email,
-                'password' => (string) $attributes['password'],
+                // End-user credentials are held by the project account. This random
+                // value is never used by project authentication or administration.
+                'password' => Str::random(64),
                 'terms' => 'accepted',
+            ]);
+            $account = IdentityProjectAccount::query()->create([
+                'project_id' => $project->id,
+                'user_id' => $user->id,
+                'username' => (string) $attributes['username'],
+                'password' => (string) $attributes['password'],
                 'email_verified_at' => $project->email_verification_required ? null : now(),
+                'password_changed_at' => now(),
             ]);
             $roleIds = [];
             if ($project->registration_role_id !== null
@@ -509,6 +523,7 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
                 IdentityHostedApplicationConsent::query()->create([
                     'hosted_application_id' => (string) $attributes['hosted_application_id'],
                     'user_id' => $user->id,
+                    'project_account_id' => $account->id,
                     'terms_url' => $attributes['terms_url'] ?? null,
                     'accepted_at' => now(),
                 ]);
@@ -516,7 +531,7 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
 
             $tokens = $this->tokens->issuePair($user, $project, $client, $membership);
             if ($project->email_verification_required) {
-                $this->issueEmailVerification($user);
+                $this->issueEmailVerification($account, $user);
             }
             $this->audit->record(
                 'auth.registered',
@@ -531,7 +546,7 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             );
 
             return $tokens + [
-                'identity' => $this->payloads->identity($user, $project, $client, $membership),
+                'identity' => $this->payloads->identity($user, $project, $client, $membership, $account),
             ];
         });
     }
@@ -545,6 +560,9 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
         $project = $client->project;
         if ($project->mode === 'sandbox' || $project->status !== 'active') {
             throw new IdentityAuthorizationException('This project does not accept social sign-in.');
+        }
+        if (! $project->google_social_authentication_enabled) {
+            throw new IdentityAuthorizationException('Social sign-in is not enabled for this project.');
         }
 
         $remote = $this->oauthGateway->fetchUser(
@@ -562,6 +580,7 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             );
             $account = SocialAccount::query()
                 ->where('social_provider_id', $provider->id)
+                ->where('project_id', $project->id)
                 ->where('social_provider_user_id', $remote->providerUserId)
                 ->first();
             $user = $account?->user ?? User::query()
@@ -578,7 +597,6 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
                     'email' => Str::lower($remote->email),
                     'password' => Str::random(64),
                     'terms' => 'accepted',
-                    'email_verified_at' => now(),
                 ]);
                 $newMembership = true;
             }
@@ -602,14 +620,30 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
                 $newMembership = true;
             }
 
+            $projectAccount = IdentityProjectAccount::query()
+                ->where('project_id', $project->id)
+                ->where('user_id', $user->id)
+                ->first();
+            if ($projectAccount === null) {
+                $projectAccount = IdentityProjectAccount::query()->create([
+                    'project_id' => $project->id,
+                    'user_id' => $user->id,
+                    'username' => Str::limit($remote->name !== '' ? $remote->name : Str::before($remote->email, '@'), 100, ''),
+                    'password' => Str::random(64),
+                    'email_verified_at' => now(),
+                    'password_changed_at' => now(),
+                ]);
+            }
+
             SocialAccount::query()->updateOrCreate(
-                ['social_provider_id' => $provider->id, 'social_provider_user_id' => $remote->providerUserId],
+                ['social_provider_id' => $provider->id, 'project_id' => $project->id, 'social_provider_user_id' => $remote->providerUserId],
                 ['id' => (string) Str::uuid(), 'user_id' => $user->id, 'access_token' => $remote->accessToken, 'refresh_token' => $remote->refreshToken, 'avatar_url' => $remote->avatarUrl],
             );
             if ($newMembership && ($attributes['terms_required'] ?? false) === true && isset($attributes['hosted_application_id'])) {
                 IdentityHostedApplicationConsent::query()->create([
                     'hosted_application_id' => (string) $attributes['hosted_application_id'],
                     'user_id' => $user->id,
+                    'project_account_id' => $projectAccount->id,
                     'terms_url' => $attributes['terms_url'] ?? null,
                     'accepted_at' => now(),
                 ]);
@@ -618,7 +652,7 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             $tokens = $this->tokens->issuePair($user, $project, $client, $membership);
             $this->audit->record('auth.social_login', $project->id, $client->id, $user->id, 'user', $user->id, ['provider' => $attributes['provider']], $ipAddress, $userAgent);
 
-            return $tokens + ['identity' => $this->payloads->identity($user, $project, $client, $membership)];
+            return $tokens + ['identity' => $this->payloads->identity($user, $project, $client, $membership, $projectAccount)];
         });
     }
 
@@ -675,6 +709,14 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
                 $project->id,
                 $membershipAggregate->id()->toString(),
             );
+            $account = IdentityProjectAccount::query()->create([
+                'project_id' => $project->id,
+                'user_id' => $user->id,
+                'username' => $user->username,
+                'password' => Str::random(64),
+                'email_verified_at' => now(),
+                'password_changed_at' => now(),
+            ]);
 
             $tokens = $this->tokens->issuePair($user, $project, $client, $membership);
             $this->audit->record(
@@ -692,19 +734,20 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             return $tokens + [
                 'is_temporary' => true,
                 'expires_at' => $expiresAt->toIso8601String(),
-                'identity' => $this->payloads->identity($user, $project, $client, $membership),
+                'identity' => $this->payloads->identity($user, $project, $client, $membership, $account),
             ];
         });
     }
 
-    public function resendEmailVerification(string $userId): array
+    public function resendEmailVerification(string $userId, string $accessToken): array
     {
-        $user = User::query()->findOrFail($userId);
-        if ($user->email_verified_at !== null) {
+        $token = $this->identityAccessToken($accessToken);
+        $account = IdentityProjectAccount::query()->where('project_id', $token->identity_project_id)->where('user_id', $userId)->firstOrFail();
+        if ($account->email_verified_at !== null) {
             return ['message' => 'Email address is already verified.'];
         }
 
-        $code = $this->issueEmailVerification($user);
+        $code = $this->issueEmailVerification($account, $account->user()->firstOrFail());
         $result = ['message' => 'A new verification code was sent.'];
         if ((bool) config('zolta.identity.expose_development_tokens', false)) {
             $result['development_code'] = $code;
@@ -713,17 +756,18 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
         return $result;
     }
 
-    public function verifyEmail(string $userId, string $code): void
+    public function verifyEmail(string $userId, string $accessToken, string $code): void
     {
-        $user = User::query()->findOrFail($userId);
-        if ($user->email_verified_at !== null) {
+        $token = $this->identityAccessToken($accessToken);
+        $account = IdentityProjectAccount::query()->where('project_id', $token->identity_project_id)->where('user_id', $userId)->firstOrFail();
+        if ($account->email_verified_at !== null) {
             return;
         }
 
-        if ($user->email_verification_expires_at === null
-            || $user->email_verification_expires_at->isPast()
+        if ($account->email_verification_expires_at === null
+            || $account->email_verification_expires_at->isPast()
             || ! hash_equals(
-                (string) $user->email_verification_code_hash,
+                (string) $account->email_verification_code_hash,
                 $this->secretHash($code),
             )) {
             throw new IdentityAuthenticationException(
@@ -731,7 +775,7 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             );
         }
 
-        $user->forceFill([
+        $account->forceFill([
             'email_verified_at' => now(),
             'email_verification_code_hash' => null,
             'email_verification_expires_at' => null,
@@ -740,9 +784,9 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             'auth.email_verified',
             null,
             null,
-            $user->id,
-            'user',
-            $user->id,
+            $userId,
+            'project_account',
+            $account->id,
         );
     }
 
@@ -751,18 +795,20 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
         string $clientSecret,
         string $email,
     ): array {
-        $this->clients->authenticate($clientId, $clientSecret);
+        $client = $this->clients->authenticate($clientId, $clientSecret);
         $result = ['message' => 'If that account exists, password reset instructions were sent.'];
         $user = User::query()->whereRaw('lower(email) = ?', [Str::lower($email)])->first();
 
-        if (! $user) {
+        $account = $user ? IdentityProjectAccount::query()->where('project_id', $client->project_id)->where('user_id', $user->id)->where('status', 'active')->first() : null;
+
+        if (! $user || ! $account) {
             return $result;
         }
 
         $token = Str::random(64);
-        DB::table('password_reset_tokens')->updateOrInsert(
-            ['email' => $user->email],
-            ['token' => $this->secretHash($token), 'created_at' => now()],
+        DB::table('identity_project_password_reset_tokens')->updateOrInsert(
+            ['project_account_id' => $account->id],
+            ['token_hash' => $this->secretHash($token), 'created_at' => now()],
         );
         $user->notify(new ResetIdentityPassword($token, $clientId));
 
@@ -780,10 +826,11 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
         string $token,
         string $password,
     ): void {
-        $this->clients->authenticate($clientId, $clientSecret);
+        $client = $this->clients->authenticate($clientId, $clientSecret);
         $user = User::query()->whereRaw('lower(email) = ?', [Str::lower($email)])->first();
-        $reset = $user
-            ? DB::table('password_reset_tokens')->where('email', $user->email)->first()
+        $account = $user ? IdentityProjectAccount::query()->where('project_id', $client->project_id)->where('user_id', $user->id)->first() : null;
+        $reset = $account
+            ? DB::table('identity_project_password_reset_tokens')->where('project_account_id', $account->id)->first()
             : null;
         $expiresAt = $reset?->created_at
             ? Carbon::parse($reset->created_at)->addMinutes(
@@ -791,21 +838,21 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             )
             : null;
 
-        if (! $user || ! $reset || $expiresAt?->isPast() !== false
-            || ! hash_equals((string) $reset->token, $this->secretHash($token))) {
+        if (! $user || ! $account || ! $reset || $expiresAt?->isPast() !== false
+            || ! hash_equals((string) $reset->token_hash, $this->secretHash($token))) {
             throw new IdentityAuthenticationException(
                 'The password reset token is invalid or expired.',
             );
         }
 
-        DB::transaction(function () use ($user, $password): void {
-            $user->forceFill(['password' => $password])->save();
-            DB::table('password_reset_tokens')->where('email', $user->email)->delete();
-            $this->tokens->revokeUser($user->id);
+        DB::transaction(function () use ($account, $client, $password, $user): void {
+            $account->forceFill(['password' => $password, 'password_changed_at' => now()])->save();
+            DB::table('identity_project_password_reset_tokens')->where('project_account_id', $account->id)->delete();
+            $this->tokens->revokeProjectUser($client->project_id, $user->id);
             $this->audit->record(
                 'auth.password_reset',
-                null,
-                null,
+                $client->project_id,
+                $client->id,
                 $user->id,
                 'user',
                 $user->id,
@@ -1098,12 +1145,17 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
                     'id' => (string) Str::uuid(),
                     'username' => $attributes['username'],
                     'email' => $invitation->email,
-                    'password' => $attributes['password'],
+                    'password' => Str::random(64),
                     'terms' => 'accepted',
                     'email_verified_at' => now(),
                 ]);
-            } elseif (! Hash::check((string) $attributes['password'], $user->password)) {
-                throw new IdentityAuthenticationException('Invalid credentials.');
+            }
+
+            if (! hash_equals((string) $attributes['password'], (string) $attributes['password_confirmation'])) {
+                throw new IdentityAuthenticationException('The password confirmation does not match.');
+            }
+            if (IdentityProjectAccount::query()->where('project_id', $invitation->project_id)->where('user_id', $user->id)->exists()) {
+                throw new IdentityAuthenticationException('This email already has an account in the project. Sign in instead.');
             }
 
             $projectId = IdentityProjectId::fromString($invitation->project_id);
@@ -1122,6 +1174,22 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
                 $invitation->project_id,
                 $membershipAggregate->id()->toString(),
             );
+            $account = IdentityProjectAccount::query()->create([
+                'project_id' => $invitation->project_id,
+                'user_id' => $user->id,
+                'username' => (string) $attributes['username'],
+                'password' => (string) $attributes['password'],
+                'email_verified_at' => now(),
+                'password_changed_at' => now(),
+            ]);
+            if ($invitation->hosted_application_id !== null) {
+                IdentityHostedApplicationConsent::query()->create([
+                    'hosted_application_id' => $invitation->hosted_application_id,
+                    'user_id' => $user->id,
+                    'project_account_id' => $account->id,
+                    'accepted_at' => now(),
+                ]);
+            }
             $invitation->forceFill(['accepted_at' => now()])->save();
             $this->audit->record(
                 'invitation.accepted',
@@ -1164,10 +1232,10 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
         return $permissions;
     }
 
-    private function issueEmailVerification(User $user): string
+    private function issueEmailVerification(IdentityProjectAccount $account, User $user): string
     {
         $code = (string) random_int(100000, 999999);
-        $user->forceFill([
+        $account->forceFill([
             'email_verification_code_hash' => $this->secretHash($code),
             'email_verification_expires_at' => now()->addMinutes(
                 (int) config('zolta.identity.email_verification_ttl_minutes', 15),

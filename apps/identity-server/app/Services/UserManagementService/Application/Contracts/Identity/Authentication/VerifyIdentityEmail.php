@@ -7,7 +7,7 @@ namespace App\Services\UserManagementService\Application\Contracts\Identity\Auth
 interface VerifyIdentityEmail
 {
     /** @return array<string, mixed> */
-    public function resendEmailVerification(string $userId): array;
+    public function resendEmailVerification(string $userId, string $accessToken): array;
 
-    public function verifyEmail(string $userId, string $code): void;
+    public function verifyEmail(string $userId, string $accessToken, string $code): void;
 }

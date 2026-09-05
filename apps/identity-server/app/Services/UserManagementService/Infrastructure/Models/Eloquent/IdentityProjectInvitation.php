@@ -13,7 +13,7 @@ final class IdentityProjectInvitation extends Model
 
     protected $table = 'identity_project_invitations';
 
-    protected $fillable = ['project_id', 'invited_by', 'email', 'token_hash', 'is_admin', 'expires_at', 'accepted_at'];
+    protected $fillable = ['project_id', 'hosted_application_id', 'invited_by', 'email', 'token_hash', 'is_admin', 'expires_at', 'accepted_at'];
 
     protected $hidden = ['token_hash'];
 

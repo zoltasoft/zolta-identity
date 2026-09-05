@@ -50,6 +50,7 @@ use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAc
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAuditEvent;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHostedApplication;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectAccount;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectClient;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectInvitation;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectMembership;
@@ -69,13 +70,16 @@ use App\Services\UserManagementService\Infrastructure\Services\Identity\Identity
 use App\Services\UserManagementService\Infrastructure\Services\Identity\IdentityTokenManager;
 use App\Services\UserManagementService\Infrastructure\Services\Identity\IdentityWebhookDestinationValidator;
 use DateTimeImmutable;
+use DomainException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Zolta\Domain\ValueObjects\UserId;
+use Zolta\Exceptions\ValidationException as ZoltaValidationException;
 
 final readonly class EloquentIdentityProjectService implements ConfigureIdentityProjectEnvironment, ConfigureIdentityProjectRegistration, CreateIdentityProject, ManageIdentityClients, ManageIdentityHostedApplications, ManageIdentityProjectAccess, ManageIdentityProjectCatalog, ManageIdentityProjectDeletion, ManageIdentityProjectSuspension, ManageIdentityWebhooks, ReadIdentityProjects, ResolveIdentityHostedApplications
 {
@@ -125,31 +129,60 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
         $this->authorization->assertInstallationAdministrator($actorUserId);
         $user = User::query()->findOrFail($actorUserId);
 
-        return DB::transaction(function () use ($user, $attributes): array {
-            $project = DomainIdentityProject::create(
-                (string) $attributes['name'],
-                (string) $attributes['slug'],
-                isset($attributes['description']) ? (string) $attributes['description'] : null,
-            );
-            $this->projects->save($project);
-            $projectId = $project->id()->toString();
-            $membership = DomainIdentityMembership::create(
-                $project->id(),
-                new UserId((string) $user->id),
-                true,
-            );
-            $this->membershipAggregates->save($membership);
-            $this->audit->record(
-                'project.created',
-                $projectId,
-                null,
-                $user->id,
-                'project',
-                $projectId,
-            );
+        try {
+            return DB::transaction(function () use ($user, $attributes): array {
+                $project = DomainIdentityProject::create(
+                    (string) $attributes['name'],
+                    (string) $attributes['slug'],
+                    isset($attributes['description']) ? (string) $attributes['description'] : null,
+                );
+                $this->projects->save($project);
+                $projectId = $project->id()->toString();
+                $membership = DomainIdentityMembership::create(
+                    $project->id(),
+                    new UserId((string) $user->id),
+                    true,
+                );
+                $this->membershipAggregates->save($membership);
+                $this->audit->record(
+                    'project.created',
+                    $projectId,
+                    null,
+                    $user->id,
+                    'project',
+                    $projectId,
+                );
 
-            return $this->payloads->projectAggregate($project);
-        });
+                return $this->payloads->projectAggregate($project);
+            });
+        } catch (DomainException|QueryException $exception) {
+            if ($this->isDuplicateProjectSlug($exception)) {
+                throw new ZoltaValidationException([
+                    'slug' => 'The slug has already been taken.',
+                ]);
+            }
+
+            throw $exception;
+        }
+    }
+
+    private function isDuplicateProjectSlug(\Throwable $exception): bool
+    {
+        do {
+            if ($exception instanceof QueryException) {
+                $driverError = (int) ($exception->errorInfo[1] ?? 0);
+                $message = $exception->getMessage();
+
+                if (($driverError === 1062 && str_contains($message, 'identity_projects_slug_unique'))
+                    || str_contains($message, 'identity_projects.slug')) {
+                    return true;
+                }
+            }
+
+            $exception = $exception->getPrevious();
+        } while ($exception instanceof \Throwable);
+
+        return false;
     }
 
     public function scheduleProjectDeletion(string $actorUserId, string $projectId, string $confirmation): array
@@ -925,7 +958,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
                 ?? throw new IdentityResourceNotFoundException('Identity project role');
 
             if ($confirmation !== $roleModel->slug) {
-                throw new \Zolta\Exceptions\ValidationException([
+                throw new ZoltaValidationException([
                     'confirmation' => ['Type the exact role slug to confirm deletion.'],
                 ]);
             }
@@ -1012,7 +1045,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
                 ?? throw new IdentityResourceNotFoundException('Identity project permission');
 
             if ($confirmation !== $permissionModel->key) {
-                throw new \Zolta\Exceptions\ValidationException([
+                throw new ZoltaValidationException([
                     'confirmation' => ['Type the exact permission key to confirm deletion.'],
                 ]);
             }
@@ -1103,11 +1136,22 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
     public function invite(
         string $actorUserId,
         string $projectId,
+        string $hostedApplicationId,
         string $email,
         bool $isAdmin,
     ): array {
         $this->authorization->assertProjectAdministrator($actorUserId, $projectId);
         $email = Str::lower($email);
+        $hostedApplication = IdentityHostedApplication::query()
+            ->where('project_id', $projectId)
+            ->find($hostedApplicationId);
+        if ($hostedApplication === null) {
+            throw new IdentityAuthorizationException('The hosted application must belong to the project.');
+        }
+        $existingUser = User::query()->whereRaw('lower(email) = ?', [$email])->first();
+        if ($existingUser !== null && IdentityProjectAccount::query()->where('project_id', $projectId)->where('user_id', $existingUser->id)->exists()) {
+            throw new IdentityAuthorizationException('This email already has an account in the project.');
+        }
         IdentityProjectInvitation::query()
             ->where('project_id', $projectId)
             ->where('email', $email)
@@ -1116,6 +1160,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
         $plainToken = Str::random(64);
         $invitation = IdentityProjectInvitation::query()->create([
             'project_id' => $projectId,
+            'hosted_application_id' => $hostedApplicationId,
             'invited_by' => $actorUserId,
             'email' => $email,
             'token_hash' => hash('sha256', $plainToken),
@@ -1135,8 +1180,9 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
             'id' => $invitation->id,
             'email' => $invitation->email,
             'is_admin' => $invitation->is_admin,
+            'hosted_application_id' => $invitation->hosted_application_id,
             'expires_at' => $invitation->expires_at->toIso8601String(),
-            'invitation_token' => $plainToken,
+            ...((bool) config('zolta.identity.expose_development_tokens', false) ? ['invitation_token' => $plainToken] : []),
         ];
     }
 
