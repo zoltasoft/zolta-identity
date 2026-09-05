@@ -15,4 +15,4 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
-      - run: ./scripts/check-dco.sh "origin/${{ github.base_ref }}"
+      - run: CI_RUNTIME=host ./scripts/ci dco "origin/${{ github.base_ref }}"

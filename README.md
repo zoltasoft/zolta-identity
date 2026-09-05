@@ -240,6 +240,14 @@ Installation-wide user routes enforce `is_system_admin` inside Laravel. Project 
 
 ## Commands and checks
 
+Install the repository pre-push gate once after cloning:
+
+```bash
+./scripts/setup-git-hooks
+```
+
+`./scripts/ci fast` runs the same lint, Laravel, DCO, secret, Compose, and dependency checks used by pull requests. `./scripts/ci full` additionally builds Nuxt and every production image. Local frontend checks run in the pinned Node 24.11 Docker image; run `full` before creating or updating a PR.
+
 Run the complete local validation suite from the repository root:
 
 ```bash

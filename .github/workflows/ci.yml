@@ -32,22 +32,16 @@ jobs:
           node-version: 24.11.0
           cache: pnpm
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint and type-check
-        run: pnpm lint
+      - name: Run shared frontend gate
+        run: CI_RUNTIME=host ./scripts/ci frontend
 
       - name: Build
-        run: pnpm build
+        run: CI_RUNTIME=host ./scripts/ci build
 
   api:
     name: Laravel API
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: apps/identity-server
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -60,17 +54,8 @@ jobs:
           coverage: none
           tools: composer:v2
 
-      - name: Validate Composer metadata
-        run: composer validate --strict
-
-      - name: Install dependencies
-        run: composer install --prefer-dist --no-interaction --no-progress
-
-      - name: Check code style
-        run: composer lint
-
-      - name: Run tests
-        run: composer test
+      - name: Run shared Laravel gate
+        run: CI_RUNTIME=host ./scripts/ci backend
 
   production-images:
     name: Build ${{ matrix.image }} without publishing
@@ -88,4 +73,4 @@ jobs:
             dockerfile: docker/identity-console/Dockerfile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - run: docker build --file "${{ matrix.dockerfile }}" --tag "local/${{ matrix.image }}:${{ github.sha }}" .
+      - run: CI_RUNTIME=host ./scripts/ci image "${{ matrix.dockerfile }}"
