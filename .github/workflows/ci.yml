@@ -21,53 +21,56 @@ jobs:
       NUXT_SESSION_PASSWORD: ci-only-session-password-with-at-least-32-characters
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24.11.0
           cache: pnpm
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint and type-check
-        run: pnpm lint
+      - name: Run shared frontend gate
+        run: CI_RUNTIME=host ./scripts/ci frontend
 
       - name: Build
-        run: pnpm build
+        run: CI_RUNTIME=host ./scripts/ci build
 
   api:
     name: Laravel API
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: apps/identity-server
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@b604ade2a87db23f8871b7182e69ec5e75effb45 # v2
         with:
           php-version: '8.3'
           extensions: mbstring, pdo_sqlite, sqlite3
           coverage: none
           tools: composer:v2
 
-      - name: Validate Composer metadata
-        run: composer validate --strict
+      - name: Run shared Laravel gate
+        run: CI_RUNTIME=host ./scripts/ci backend
 
-      - name: Install dependencies
-        run: composer install --prefer-dist --no-interaction --no-progress
-
-      - name: Check code style
-        run: composer lint
-
-      - name: Run tests
-        run: composer test
+  production-images:
+    name: Build ${{ matrix.image }} without publishing
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: identity-server
+            dockerfile: docker/identity-server/Dockerfile
+          - image: identity-nginx
+            dockerfile: docker/identity-server/nginx.Dockerfile
+          - image: identity-console
+            dockerfile: docker/identity-console/Dockerfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: CI_RUNTIME=host ./scripts/ci image "${{ matrix.dockerfile }}"
