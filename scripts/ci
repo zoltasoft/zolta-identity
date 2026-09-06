@@ -12,10 +12,11 @@ node_run() {
   fi
 
   docker run --rm --user "$(id -u):$(id -g)" \
+    -e CI=true \
     -e COREPACK_HOME=/tmp/corepack \
     -e NUXT_SESSION_PASSWORD=ci-only-session-password-with-at-least-32-characters \
     -v "$root:/workspace" -w /workspace node:24.11-bookworm \
-    bash -lc "corepack enable && $command"
+    bash -lc "pnpm() { corepack pnpm --store-dir /tmp/pnpm-store \"\$@\"; }; $command"
 }
 
 frontend() { node_run 'pnpm install --frozen-lockfile && pnpm lint'; }
@@ -29,14 +30,19 @@ security() {
   ./scripts/check-tracked-secrets.sh
   IDENTITY_ENV_FILE=.env.production.example docker compose --env-file .env.production.example config --quiet
   node_run 'pnpm install --frozen-lockfile && pnpm audit --prod'
-  composer --working-dir=apps/identity-server audit
+  composer --working-dir=apps/identity-server audit --locked
 }
 images() {
   for dockerfile in docker/identity-server/Dockerfile docker/identity-server/nginx.Dockerfile docker/identity-console/Dockerfile; do
     image "$dockerfile"
   done
 }
-image() { docker build --file "$1" --tag "local/ci-$(basename "$(dirname "$1")")-$(basename "$1")" .; }
+image() {
+  local dockerfile="$1" tag
+  tag="${dockerfile//\//-}"
+  tag="${tag,,}"
+  docker build --file "$dockerfile" --tag "local/ci-$tag" .
+}
 dco() { ./scripts/check-dco.sh "${1:-origin/main}"; }
 
 case "${1:-fast}" in
