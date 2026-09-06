@@ -92,7 +92,7 @@ const hostedApplicationLogoPreview = ref<string | null>(null)
 const removeHostedApplicationLogo = ref(false)
 const role = reactive({ name: '', slug: '', description: '' })
 const permissionForm = reactive({ key: '', name: '', description: '' })
-const invitation = reactive({ email: '', is_admin: false })
+const invitation = reactive({ email: '', hosted_application_id: '', is_admin: false })
 const registration = reactive<{ mode: 'invite_only' | 'public', roleId: string | null, emailVerificationRequired: boolean }>({ mode: 'invite_only', roleId: null, emailVerificationRequired: true })
 const environment = reactive<{ mode: 'live' | 'sandbox', ttlMinutes: number }>({ mode: 'live', ttlMinutes: 60 })
 const webhookForm = reactive({
@@ -508,8 +508,12 @@ async function publishRole(roleId: string) {
 
 async function sendInvitation() {
   const result = await access.invite(projectId.value, invitation)
-  toast.add({ title: 'Invitation created', description: `One-time token: ${String(result.invitation_token ?? '')}`, duration: 0 })
-  Object.assign(invitation, { email: '', is_admin: false })
+  toast.add({
+    title: 'Invitation created',
+    description: result.invitation_token ? `Development token: ${String(result.invitation_token)}` : undefined,
+    duration: result.invitation_token ? 0 : 5000
+  })
+  Object.assign(invitation, { email: '', hosted_application_id: '', is_admin: false })
   invitationModalOpen.value = false
   await refreshProjectAndAudit()
 }
@@ -1661,6 +1665,17 @@ function selectMembership(membership: IdentityMembership) {
             class="space-y-4"
             @submit.prevent="addClient"
           >
+            <UFormField
+              label="Hosted application"
+              required
+            >
+              <USelect
+                v-model="invitation.hosted_application_id"
+                :items="(project?.hosted_applications ?? []).map(application => ({ label: application.name, value: application.id }))"
+                placeholder="Select the invitation destination"
+                class="w-full"
+              />
+            </UFormField>
             <UFormField
               label="Client name"
               required

@@ -34,6 +34,7 @@ final readonly class ExecuteIdentityProjectAccessCommandHandler
             IdentityProjectAccessOperation::Invite => $this->access->invite(
                 $command->actorUserId,
                 $command->projectId,
+                (string) $command->input['hosted_application_id'],
                 (string) $command->input['email'],
                 (bool) ($command->input['is_admin'] ?? false),
             ),

@@ -19,7 +19,7 @@ final readonly class ExecuteIdentityVerificationCommandHandler
     {
         $result = match ($command->operation) {
             IdentityVerificationOperation::Resend => $this->verification
-                ->resendEmailVerification($command->actorUserId),
+                ->resendEmailVerification($command->actorUserId, $command->accessToken),
             IdentityVerificationOperation::Verify => $this->verify($command),
         };
 
@@ -31,6 +31,7 @@ final readonly class ExecuteIdentityVerificationCommandHandler
     {
         $this->verification->verifyEmail(
             $command->actorUserId,
+            $command->accessToken,
             (string) $command->input['code'],
         );
 

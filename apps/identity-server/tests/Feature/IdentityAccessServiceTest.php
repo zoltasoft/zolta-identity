@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Services\UserManagementService\Application\Contracts\Identity\Projects\CreateIdentityProject;
 use App\Services\UserManagementService\Infrastructure\Jobs\DeliverIdentityWebhook;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAccessCatalogPermission;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAccessCatalogRole;
@@ -11,6 +12,7 @@ use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityAu
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityHostedApplication;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityLogoutIntent;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectAccount;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectClient;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectMembership;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectPermission;
@@ -27,6 +29,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\PersonalAccessToken;
 use Tests\TestCase;
+use Zolta\Exceptions\ValidationException;
 
 final class IdentityAccessServiceTest extends TestCase
 {
@@ -623,7 +626,10 @@ final class IdentityAccessServiceTest extends TestCase
         $this->withToken($registration['access_token'])
             ->postJson('/api/v1/identity/auth/email/verification', ['code' => $code])
             ->assertOk();
-        $this->assertNotNull(User::query()->where('email', 'verify-me@example.com')->value('email_verified_at'));
+        $this->assertNotNull(IdentityProjectAccount::query()
+            ->where('project_id', $project->id)
+            ->whereHas('user', fn ($query) => $query->where('email', 'verify-me@example.com'))
+            ->value('email_verified_at'));
     }
 
     public function test_password_reset_revokes_existing_sessions(): void
@@ -657,6 +663,49 @@ final class IdentityAccessServiceTest extends TestCase
             'email' => $user->email,
             'password' => 'replacement-password',
         ])->assertOk();
+    }
+
+    public function test_same_email_has_independent_project_accounts_and_passwords(): void
+    {
+        [, $firstProject, $firstClient, $firstSecret] = $this->identityFixture();
+        [, $secondProject, $secondClient, $secondSecret] = $this->identityFixture();
+        $firstProject->forceFill(['registration_mode' => 'public'])->save();
+        $secondProject->forceFill(['registration_mode' => 'public'])->save();
+
+        foreach ([
+            [$firstProject, $firstClient, $firstSecret, 'First profile', 'first-project-password'],
+            [$secondProject, $secondClient, $secondSecret, 'Second profile', 'second-project-password'],
+        ] as [$project, $client, $secret, $username, $password]) {
+            $this->postJson('/api/v1/identity/auth/register', [
+                'project' => $project->slug,
+                'client_id' => $client->id,
+                'client_secret' => $secret,
+                'username' => $username,
+                'email' => 'shared-email@example.com',
+                'password' => $password,
+                'password_confirmation' => $password,
+            ])->assertCreated();
+        }
+
+        $user = User::query()->where('email', 'shared-email@example.com')->sole();
+        $this->assertDatabaseCount('identity_project_accounts', 4);
+        $this->assertDatabaseHas('identity_project_accounts', ['project_id' => $firstProject->id, 'user_id' => $user->id, 'username' => 'First profile']);
+        $this->assertDatabaseHas('identity_project_accounts', ['project_id' => $secondProject->id, 'user_id' => $user->id, 'username' => 'Second profile']);
+
+        $this->postJson('/api/v1/identity/auth/login', [
+            'project' => $firstProject->slug,
+            'client_id' => $firstClient->id,
+            'client_secret' => $firstSecret,
+            'email' => $user->email,
+            'password' => 'second-project-password',
+        ])->assertUnauthorized();
+        $this->postJson('/api/v1/identity/auth/login', [
+            'project' => $secondProject->slug,
+            'client_id' => $secondClient->id,
+            'client_secret' => $secondSecret,
+            'email' => $user->email,
+            'password' => 'second-project-password',
+        ])->assertOk()->assertJsonPath('data.identity.user.username', 'Second profile');
     }
 
     public function test_bootstrap_creates_owner_console_project_and_client(): void
@@ -800,6 +849,29 @@ final class IdentityAccessServiceTest extends TestCase
             'user_id' => $administrator->id,
             'is_admin' => true,
         ]);
+    }
+
+    public function test_project_creation_maps_a_duplicate_slug_constraint_to_validation(): void
+    {
+        [$administrator] = $this->identityFixture(true);
+        $administrator->forceFill(['is_system_admin' => true])->save();
+        $projects = app(CreateIdentityProject::class);
+        $attributes = [
+            'name' => 'Duplicate slug project',
+            'slug' => 'duplicate-slug-project',
+            'description' => null,
+        ];
+
+        $projects->createProject((string) $administrator->id, $attributes);
+
+        try {
+            $projects->createProject((string) $administrator->id, $attributes);
+            $this->fail('Expected the database unique constraint to be mapped to validation.');
+        } catch (ValidationException $exception) {
+            $this->assertSame('The slug has already been taken.', $exception->getErrors()['slug']);
+        }
+
+        $this->assertDatabaseCount('identity_projects', 2);
     }
 
     public function test_system_administrator_can_schedule_and_cancel_project_deletion(): void
@@ -1673,6 +1745,14 @@ final class IdentityAccessServiceTest extends TestCase
             'status' => 'active',
             'is_admin' => false,
         ]);
+        IdentityProjectAccount::query()->create([
+            'project_id' => $otherProject->id,
+            'user_id' => $user->id,
+            'username' => $user->username,
+            'password' => 'correct-password',
+            'email_verified_at' => now(),
+            'password_changed_at' => now(),
+        ]);
         $projectSession = $this->login($user, $project, $client, $secret);
         $otherSession = $this->login($user, $otherProject, $otherClient, $otherSecret);
         $otherFamily = PersonalAccessToken::findToken($otherSession['access_token'])?->identity_refresh_family_id;
@@ -1717,6 +1797,14 @@ final class IdentityAccessServiceTest extends TestCase
             'user_id' => $user->id,
             'status' => 'active',
             'is_admin' => $isAdmin,
+        ]);
+        IdentityProjectAccount::query()->create([
+            'project_id' => $project->id,
+            'user_id' => $user->id,
+            'username' => $user->username,
+            'password' => 'correct-password',
+            'email_verified_at' => now(),
+            'password_changed_at' => now(),
         ]);
 
         return [$user, $project, $client, $secret, $membership];

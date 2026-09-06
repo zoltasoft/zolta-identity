@@ -140,6 +140,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(IdentityProjectMembership::class, 'user_id');
     }
 
+    public function identityProjectAccounts(): HasMany
+    {
+        return $this->hasMany(IdentityProjectAccount::class, 'user_id');
+    }
+
     public function sendPasswordResetNotification($token): void
     {
         $this->notify(new ResetPasswordNotification((string) $token));

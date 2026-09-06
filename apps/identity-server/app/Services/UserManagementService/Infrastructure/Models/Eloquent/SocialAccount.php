@@ -9,6 +9,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property string $id
  * @property string $user_id
+ * @property string|null $project_id
  * @property string $social_provider_id
  * @property string $social_provider_user_id
  * @property string $access_token
@@ -32,6 +33,7 @@ class SocialAccount extends Model
     protected $fillable = [
         'id',
         'user_id',
+        'project_id',
         'social_provider_id',
         'social_provider_user_id',
         'access_token',
