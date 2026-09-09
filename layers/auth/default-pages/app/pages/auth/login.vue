@@ -63,9 +63,12 @@ const registrationEnabled = computed(
   () =>
     liveEnabled.value && primary.value?.project.registration_mode === 'public'
 )
-const hostedAuthentication = computed(
-  () => experience.value?.application?.authentication
-)
+const hostedAuthentication = computed(() => {
+  const context = experience.value
+  return context && 'application' in context
+    ? context.application.authentication
+    : undefined
+})
 const googleEnabled = computed(
   () => hosted.value && hostedAuthentication.value?.googleEnabled === true
 )

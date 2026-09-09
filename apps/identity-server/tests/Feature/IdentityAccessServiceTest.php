@@ -724,6 +724,36 @@ final class IdentityAccessServiceTest extends TestCase
         $this->assertDatabaseCount('identity_project_clients', 1);
     }
 
+    public function test_bootstrapped_owner_can_login_to_console_project(): void
+    {
+        $clientId = '02e92e58-0e50-4681-9d57-b122cac61b77';
+        $clientSecret = 'stable-local-console-client-secret-1234567890';
+        $password = 'strong-password-123';
+
+        $this->artisan('identity:bootstrap', [
+            'email' => 'owner@example.com',
+            '--name' => 'Owner',
+            '--password' => $password,
+            '--client-id' => $clientId,
+            '--client-secret' => $clientSecret,
+        ])->assertSuccessful();
+
+        $this->assertDatabaseHas('identity_project_accounts', [
+            'username' => 'Owner',
+            'status' => 'active',
+        ]);
+
+        $this->postJson('/api/v1/identity/auth/login', [
+            'project' => 'identity-console',
+            'client_id' => $clientId,
+            'client_secret' => $clientSecret,
+            'email' => 'owner@example.com',
+            'password' => $password,
+        ])->assertOk()
+            ->assertJsonPath('data.identity.user.email', 'owner@example.com')
+            ->assertJsonPath('data.identity.user.username', 'Owner');
+    }
+
     public function test_bootstrap_accepts_stable_console_credentials_and_is_idempotent_when_requested(): void
     {
         $clientId = '02e92e58-0e50-4681-9d57-b122cac61b77';

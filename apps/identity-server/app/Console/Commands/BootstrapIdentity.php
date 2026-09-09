@@ -8,6 +8,7 @@ use App\Services\UserManagementService\Domain\Aggregates\IdentityMembership as D
 use App\Services\UserManagementService\Domain\Repositories\IdentityMembershipRepository;
 use App\Services\UserManagementService\Domain\ValueObjects\IdentityProjectId;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProject;
+use App\Services\UserManagementService\Infrastructure\Models\Eloquent\IdentityProjectAccount;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User;
 use App\Services\UserManagementService\Infrastructure\Services\Identity\IdentityClientProvisioner;
 use Illuminate\Console\Command;
@@ -84,6 +85,15 @@ final class BootstrapIdentity extends Command
                 ['slug' => Str::slug($projectName)],
                 ['name' => $projectName, 'status' => 'active'],
             );
+            IdentityProjectAccount::query()->create([
+                'project_id' => $project->id,
+                'user_id' => $user->id,
+                'username' => $name,
+                'password' => $password,
+                'email_verified_at' => now(),
+                'status' => 'active',
+                'password_changed_at' => now(),
+            ]);
             $projectId = IdentityProjectId::fromString($project->id);
             $userId = new UserId((string) $user->id);
             $membership = $memberships->findForProjectUser($projectId, $userId)
