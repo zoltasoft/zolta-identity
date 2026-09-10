@@ -1666,17 +1666,6 @@ function selectMembership(membership: IdentityMembership) {
             @submit.prevent="addClient"
           >
             <UFormField
-              label="Hosted application"
-              required
-            >
-              <USelect
-                v-model="invitation.hosted_application_id"
-                :items="(project?.hosted_applications ?? []).map(application => ({ label: application.name, value: application.id }))"
-                placeholder="Select the invitation destination"
-                class="w-full"
-              />
-            </UFormField>
-            <UFormField
               label="Client name"
               required
             >

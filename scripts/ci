@@ -13,10 +13,11 @@ node_run() {
 
   docker run --rm --user "$(id -u):$(id -g)" \
     -e CI=true \
+    -e PNPM_CONFIG_STORE_DIR=/tmp/pnpm-store \
     -e COREPACK_HOME=/tmp/corepack \
     -e NUXT_SESSION_PASSWORD=ci-only-session-password-with-at-least-32-characters \
     -v "$root:/workspace" -w /workspace node:24.11-bookworm \
-    bash -lc "pnpm() { corepack pnpm --store-dir /tmp/pnpm-store \"\$@\"; }; $command"
+    bash -lc "mkdir -p /tmp/corepack-bin && corepack enable --install-directory /tmp/corepack-bin && export PATH=/tmp/corepack-bin:\$PATH && $command"
 }
 
 frontend() { node_run 'pnpm install --frozen-lockfile && pnpm lint'; }
