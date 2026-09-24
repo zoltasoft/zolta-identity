@@ -75,7 +75,7 @@ async function submit({ data }: FormSubmitEvent<ForgotPasswordSchema>) {
       </p>
     </template>
     <template #footer>
-      <NuxtLink :to="{ path: '/auth/login', query: hostedApplication ? { application: hostedApplication, state: route.query.state } : {} }">
+      <NuxtLink :to="{ ...identityAuthPagePath('login', route.params.pageSet, hostedApplication ? { application: hostedApplication, state: route.query.state } : {}) }">
         Return to sign in
       </NuxtLink>
     </template>

@@ -42,25 +42,14 @@ const { primaryLinks, secondaryLinks, searchGroups }
     <template #sidebar-header="{ collapsed }">
       <NuxtLink
         :to="localePath('/admin/projects')"
-        class="flex min-w-0 items-center gap-3 rounded-lg p-2 transition hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary"
+        class="flex min-w-0 items-center rounded-lg p-1 transition hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary"
         :class="collapsed ? 'justify-center' : undefined"
         :aria-label="t('identityConsole.brand')"
       >
-        <span
-          class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-inverted shadow-sm"
-        >
-          <UIcon
-            name="i-lucide-shield-check"
-            class="size-5"
-          />
-        </span>
-
-        <span
-          v-if="!collapsed"
-          class="truncate font-semibold tracking-tight text-highlighted"
-        >
-          {{ t('identityConsole.brand') }}
-        </span>
+        <AppLogo
+          :collapsed="collapsed"
+          :brand="t('identityConsole.brand')"
+        />
       </NuxtLink>
     </template>
 

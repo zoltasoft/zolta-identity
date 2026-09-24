@@ -1,23 +1,10 @@
 <script setup lang="ts">
-import type { DropdownMenuItem, NavigationMenuItem } from '@nuxt/ui'
+import type { NavigationMenuItem } from '@nuxt/ui'
 
 const props = defineProps<{
   items: NavigationMenuItem[][]
   label: string
 }>()
-
-const navigationItems = computed(() => props.items.flat())
-const currentItem = computed(() =>
-  navigationItems.value.find(item => item.active) ?? navigationItems.value[0]
-)
-const mobileItems = computed<DropdownMenuItem[][]>(() => props.items.map(group =>
-  group.map(item => ({
-    label: item.label,
-    icon: item.icon,
-    to: item.to,
-    trailingIcon: item.active ? 'i-lucide-check' : undefined
-  }))
-))
 </script>
 
 <template>
@@ -39,23 +26,23 @@ const mobileItems = computed<DropdownMenuItem[][]>(() => props.items.map(group =
         />
       </nav>
 
-      <UDropdownMenu
-        :items="mobileItems"
-        :content="{ align: 'start', collisionPadding: 16 }"
-        :ui="{ content: 'min-w-64' }"
+      <nav
         class="lg:hidden"
+        :aria-label="props.label"
       >
-        <UButton
-          :label="currentItem?.label"
-          :icon="currentItem?.icon"
-          trailing-icon="i-lucide-chevron-down"
+        <UNavigationMenu
+          :items="props.items"
+          orientation="horizontal"
           color="neutral"
-          variant="outline"
-          block
-          class="justify-between bg-default"
-          :aria-label="props.label"
+          variant="pill"
+          :ui="{
+            root: 'w-full',
+            list: 'w-full justify-start gap-1',
+            link: 'min-h-10 gap-2 px-3',
+            linkLeadingIcon: 'size-4.5'
+          }"
         />
-      </UDropdownMenu>
+      </nav>
     </div>
   </aside>
 </template>

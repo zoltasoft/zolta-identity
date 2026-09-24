@@ -6,7 +6,7 @@ import {
   setResponseHeader
 } from 'h3'
 import { z } from 'zod/v4'
-import { establishIdentityHostedAuthorization } from '../../utils/identity-hosted-auth'
+import { establishIdentityHostedAuthorization, identityHostedAuthPageRoute } from '../../utils/identity-hosted-auth'
 
 const schema = z.object({
   application: z.string().trim().min(1).max(100),
@@ -29,7 +29,8 @@ export default defineEventHandler(async (event) => {
     query.state
   )
 
-  const redirect = new URL(`/auth/${query.screen}`, getRequestURL(event).origin)
+  const pageRoute = await identityHostedAuthPageRoute(event, query.application, query.screen)
+  const redirect = new URL(pageRoute, getRequestURL(event).origin)
   redirect.searchParams.set('application', query.application)
   redirect.searchParams.set('state', query.state)
   if (query.email) redirect.searchParams.set('email', query.email)

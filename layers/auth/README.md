@@ -49,6 +49,15 @@ Google Cloud. When terms are required, Identity records the accepted terms URL
 when it creates the application's membership; existing members can still use
 Google to sign in without re-accepting.
 
+Hosted applications may select a logical authentication page set with
+`auth_page_set`. Enable the compiled page sets on the Identity Nuxt host with
+`IDENTITY_HOSTED_AUTH_PAGE_SETS` (for example,
+`default,starter,projects`). The hosted entry route then sends each
+application to its own screen namespace, such as `/auth/starter/login` or
+`/auth/projects/login`, while preserving that namespace across registration,
+verification, recovery, and reset screens. Unknown or disabled page sets fall
+back to the default `/auth/<screen>` routes.
+
 The ready-made hosted pages include the optional
 `IdentityAttribution.vue` lower-left Zoltasoft credit and source link. A cloned
 or white-labelled host can remove `<IdentityAttribution />` from

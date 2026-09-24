@@ -10,11 +10,19 @@ const viteAllowedHosts = [
 export default defineNuxtConfig({
   extends: [
     './layers/auth/default-pages',
+    './layers/auth/hosted-pages/starter',
+    './layers/auth/hosted-pages/projects',
     './layers/admin',
     './packages/i18n',
     './packages/ui'
   ],
   modules: ['@nuxt/eslint', '@vueuse/nuxt'],
+  icon: {
+    clientBundle: {
+      icons: ['lucide:languages'],
+      scan: true
+    }
+  },
   i18n: {
     locales: [
       {

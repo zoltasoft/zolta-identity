@@ -17,5 +17,7 @@ export default defineEventHandler(async (event) => {
     body
   })
 
+  await identityHostedAccountUpdateSessionUser(event, application, body)
+
   return response.data.profile
 })

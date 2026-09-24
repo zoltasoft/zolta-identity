@@ -273,10 +273,7 @@ async function continueWithGoogle() {
               <template v-if="registrationEnabled">
                 New here? <NuxtLink
                   :to="{
-                    path: '/auth/register',
-                    query: hosted
-                      ? { application: hostedApplication, state: hostedState }
-                      : {}
+                    ...identityAuthPagePath('register', route.params.pageSet, hosted ? { application: hostedApplication, state: hostedState } : {})
                   }"
                   class="text-primary font-medium"
                 >Create an account</NuxtLink><span>.</span>
@@ -290,10 +287,7 @@ async function continueWithGoogle() {
         <template #password-hint>
           <NuxtLink
             :to="{
-              path: '/auth/forgot-password',
-              query: hosted
-                ? { application: hostedApplication, state: hostedState }
-                : {}
+              ...identityAuthPagePath('forgot-password', route.params.pageSet, hosted ? { application: hostedApplication, state: hostedState } : {})
             }"
             class="text-primary font-medium"
             tabindex="-1"

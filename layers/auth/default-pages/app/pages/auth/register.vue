@@ -120,10 +120,7 @@ async function createAccount(termsAccepted: boolean) {
         await navigateTo(result.redirectUrl, { external: true })
         return
       }
-      await navigateTo({
-        path: '/auth/verify-email',
-        query: { application: hostedApplication.value, state: hostedState.value }
-      })
+      await navigateTo(identityAuthPagePath('verify-email', route.params.pageSet, { application: hostedApplication.value, state: hostedState.value }))
       return
     }
 
@@ -190,7 +187,7 @@ async function continueWithGoogle() {
           >
             <p class="identity-auth-form-header-link">
               Already have an account? <NuxtLink
-                :to="{ path: '/auth/login', query: hosted ? { application: hostedApplication, state: hostedState } : {} }"
+                :to="identityAuthPagePath('login', route.params.pageSet, hosted ? { application: hostedApplication, state: hostedState } : {})"
                 class="text-primary font-medium"
               >Sign in</NuxtLink><span>.</span>
             </p>

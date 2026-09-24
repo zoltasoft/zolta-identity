@@ -1,4 +1,41 @@
 import type { IdentityAuthenticationExperience } from '../../../shared/types/identity-auth'
+import { identityAuthPagePath } from '../utils/identity-auth-page'
+
+type HostedApplicationMetadata = {
+  application: {
+    returnUrl: string
+  }
+}
+
+function isUnauthorized(error: unknown): boolean {
+  const value = error as { status?: number | string, statusCode?: number | string, cause?: { status?: number | string, statusCode?: number | string } }
+  return [value.status, value.statusCode, value.cause?.status, value.cause?.statusCode]
+    .some(status => status === 401 || status === '401')
+}
+
+function hostedAuthRestartAction(path: string): string {
+  const screen = path.split('/').filter(Boolean).at(-1)
+  return screen === 'register' ? 'signup' : screen === 'forgot-password' ? 'forgot-password' : 'login'
+}
+
+async function restartHostedAuthorization(
+  requestFetch: ReturnType<typeof useRequestFetch>,
+  to: { path: string, query: Record<string, unknown> },
+  application: string
+) {
+  const metadata = await requestFetch<HostedApplicationMetadata>('/api/hosted-auth/application', {
+    query: { application }
+  })
+  const target = new URL(metadata.application.returnUrl)
+  const identityOrigin = useRequestURL().origin
+  if (target.origin === identityOrigin) return null
+
+  target.pathname = `${target.pathname.replace(/\/$/, '')}/auth/${hostedAuthRestartAction(to.path)}`
+  target.search = ''
+  const redirect = typeof to.query.redirect === 'string' ? to.query.redirect : ''
+  if (redirect.startsWith('/') && !redirect.startsWith('//')) target.searchParams.set('redirect', redirect)
+  return `${target.pathname}${target.search}`
+}
 
 export default defineNuxtRouteMiddleware(async (to) => {
   const requestFetch = useRequestFetch()
@@ -28,25 +65,36 @@ export default defineNuxtRouteMiddleware(async (to) => {
     }
   }
 
-  const experience = await requestFetch<IdentityAuthenticationExperience>(
-    application ? '/api/hosted-auth/context' : '/api/auth/context',
-    {
-      query: application
-        ? {
-            application
-          }
-        : undefined
+  let experience: IdentityAuthenticationExperience
+  try {
+    experience = await requestFetch<IdentityAuthenticationExperience>(
+      application ? '/api/hosted-auth/context' : '/api/auth/context',
+      {
+        query: application
+          ? {
+              application
+            }
+          : undefined
+      }
+    )
+  } catch (error) {
+    if (application && isUnauthorized(error)) {
+      const restart = await restartHostedAuthorization(requestFetch, to, application)
+      if (restart) return navigateTo(restart, { external: true, replace: true })
     }
-  )
+    throw error
+  }
+
+  const pageSet = experience.application?.authPageSet ?? to.params.pageSet
 
   if (experience.primary.project.mode !== 'live') {
-    return navigateTo({ path: '/auth/login', query: application ? to.query : {} })
+    return navigateTo(identityAuthPagePath('login', pageSet, application ? to.query : {}))
   }
 
   if (
-    to.path === '/auth/register'
+    to.path.endsWith('/auth/register')
     && experience.primary.project.registration_mode !== 'public'
   ) {
-    return navigateTo({ path: '/auth/login', query: application ? to.query : {} })
+    return navigateTo(identityAuthPagePath('login', pageSet, application ? to.query : {}))
   }
 })

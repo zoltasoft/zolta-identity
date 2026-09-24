@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   const result = await identityHostedAccountRequest(event, application, '/api/auth/account', {
     method: 'DELETE'
   })
-  await identityHostedAccountLogout(event)
+  await identityHostedAccountLogout(event, application)
 
   return result
 })

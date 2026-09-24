@@ -1,18 +1,50 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from '@nuxt/ui'
 import { useIdentityMutation } from '../../../app/composables/useIdentityMutation'
 
 type HostedBrand = {
   name: string
   returnUrl: string
-  appearance: { logoUrl: string | null }
+  appearance: {
+    logoUrl: string | null
+    accentColor: string | null
+    backgroundPreset: 'identity' | 'slate' | 'indigo' | 'emerald' | 'sunset'
+    designTokens: Record<string, string>
+  }
   authentication?: { termsUrl?: string | null, privacyUrl?: string | null }
+}
+
+type HostedAccountContext = {
+  user: {
+    username?: string
+    email: string
+    avatar_url?: string | null
+  } | null
 }
 
 const route = useRoute()
 const mutate = useIdentityMutation()
+const colorMode = useColorMode()
+const { locale } = useI18n()
 const applicationKey = computed(() =>
   typeof route.query.application === 'string' ? route.query.application : ''
 )
+const brandStyle = computed(() => {
+  const tokens = brand.value?.appearance.designTokens ?? {}
+  const styles: Record<string, string> = {}
+
+  for (const [key, value] of Object.entries(tokens)) {
+    styles[`--identity-hosted-${key.replaceAll('_', '-')}`] = value
+    if (key.startsWith('primary_')) styles[`--ui-color-primary-${key.slice(8)}`] = value
+  }
+
+  const accent = tokens.accent ?? brand.value?.appearance.accentColor ?? '#3157d5'
+  styles['--identity-hosted-accent'] = accent
+  styles['--ui-primary'] = tokens.primary_600 ?? accent
+  styles['--ui-color-primary-500'] = tokens.primary_500 ?? accent
+  styles['--ui-color-primary-700'] = tokens.primary_700 ?? accent
+  return styles
+})
 const { data: brand } = await useAsyncData<HostedBrand | null>(
   'identity-account-brand',
   async () => {
@@ -27,13 +59,86 @@ const { data: brand } = await useAsyncData<HostedBrand | null>(
   },
   { watch: [applicationKey] }
 )
+provide('identity-account-brand', brand)
+const { data: accountContext, pending: accountContextPending } = await useFetch<HostedAccountContext>(
+  '/api/hosted-account/context',
+  {
+    key: computed(() => `identity-hosted-account-context:${applicationKey.value}`),
+    query: { application: applicationKey },
+    server: false,
+    watch: [applicationKey]
+  }
+)
 const loggingOut = ref(false)
+const accountUser = computed(() => accountContext.value?.user)
+const accountUserName = computed(
+  () => accountUser.value?.username || accountUser.value?.email || 'Account'
+)
+const accountUserAvatar = computed(() => ({
+  src: accountUser.value?.avatar_url
+    || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(accountUserName.value)}&backgroundColor=0D8ABC&color=fff`,
+  alt: accountUserName.value
+}))
+
+const userMenuItems = computed<DropdownMenuItem[][]>(() => [
+  [{
+    type: 'label',
+    label: accountUserName.value,
+    description: accountUser.value?.email || brand.value?.name || undefined,
+    avatar: accountUserAvatar.value
+  }],
+  [{
+    label: 'Return to application',
+    icon: 'i-lucide-house',
+    onSelect: () => navigateTo(brand.value?.returnUrl ?? '/', { external: true })
+  }],
+  [
+    {
+      label: 'Language',
+      icon: 'i-lucide-languages',
+      children: [
+        { label: 'English', type: 'checkbox', checked: locale.value === 'en' },
+        { label: 'Français', type: 'checkbox', checked: locale.value === 'fr' }
+      ]
+    },
+    {
+      label: 'Appearance',
+      icon: 'i-lucide-sun-moon',
+      children: [
+        {
+          label: 'Light',
+          icon: 'i-lucide-sun',
+          type: 'checkbox',
+          checked: colorMode.value === 'light',
+          onSelect(event: Event) {
+            event.preventDefault()
+            colorMode.preference = 'light'
+          }
+        },
+        {
+          label: 'Dark',
+          icon: 'i-lucide-moon',
+          type: 'checkbox',
+          checked: colorMode.value === 'dark',
+          onSelect(event: Event) {
+            event.preventDefault()
+            colorMode.preference = 'dark'
+          }
+        }
+      ]
+    }
+  ],
+  [{ label: 'Log out', icon: 'i-lucide-log-out', color: 'error', onSelect: logout }]
+])
 
 async function logout() {
   if (loggingOut.value) return
   loggingOut.value = true
   try {
-    await mutate('/api/hosted-account/logout', { method: 'POST' })
+    await mutate('/api/hosted-account/logout', {
+      method: 'POST',
+      body: { application: applicationKey.value }
+    })
     const destination = new URL(`/api/identity/${encodeURIComponent(applicationKey.value)}/account/logout`, new URL(brand.value?.returnUrl ?? '/', window.location.origin).origin)
     await navigateTo(destination.toString(), { external: true })
   } catch (error) {
@@ -44,7 +149,10 @@ async function logout() {
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col bg-default text-default">
+  <div
+    class="identity-account-layout flex min-h-screen flex-col bg-default text-default"
+    :style="brandStyle"
+  >
     <div
       v-if="loggingOut"
       class="fixed inset-0 z-50 grid place-items-center bg-default/85 px-4 backdrop-blur-sm"
@@ -66,81 +174,54 @@ async function logout() {
       </div>
     </div>
 
-    <UHeader class="border-b border-default bg-default">
+    <UHeader :toggle="false">
       <template #left>
         <a
           :href="brand?.returnUrl ?? '/'"
-          class="flex min-w-0 items-center gap-3"
+          class="group flex min-w-0 items-center gap-2.5"
+          :aria-label="`Return to ${brand?.name ?? 'application'}`"
         >
+          <IdentityAuthBrandMark
+            :logo-url="brand?.appearance.logoUrl"
+            size="compact"
+          />
           <span
-            class="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-default bg-elevated"
+            class="truncate text-sm font-semibold tracking-tight text-highlighted transition-colors group-hover:text-primary"
           >
-            <img
-              v-if="brand?.appearance.logoUrl"
-              :src="brand.appearance.logoUrl"
-              :alt="`${brand.name} logo`"
-              class="size-7 rounded-full object-contain"
-            >
-            <UIcon
-              v-else
-              name="i-lucide-app-window"
-              class="size-5 text-muted"
-            />
-          </span>
-          <span
-            class="truncate text-sm font-semibold text-highlighted sm:text-base"
-          >
-            {{ brand?.name ?? "Application" }}
+            {{ brand?.name ?? 'Application' }}
           </span>
         </a>
       </template>
 
       <template #right>
-        <div class="flex shrink-0 items-center gap-2">
-          <UButtonGroup>
-            <UButton
-              icon="i-lucide-house"
-              color="neutral"
-              variant="ghost"
-              :href="brand?.returnUrl ?? '/'"
-              class="sm:hidden"
-              aria-label="Go home"
-            />
-            <UButton
-              label="Home"
-              icon="i-lucide-house"
-              color="neutral"
-              variant="ghost"
-              :href="brand?.returnUrl ?? '/'"
-              class="hidden sm:inline-flex"
-            />
-          </UButtonGroup>
-
-          <div class="rounded-lg border border-default bg-elevated/40 px-1 py-1">
-            <IdentityConsoleControls />
-          </div>
-
-          <UTooltip text="End session">
-            <UButton
-              icon="i-lucide-log-out"
-              color="error"
-              variant="soft"
-              :loading="loggingOut"
-              class="sm:hidden"
-              aria-label="Log out"
-              @click="logout"
-            />
-          </UTooltip>
+        <span
+          v-if="accountContextPending || !accountContext"
+          class="flex items-center gap-2"
+          aria-label="Loading account menu"
+          role="status"
+        >
+          <USkeleton class="size-6 rounded-full !bg-inverted/10" />
+          <USkeleton class="h-3.5 w-12 !bg-inverted/10" />
+          <USkeleton class="size-3 !bg-inverted/10" />
+        </span>
+        <UDropdownMenu
+          v-else
+          :items="userMenuItems"
+          :content="{ align: 'end', collisionPadding: 12 }"
+          :ui="{ content: 'w-56' }"
+        >
           <UButton
-            label="Log out"
-            icon="i-lucide-log-out"
-            color="error"
-            variant="soft"
+            :label="accountUserName"
+            :avatar="accountUserAvatar"
+            trailing-icon="i-lucide-chevrons-up-down"
+            color="neutral"
+            variant="ghost"
             :loading="loggingOut"
-            class="hidden sm:inline-flex"
-            @click="logout"
+            aria-label="Open account menu"
+            class="data-[state=open]:bg-elevated"
+            :ui="{ trailingIcon: 'text-dimmed' }"
           />
-        </div>
+        </UDropdownMenu>
       </template>
     </UHeader>
 
@@ -181,3 +262,43 @@ async function logout() {
     <IdentityAttribution />
   </div>
 </template>
+
+<style>
+.identity-account-layout {
+  --ui-bg: var(--identity-hosted-light-background, #faf9f7);
+  --ui-bg-muted: var(--identity-hosted-light-background-muted, #eef3ef);
+  --ui-bg-elevated: var(--identity-hosted-light-card, #fff);
+  --ui-bg-accented: var(--identity-hosted-light-background-muted, #eef3ef);
+  --ui-text: var(--identity-hosted-light-text, #172033);
+  --ui-text-muted: var(--identity-hosted-light-muted, #59657b);
+  --ui-text-highlighted: var(--identity-hosted-light-text, #172033);
+  --ui-border: var(--identity-hosted-light-border, #e1e5ee);
+  --ui-border-muted: var(--identity-hosted-light-border, #e1e5ee);
+  color: var(--identity-hosted-light-text, #172033);
+  font-family: var(--identity-hosted-font-family, Inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+.dark .identity-account-layout {
+  --ui-bg: var(--identity-hosted-dark-background, #0f172a);
+  --ui-bg-muted: var(--identity-hosted-dark-background-muted, #0f172a);
+  --ui-bg-elevated: var(--identity-hosted-dark-card, #111827);
+  --ui-bg-accented: var(--identity-hosted-dark-background-muted, #0f172a);
+  --ui-text: var(--identity-hosted-dark-text, #f8fafc);
+  --ui-text-muted: var(--identity-hosted-dark-muted, #cbd5e1);
+  --ui-text-highlighted: var(--identity-hosted-dark-text, #f8fafc);
+  --ui-border: var(--identity-hosted-dark-border, #334155);
+  --ui-border-muted: var(--identity-hosted-dark-border, #334155);
+  color: var(--identity-hosted-dark-text, #f8fafc);
+}
+
+.identity-account-loading-state {
+  display: grid;
+  min-height: 20rem;
+  width: 100%;
+  place-items: center;
+}
+
+.identity-account-layout:has(.identity-account-loading-state) .identity-attribution {
+  display: none;
+}
+</style>

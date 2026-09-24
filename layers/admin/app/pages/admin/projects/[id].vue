@@ -77,6 +77,7 @@ const hostedApplication = reactive<{
   sandboxClientId: string
   applicationUrl: string
   callbackUrl: string
+  authPageSet: string
   welcomeText: string
   accentColor: string
   backgroundPreset: 'identity' | 'slate' | 'indigo' | 'emerald' | 'sunset'
@@ -86,7 +87,7 @@ const hostedApplication = reactive<{
   termsUrl: string
   privacyUrl: string
   status: 'active' | 'disabled'
-}>({ id: null, name: '', key: '', primaryClientId: '', sandboxClientId: '', applicationUrl: '', callbackUrl: '', welcomeText: '', accentColor: '', backgroundPreset: 'identity', logoUrl: null, googleEnabled: false, termsRequired: false, termsUrl: '', privacyUrl: '', status: 'active' })
+}>({ id: null, name: '', key: '', primaryClientId: '', sandboxClientId: '', applicationUrl: '', callbackUrl: '', authPageSet: 'default', welcomeText: '', accentColor: '', backgroundPreset: 'identity', logoUrl: null, googleEnabled: false, termsRequired: false, termsUrl: '', privacyUrl: '', status: 'active' })
 const hostedApplicationLogo = ref<File | null>(null)
 const hostedApplicationLogoPreview = ref<string | null>(null)
 const removeHostedApplicationLogo = ref(false)
@@ -316,6 +317,7 @@ function openHostedApplication(application?: IdentityHostedApplication) {
         sandboxClientId: application.sandbox_client_id ?? '',
         applicationUrl: application.application_url,
         callbackUrl: application.callback_url,
+        authPageSet: application.auth_page_set ?? 'default',
         welcomeText: application.appearance.welcome_text ?? '',
         accentColor: application.appearance.accent_color ?? '',
         backgroundPreset: application.appearance.background_preset,
@@ -326,7 +328,7 @@ function openHostedApplication(application?: IdentityHostedApplication) {
         privacyUrl: application.authentication.privacy_url ?? '',
         status: application.status
       }
-    : { id: null, name: '', key: '', primaryClientId: '', sandboxClientId: '', applicationUrl: '', callbackUrl: '', welcomeText: '', accentColor: '', backgroundPreset: 'identity', logoUrl: null, googleEnabled: false, termsRequired: false, termsUrl: '', privacyUrl: '', status: 'active' })
+    : { id: null, name: '', key: '', primaryClientId: '', sandboxClientId: '', applicationUrl: '', callbackUrl: '', authPageSet: 'default', welcomeText: '', accentColor: '', backgroundPreset: 'identity', logoUrl: null, googleEnabled: false, termsRequired: false, termsUrl: '', privacyUrl: '', status: 'active' })
   hostedApplicationLogo.value = null
   hostedApplicationLogoPreview.value = null
   removeHostedApplicationLogo.value = false
@@ -369,6 +371,7 @@ async function saveHostedApplication() {
       sandbox_client_id: hostedApplication.sandboxClientId || null,
       application_url: hostedApplication.applicationUrl,
       callback_url: hostedApplication.callbackUrl,
+      auth_page_set: hostedApplication.authPageSet,
       status: hostedApplication.status,
       appearance: hostedApplicationAppearance(),
       authentication: hostedApplicationAuthentication()
@@ -381,6 +384,7 @@ async function saveHostedApplication() {
       sandbox_client_id: hostedApplication.sandboxClientId || null,
       application_url: hostedApplication.applicationUrl,
       callback_url: hostedApplication.callbackUrl,
+      auth_page_set: hostedApplication.authPageSet,
       appearance: hostedApplicationAppearance(),
       authentication: hostedApplicationAuthentication()
     })
@@ -1726,7 +1730,7 @@ function selectMembership(membership: IdentityMembership) {
                     <UInput
                       v-model="hostedApplication.name"
                       autofocus
-                      placeholder="Job Tracker"
+                      placeholder="Your application"
                       class="w-full"
                     />
                   </UFormField>
@@ -1739,7 +1743,36 @@ function selectMembership(membership: IdentityMembership) {
                     <UInput
                       v-model="hostedApplication.key"
                       :disabled="Boolean(hostedApplication.id)"
-                      placeholder="job-tracker"
+                      placeholder="your-application"
+                      class="w-full font-mono"
+                    />
+                  </UFormField>
+                </div>
+              </section>
+
+              <section class="rounded-xl border border-default">
+                <div class="border-b border-default px-5 py-4">
+                  <div class="flex items-center gap-2">
+                    <UIcon
+                      name="i-lucide-panels-top-left"
+                      class="size-4 text-primary"
+                    />
+                    <h3 class="font-semibold text-highlighted">
+                      Authentication page set
+                    </h3>
+                  </div>
+                  <p class="mt-1 text-sm text-muted">
+                    Select the compiled Identity page set used for this hosted application.
+                  </p>
+                </div>
+                <div class="p-5">
+                  <UFormField
+                    label="Page set"
+                    description="Use default for the generic flow, or enter the enabled /auth/&lt;page-set&gt; namespace."
+                  >
+                    <UInput
+                      v-model="hostedApplication.authPageSet"
+                      placeholder="default"
                       class="w-full font-mono"
                     />
                   </UFormField>
@@ -1914,12 +1947,12 @@ function selectMembership(membership: IdentityMembership) {
                       </label>
                       <input
                         type="file"
-                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                        accept="image/png,image/jpeg,image/webp"
                         class="mt-1 block w-full text-sm"
                         @change="chooseHostedApplicationLogo"
                       >
                       <p class="mt-1 text-xs text-muted">
-                        PNG, JPEG, WebP, or SVG up to 2 MB.
+                        PNG, JPEG, or WebP up to 2 MB.
                       </p>
                     </div>
                     <UButton

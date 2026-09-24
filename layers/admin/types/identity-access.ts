@@ -68,6 +68,7 @@ export type IdentityHostedApplication = {
   name: string
   application_url: string
   callback_url: string
+  auth_page_set: string
   appearance: {
     welcome_text: string | null
     accent_color: string | null

@@ -98,7 +98,7 @@ async function submit({ data }: FormSubmitEvent<ResetPasswordSchema>) {
       </a>
       <NuxtLink
         v-else
-        to="/auth/login"
+        :to="identityAuthPagePath('login', route.params.pageSet)"
       >
         Continue to sign in
       </NuxtLink>
