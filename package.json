@@ -52,7 +52,7 @@
     "@iconify-json/lucide": "^1.2.126",
     "@nuxt/kit": "4.5.2",
     "@nuxt/schema": "4.5.2",
-    "@vueuse/core": "^14.4.0",
+    "@vueuse/core": "^15.0.0",
     "@vueuse/nuxt": "^14.4.0",
     "h3": "^1.15.11",
     "nuxt": "^4.5.2",
