@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import * as z from 'zod/v4'
+import type { ComputedRef } from 'vue'
 import type { FormSubmitEvent } from '@nuxt/ui'
 import { useIdentityMutation } from '../../../../app/composables/useIdentityMutation'
 
 definePageMeta({ layout: 'identity-auth' })
+
+const brand = inject<ComputedRef<{
+  appearance: { logoUrl?: string | null }
+} | null>>('identity-auth-brand', computed(() => null))
 
 type AccountContext = {
   application: {
@@ -73,7 +78,7 @@ const {
   error: contextError,
   pending: contextPending
 } = await useFetch<AccountContext>('/api/hosted-account/context', {
-  key: 'identity-hosted-account-authentication-context',
+  key: computed(() => `identity-hosted-account-authentication-context:${application.value}:${intent.value ?? ''}`),
   query: { application, intent },
   server: false
 })
@@ -121,6 +126,10 @@ async function signIn({ data }: FormSubmitEvent<Schema>) {
       method: 'POST',
       body: { application: application.value, ...data }
     })
+    // The account layout may have cached the unauthenticated context before
+    // this page completed the login. Drop it before mounting the settings
+    // page so it fetches the newly authenticated session.
+    clearNuxtData('identity-hosted-account-context')
     await openAccountSettings()
   } catch (error) {
     toast.add({
@@ -158,18 +167,15 @@ async function continueWithGoogle() {
   <div class="identity-auth-page">
     <div
       v-if="contextPending"
-      class="identity-auth-form-shell flex flex-col items-center gap-3 text-center"
+      class="identity-auth-form-shell identity-auth-loading-shell flex flex-col items-center gap-3 text-center"
       aria-busy="true"
       aria-live="polite"
       aria-label="Verifying request"
     >
-      <UIcon
-        name="i-lucide-loader-circle"
-        class="size-6 animate-spin text-primary"
-      />
-      <p class="m-0 text-sm text-muted">
-        Verifying your request…
-      </p>
+      <USkeleton class="h-8 w-40" />
+      <USkeleton class="h-4 w-64 max-w-full" />
+      <USkeleton class="mt-3 h-10 w-full" />
+      <USkeleton class="h-10 w-full" />
     </div>
 
     <div
@@ -186,16 +192,12 @@ async function continueWithGoogle() {
 
     <div
       v-else-if="context?.authenticated"
-      class="identity-auth-form-shell flex flex-col items-center gap-3 text-center"
+      class="identity-auth-form-shell identity-auth-loading-shell flex flex-col items-center gap-3 text-center"
       aria-live="polite"
     >
-      <UIcon
-        name="i-lucide-loader-circle"
-        class="size-6 animate-spin text-primary"
-      />
-      <p class="m-0 text-sm text-muted">
-        Loading your account settings…
-      </p>
+      <USkeleton class="h-8 w-40" />
+      <USkeleton class="h-4 w-64 max-w-full" />
+      <USkeleton class="mt-3 h-10 w-full" />
     </div>
 
     <UAuthForm
@@ -232,16 +234,15 @@ async function continueWithGoogle() {
 
     <div
       v-else
-      class="identity-auth-form-shell flex flex-col items-center gap-3 text-center"
+      class="identity-auth-return-state"
       aria-live="polite"
+      aria-label="Returning to the application"
     >
-      <UIcon
-        name="i-lucide-loader-circle"
-        class="size-6 animate-spin text-primary"
+      <IdentityAuthBrandMark
+        :logo-url="brand?.appearance.logoUrl"
+        size="form"
+        class="animate-pulse"
       />
-      <p class="m-0 text-sm text-muted">
-        Returning to the application…
-      </p>
     </div>
   </div>
 </template>

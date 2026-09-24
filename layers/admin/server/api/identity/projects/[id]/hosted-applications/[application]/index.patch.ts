@@ -19,6 +19,7 @@ const schema = z.object({
   sandbox_client_id: z.uuid().nullable(),
   application_url: z.url().max(2048),
   callback_url: z.url().max(2048),
+  auth_page_set: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(100),
   status: z.enum(['active', 'disabled']),
   appearance: appearanceSchema,
   authentication: authenticationSchema

@@ -9,7 +9,6 @@ const route = useRoute()
 const router = useRouter()
 const switchLocalePath = useSwitchLocalePath()
 const { locale, t } = useI18n()
-const colorMode = useColorMode()
 
 const supportedLocales = [
   { code: 'en', labelKey: 'identityConsole.locales.en' },
@@ -42,55 +41,37 @@ const localeOptions = computed<DropdownMenuItem[]>(() =>
 )
 
 const languageItems = computed<DropdownMenuItem[][]>(() => [localeOptions.value])
-const compactItems = computed<DropdownMenuItem[][]>(() => [[
-  {
-    label: t('identityConsole.language'),
-    icon: 'i-lucide-languages',
-    children: localeOptions.value
-  },
-  {
-    label: t('identityConsole.appearance'),
-    icon: 'i-lucide-sun-moon',
-    children: [
-      {
-        label: t('identityConsole.light'),
-        icon: 'i-lucide-sun',
-        type: 'checkbox',
-        checked: colorMode.value === 'light',
-        onUpdateChecked(checked: boolean) {
-          if (checked) colorMode.preference = 'light'
-        }
-      },
-      {
-        label: t('identityConsole.dark'),
-        icon: 'i-lucide-moon',
-        type: 'checkbox',
-        checked: colorMode.value === 'dark',
-        onUpdateChecked(checked: boolean) {
-          if (checked) colorMode.preference = 'dark'
-        }
-      }
-    ]
-  }
-]])
 </script>
 
 <template>
-  <UDropdownMenu
+  <div
     v-if="compact"
-    :items="compactItems"
-    :content="{ align: 'end', collisionPadding: 8 }"
-    :ui="{ content: 'min-w-48' }"
+    class="flex items-center gap-1"
   >
-    <UTooltip :text="t('identityConsole.configuration')">
-      <UButton
-        icon="i-lucide-settings"
+    <UDropdownMenu
+      :items="languageItems"
+      :content="{ align: 'end', collisionPadding: 8 }"
+      :ui="{ content: 'min-w-40' }"
+    >
+      <UTooltip :text="t('identityConsole.language')">
+        <UButton
+          icon="i-lucide-languages"
+          color="neutral"
+          variant="ghost"
+          square
+          :aria-label="t('identityConsole.language')"
+        />
+      </UTooltip>
+    </UDropdownMenu>
+
+    <UTooltip :text="t('identityConsole.appearance')">
+      <UColorModeButton
         color="neutral"
         variant="ghost"
-        :aria-label="t('identityConsole.configuration')"
+        :aria-label="t('identityConsole.appearance')"
       />
     </UTooltip>
-  </UDropdownMenu>
+  </div>
 
   <div
     v-else

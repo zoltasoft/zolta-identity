@@ -7,26 +7,15 @@ defineProps<{
 }>()
 
 const brand = inject<ComputedRef<{
-  appearance: { logoUrl: string | null }
+  appearance: { logoUrl?: string | null, welcomeText?: string | null }
 } | null>>('identity-auth-brand', computed(() => null))
+
+const welcomeText = computed(() => brand.value?.appearance.welcomeText)
 </script>
 
 <template>
   <div class="identity-auth-form-header">
-    <span
-      v-if="brand?.appearance.logoUrl"
-      class="identity-auth-form-logo"
-    >
-      <img
-        :src="brand.appearance.logoUrl"
-        alt=""
-      >
-    </span>
-    <UIcon
-      v-else
-      name="i-lucide-app-window"
-      class="size-8 text-primary"
-    />
+    <IdentityAuthBrandMark :logo-url="brand?.appearance.logoUrl" />
     <h1>
       {{ title }}
     </h1>
@@ -35,6 +24,12 @@ const brand = inject<ComputedRef<{
       class="identity-auth-form-header-description"
     >
       {{ description }}
+    </p>
+    <p
+      v-if="welcomeText"
+      class="identity-auth-form-header-welcome"
+    >
+      {{ welcomeText }}
     </p>
     <slot />
   </div>

@@ -101,18 +101,7 @@ async function submit() {
 
     <div class="w-full max-w-md">
       <div class="mb-4 flex items-center gap-3 rounded-2xl border border-default bg-elevated/40 px-3 py-2">
-        <span class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-inverted shadow-sm">
-          <UIcon
-            name="i-lucide-shield-check"
-            class="size-5"
-          />
-        </span>
-
-        <div class="min-w-0 space-y-0.5">
-          <p class="truncate text-sm font-medium text-highlighted">
-            {{ t('identityConsole.brand') }}
-          </p>
-        </div>
+        <AppLogo :brand="t('identityConsole.brand')" />
       </div>
 
       <UPageCard

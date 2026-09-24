@@ -20,6 +20,7 @@ type HostedApplication = {
   key: string
   name: string
   callbackUrl: string
+  authPageSet: string
   applicationUrl?: string
   appearance: HostedApplicationAppearance
   authentication: HostedApplicationAuthentication
@@ -31,6 +32,7 @@ export type HostedApplicationPublicMetadata = {
   key: string
   name: string
   returnUrl: string
+  authPageSet: string
   appearance: HostedApplicationAppearance
   authentication: HostedApplicationAuthentication
 }
@@ -47,6 +49,7 @@ type HostedApplicationAppearance = {
   accentColor: string | null
   backgroundPreset: 'identity' | 'slate' | 'indigo' | 'emerald' | 'sunset'
   logoUrl: string | null
+  designTokens: Record<string, string>
 }
 
 type HostedFlow = {
@@ -113,11 +116,13 @@ type HostedApplicationConfiguration = {
   name: string
   application_url: string
   callback_url: string
+  auth_page_set?: string
   appearance?: {
     welcome_text?: string | null
     accent_color?: string | null
     background_preset?: HostedApplicationAppearance['backgroundPreset']
     logo_url?: string | null
+    design_tokens?: Record<string, string>
   }
   authentication?: {
     google_enabled?: boolean
@@ -169,11 +174,13 @@ async function resolveHostedApplication(
     name: application.name,
     applicationUrl: application.application_url,
     callbackUrl: application.callback_url,
+    authPageSet: application.auth_page_set ?? 'default',
     appearance: {
       welcomeText: application.appearance?.welcome_text ?? null,
       accentColor: application.appearance?.accent_color ?? null,
       backgroundPreset: application.appearance?.background_preset ?? 'identity',
-      logoUrl: application.appearance?.logo_url ?? null
+      logoUrl: application.appearance?.logo_url ?? null,
+      designTokens: application.appearance?.design_tokens ?? {}
     },
     authentication: {
       googleEnabled: application.authentication?.google_enabled ?? false,
@@ -206,11 +213,25 @@ export async function identityHostedApplicationByClient(
   return await resolveHostedApplication(event, `/hosted-clients/${encodeURIComponent(clientId)}/configuration`)
 }
 
+export async function identityHostedAuthPageRoute(
+  event: H3Event,
+  applicationKey: string,
+  screen: 'login' | 'register' | 'forgot-password' | 'reset-password' | 'verify-email'
+): Promise<string> {
+  const application = await identityHostedApplication(event, applicationKey)
+  const configuredPageSets = useRuntimeConfig(event).hostedAuth?.pageSets
+  const pageSet = application.authPageSet
+  const enabled = Array.isArray(configuredPageSets) && configuredPageSets.includes(pageSet)
+  const prefix = enabled && pageSet !== 'default' ? `/auth/${encodeURIComponent(pageSet)}` : '/auth'
+  return `${prefix}/${screen}`
+}
+
 function publicApplicationMetadata(application: HostedApplication): HostedApplicationPublicMetadata {
   return {
     key: application.key,
     name: application.name,
     returnUrl: application.applicationUrl ?? new URL(application.callbackUrl).origin,
+    authPageSet: application.authPageSet,
     appearance: application.appearance,
     authentication: application.authentication
   }
@@ -286,16 +307,20 @@ async function clientRequest<T>(
   return response.data
 }
 
-function accountSession(event: H3Event) {
+function accountSession(event: H3Event, applicationKey: string) {
   const config = useRuntimeConfig(event)
   const password = String(config.session?.password ?? '')
   if (password.length < 32) {
     throw createError({ statusCode: 503, statusMessage: 'Identity hosted sessions are not configured.' })
   }
 
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(applicationKey)) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid Identity application key.' })
+  }
+
   return useSession<HostedAccount>(event, {
     password,
-    name: 'identity-hosted-account',
+    name: `identity-hosted-account-${applicationKey}`,
     maxAge: 60 * 60,
     cookie: {
       path: '/',
@@ -502,7 +527,7 @@ async function context(event: H3Event, application: HostedApplication, name: 'pr
 export async function identityHostedExperience(
   event: H3Event,
   applicationKey: string
-): Promise<IdentityAuthenticationExperience & { application: { key: string, name: string, returnUrl: string, appearance: HostedApplicationAppearance, authentication: HostedApplicationAuthentication } }> {
+): Promise<IdentityAuthenticationExperience & { application: { key: string, name: string, returnUrl: string, authPageSet: string, appearance: HostedApplicationAppearance, authentication: HostedApplicationAuthentication } }> {
   const application = await identityHostedApplication(event, applicationKey)
   const authorization = await hostedAuthorization(event, application)
   return await hostedExperience(event, application, authorization.features.demoAccount)
@@ -511,7 +536,7 @@ export async function identityHostedExperience(
 export async function identityHostedExperienceByClient(
   event: H3Event,
   clientId: string
-): Promise<IdentityAuthenticationExperience & { application: { key: string, name: string, returnUrl: string, appearance: HostedApplicationAppearance, authentication: HostedApplicationAuthentication } }> {
+): Promise<IdentityAuthenticationExperience & { application: { key: string, name: string, returnUrl: string, authPageSet: string, appearance: HostedApplicationAppearance, authentication: HostedApplicationAuthentication } }> {
   const application = await identityHostedApplicationByClient(event, clientId)
   return await hostedExperience(event, application, false)
 }
@@ -531,7 +556,7 @@ export async function identityHostedAccountContext(
   intent?: string
 ) {
   const application = await identityHostedApplication(event, applicationKey)
-  const session = await accountSession(event)
+  const session = await accountSession(event, applicationKey)
   let account = session.data
   let entryAuthorized = account.application === applicationKey && typeof account.entryAuthorizedAt === 'number'
   if (!entryAuthorized && intent) {
@@ -547,7 +572,19 @@ export async function identityHostedAccountContext(
   let authenticated = entryAuthorized && Boolean(account.identity)
   if (authenticated) {
     try {
-      await identityHostedAccountRequest(event, applicationKey, '/auth/me')
+      const currentIdentity = await identityHostedAccountRequest<{
+        data: { identity: IdentityLoginData['identity'] }
+      }>(event, applicationKey, '/auth/me')
+      if (account.identity && currentIdentity.data.identity) {
+        await session.update({
+          ...account,
+          identity: {
+            ...account.identity,
+            identity: currentIdentity.data.identity
+          }
+        })
+        account = session.data
+      }
     } catch (error) {
       if (identityErrorStatus(error) !== 401) throw error
       await session.clear()
@@ -578,7 +615,7 @@ export async function identityHostedAccountLogin(
   input: IdentityLoginInput
 ) {
   const application = await identityHostedApplication(event, applicationKey)
-  const session = await accountSession(event)
+  const session = await accountSession(event, applicationKey)
   if (session.data.application !== applicationKey || typeof session.data.entryAuthorizedAt !== 'number') {
     throw createError({ statusCode: 403, statusMessage: 'Open account settings from your application to sign in.' })
   }
@@ -602,12 +639,15 @@ export async function identityHostedAccountLogin(
   return await identityHostedAccountContext(event, applicationKey)
 }
 
-export async function identityHostedAccountLogout(event: H3Event): Promise<void> {
-  const session = await accountSession(event)
+export async function identityHostedAccountLogout(
+  event: H3Event,
+  applicationKey: string
+): Promise<void> {
+  const session = await accountSession(event, applicationKey)
   const account = session.data
   try {
     if (account.application && account.identity?.access_token) {
-      const application = await identityHostedApplication(event, account.application)
+      const application = await identityHostedApplication(event, applicationKey)
       const connection = account.connection === 'sandbox'
         ? assertConnection(application.sandbox)
         : application.primary
@@ -649,7 +689,7 @@ export async function identityHostedLogoutHandoff(
     '/logout/intent/consume',
     { intent }
   )
-  await identityHostedAccountLogout(event)
+  await identityHostedAccountLogout(event, applicationKey)
 
   return result.redirect_url
 }
@@ -661,7 +701,7 @@ export async function identityHostedAccountRequest<T>(
   options: FetchOptions<'json'> = {}
 ): Promise<T> {
   const application = await identityHostedApplication(event, applicationKey)
-  const session = await accountSession(event)
+  const session = await accountSession(event, applicationKey)
   const account = session.data
 
   if (account.application !== applicationKey || !account.identity?.access_token) {
@@ -706,11 +746,38 @@ export async function identityHostedAccountRequest<T>(
   }
 }
 
+export async function identityHostedAccountUpdateSessionUser(
+  event: H3Event,
+  applicationKey: string,
+  user: Pick<IdentityLoginData['identity']['user'], 'username' | 'email' | 'avatar_url'>
+): Promise<void> {
+  const session = await accountSession(event, applicationKey)
+  const account = session.data
+
+  if (account.application !== applicationKey || !account.identity) {
+    return
+  }
+
+  await session.update({
+    ...account,
+    identity: {
+      ...account.identity,
+      identity: {
+        ...account.identity.identity,
+        user: {
+          ...account.identity.identity.user,
+          ...user
+        }
+      }
+    }
+  })
+}
+
 export async function requireIdentityHostedAccountPasswordAuthentication(
   event: H3Event,
   applicationKey: string
 ): Promise<void> {
-  const account = await accountSession(event)
+  const account = await accountSession(event, applicationKey)
   if (account.data.application !== applicationKey || !account.data.identity) {
     throw createError({ statusCode: 401, statusMessage: 'Sign in to manage this Identity account.' })
   }
@@ -734,7 +801,12 @@ export async function identityHostedLogin(
   if (requiresEmailVerification(identity)) {
     const session = await flowSession(event)
     await session.update({ application: applicationKey, state: assertState(state), identity })
-    const verificationUrl = new URL('/auth/verify-email', getRequestURL(event).origin)
+    const verificationRoute = await identityHostedAuthPageRoute(
+      event,
+      applicationKey,
+      'verify-email'
+    )
+    const verificationUrl = new URL(verificationRoute, getRequestURL(event).origin)
     verificationUrl.searchParams.set('application', applicationKey)
     verificationUrl.searchParams.set('state', state)
 
@@ -819,7 +891,7 @@ export async function identityHostedAccountGoogleStart(
   tab: 'profile' | 'security'
 ) {
   const application = await identityHostedApplication(event, applicationKey)
-  const account = await accountSession(event)
+  const account = await accountSession(event, applicationKey)
   if (account.data.application !== applicationKey || typeof account.data.entryAuthorizedAt !== 'number') {
     throw createError({ statusCode: 403, statusMessage: 'Open account settings from your application to sign in.' })
   }
@@ -870,7 +942,7 @@ export async function identityHostedGoogleCallback(event: H3Event, code: string,
     terms_accepted: true
   })
   if (flow.purpose === 'account') {
-    const account = await accountSession(event)
+    const account = await accountSession(event, flow.application)
     if (account.data.application !== flow.application || typeof account.data.entryAuthorizedAt !== 'number') {
       throw createError({ statusCode: 403, statusMessage: 'The account settings request has expired. Please start again.' })
     }

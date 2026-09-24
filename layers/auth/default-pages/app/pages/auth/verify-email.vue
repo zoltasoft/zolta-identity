@@ -16,11 +16,10 @@ const mutateIdentity = useIdentityMutation()
 const hosted = computed(() => typeof route.query.application === 'string')
 const expiredHostedFlow = ref(false)
 const hostedLoginLocation = computed(() => ({
-  path: '/auth/login',
-  query: {
+  ...identityAuthPagePath('login', route.params.pageSet, {
     application: route.query.application,
     ...(typeof route.query.state === 'string' ? { state: route.query.state } : {})
-  }
+  })
 }))
 if (hosted.value) {
   try {
@@ -34,7 +33,7 @@ if (hosted.value) {
   const session = useUserSession()
   if (!session.loggedIn.value) await session.fetch()
   if (!session.loggedIn.value) {
-    await navigateTo({ path: '/auth/login', query: { redirect: route.fullPath } })
+    await navigateTo(identityAuthPagePath('login', route.params.pageSet, { redirect: route.fullPath }))
   }
 }
 const schema = z.object({ code: z.string().regex(/^\d{6}$/, 'Enter the six-digit verification code.') })

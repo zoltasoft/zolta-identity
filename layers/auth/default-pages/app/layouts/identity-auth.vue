@@ -4,11 +4,14 @@ type HostedAppearance = {
   accentColor: string | null
   backgroundPreset: 'identity' | 'slate' | 'indigo' | 'emerald' | 'sunset'
   logoUrl: string | null
+  designTokens: Record<string, string>
 }
 
 type HostedBrand = {
   key: string
   name: string
+  projectName?: string
+  authPageSet?: string
   appearance: HostedAppearance
   authentication: {
     termsUrl: string | null
@@ -42,58 +45,77 @@ const { data: experience } = await useAsyncData<HostedBrand | null>(
 const brand = computed(() => experience.value)
 const config = useRuntimeConfig()
 const productName = computed(
-  () => brand.value?.name ?? config.public.identityAuth.productName
+  () => brand.value?.name ?? brand.value?.projectName ?? config.public.identityAuth.productName
 )
+const pageSet = computed(() => identityAuthPageSet(
+  route.params.pageSet ?? brand.value?.authPageSet
+))
 const backgroundPreset = computed(
   () => brand.value?.appearance.backgroundPreset ?? 'identity'
 )
-const brandStyle = computed(() =>
-  brand.value?.appearance.accentColor
-    ? { '--identity-auth-accent': brand.value.appearance.accentColor }
-    : {}
-)
+const brandStyle = computed(() => {
+  const tokens = brand.value?.appearance.designTokens ?? {}
+  const styles: Record<string, string> = {}
+
+  for (const [key, value] of Object.entries(tokens)) {
+    styles[`--identity-hosted-${key.replaceAll('_', '-')}`] = value
+  }
+
+  if (brand.value?.appearance.accentColor && !tokens.accent) {
+    styles['--identity-hosted-accent'] = brand.value.appearance.accentColor
+  }
+
+  for (const [key, value] of Object.entries(tokens)) {
+    if (key.startsWith('primary_')) styles[`--ui-color-primary-${key.slice(8)}`] = value
+  }
+
+  const accent = tokens.accent ?? brand.value?.appearance.accentColor ?? '#3157d5'
+  styles['--ui-primary'] = tokens.primary_600 ?? accent
+
+  // The auth logo uses the explicit Nuxt UI primary shade variables rather
+  // than --ui-primary. Keep those variables in sync when a hosted app only
+  // provides an accent (or a partial primary palette), otherwise Nuxt UI's
+  // default blue palette leaks into the logo background.
+  styles['--ui-color-primary-500'] = tokens.primary_500 ?? accent
+  styles['--ui-color-primary-700'] = tokens.primary_700 ?? accent
+
+  return styles
+})
+
+useHead(() => ({
+  title: productName.value,
+  meta: [
+    { name: 'description', content: `Secure authentication for ${productName.value}.` }
+  ]
+}))
 
 provide('identity-auth-brand', brand)
+provide('identity-auth-page-set', pageSet)
 </script>
 
 <template>
   <main
     class="identity-auth-layout"
-    :class="`identity-auth-layout--${backgroundPreset}`"
+    :class="[
+      `identity-auth-layout--${pageSet}`,
+      `identity-auth-background--${backgroundPreset}`
+    ]"
     :style="brandStyle"
   >
-    <UHeader
-      class="identity-auth-header"
-      :ui="{
-        root: 'border-b-0'
-      }"
-    >
-      <template #left>
+    <header class="identity-auth-header">
+      <div class="identity-auth-header-inner">
         <div class="identity-auth-header-brand">
-          <span class="identity-auth-header-logo">
-            <img
-              v-if="brand?.appearance.logoUrl"
-              :src="brand.appearance.logoUrl"
-              :alt="`${productName} logo`"
-            >
-            <UIcon
-              v-else
-              name="i-lucide-app-window"
-              class="size-5 text-muted"
-            />
-          </span>
-          <span class="identity-auth-header-name">
-            {{ productName }}
-          </span>
+          <IdentityAuthBrandMark
+            :logo-url="brand?.appearance.logoUrl"
+            size="compact"
+          />
+          <span class="identity-auth-header-name">{{ productName }}</span>
         </div>
-      </template>
-
-      <template #right>
         <div class="identity-auth-header-controls">
           <IdentityConsoleControls compact />
         </div>
-      </template>
-    </UHeader>
+      </div>
+    </header>
 
     <div class="identity-auth-content">
       <slot />
@@ -107,7 +129,7 @@ provide('identity-auth-brand', brand)
 
 <style>
 :root {
-  --identity-auth-bg: #f6f7fb;
+  --identity-auth-bg: #faf9f7;
   --identity-auth-card: #fff;
   --identity-auth-text: #172033;
   --identity-auth-muted: #59657b;
@@ -116,8 +138,7 @@ provide('identity-auth-brand', brand)
   --identity-auth-status: #f1f4fb;
   --identity-auth-accent: #3157d5;
   color-scheme: light;
-  font-family:
-    Inter,
+  font-family: var(--identity-auth-font, Inter),
     ui-sans-serif,
     system-ui,
     -apple-system,
@@ -139,19 +160,55 @@ provide('identity-auth-brand', brand)
 
 body {
   margin: 0;
-  background: var(--identity-auth-bg);
   color: var(--identity-auth-text);
 }
 
 .identity-auth-layout {
+  --identity-auth-font: var(--identity-hosted-font-family, Inter);
+  --identity-auth-bg: var(--identity-hosted-light-background, #faf9f7);
+  --identity-auth-bg-muted: var(--identity-hosted-light-background-muted, #eef3ef);
+  --identity-auth-card: var(--identity-hosted-light-card, #fff);
+  --identity-auth-text: var(--identity-hosted-light-text, #172033);
+  --identity-auth-muted: var(--identity-hosted-light-muted, #59657b);
+  --identity-auth-border: var(--identity-hosted-light-border, #e1e5ee);
+  --identity-auth-input-border: var(--identity-hosted-light-input-border, #cdd3df);
+  --identity-auth-status: var(--identity-hosted-light-status, #f1f4fb);
+  --identity-auth-accent: var(--identity-hosted-accent, #3157d5);
+  --ui-bg: var(--identity-auth-bg);
+  --ui-bg-muted: var(--identity-auth-bg-muted);
+  --ui-bg-elevated: var(--identity-auth-card);
+  --ui-bg-accented: var(--identity-auth-bg-muted);
+  --ui-text: var(--identity-auth-text);
+  --ui-text-muted: var(--identity-auth-muted);
+  --ui-text-highlighted: var(--identity-auth-text);
+  --ui-border: var(--identity-auth-border);
+  --ui-border-muted: var(--identity-auth-border);
   box-sizing: border-box;
+  color: var(--identity-auth-text);
   display: flex;
   flex-direction: column;
+  font-family: var(--identity-auth-font), ui-sans-serif, system-ui, sans-serif;
   min-height: 100vh;
   position: relative;
 }
 
+.dark .identity-auth-layout {
+  --identity-auth-bg: var(--identity-hosted-dark-background, #0f172a);
+  --identity-auth-bg-muted: var(--identity-hosted-dark-background-muted, #0f172a);
+  --identity-auth-card: var(--identity-hosted-dark-card, #111827);
+  --identity-auth-text: var(--identity-hosted-dark-text, #f8fafc);
+  --identity-auth-muted: var(--identity-hosted-dark-muted, #cbd5e1);
+  --identity-auth-border: var(--identity-hosted-dark-border, #334155);
+  --identity-auth-input-border: var(--identity-hosted-dark-input-border, #475569);
+  --identity-auth-status: var(--identity-hosted-dark-status, #1e293b);
+}
+
 .identity-auth-header {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 3.5rem;
+  padding-inline: clamp(1rem, 4vw, 2.5rem);
   background: color-mix(
     in srgb,
     var(--identity-auth-card) 88%,
@@ -162,32 +219,22 @@ body {
   width: 100%;
 }
 
+.identity-auth-header-inner {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-inline: auto;
+  max-width: 80rem;
+  width: 100%;
+}
+
 .identity-auth-header-brand {
   align-items: center;
   display: flex;
   gap: 0.75rem;
   max-width: min(70vw, 32rem);
   min-width: 0;
-}
-
-.identity-auth-header-logo {
-  align-items: center;
-  background: color-mix(in srgb, var(--identity-auth-card) 75%, transparent);
-  border: 1px solid var(--identity-auth-border);
-  border-radius: 0.75rem;
-  display: inline-flex;
-  flex: none;
-  height: 2.5rem;
-  justify-content: center;
-  overflow: hidden;
-  width: 2.5rem;
-}
-
-.identity-auth-header-logo img {
-  border-radius: 9999px;
-  height: 1.75rem;
-  object-fit: contain;
-  width: 1.75rem;
 }
 
 .identity-auth-header-name {
@@ -206,27 +253,16 @@ body {
   justify-content: flex-end;
 }
 
-.identity-auth-layout--slate {
-  --identity-auth-bg: #e9eff7;
-  background: linear-gradient(135deg, #e9eff7, #cad7e8);
-}
-.identity-auth-layout--indigo {
-  --identity-auth-bg: #eef0ff;
-  background: linear-gradient(135deg, #eef0ff, #d5dcff);
-}
-.identity-auth-layout--emerald {
-  --identity-auth-bg: #e9f8f2;
-  background: linear-gradient(135deg, #e9f8f2, #c7ecdc);
-}
-.identity-auth-layout--sunset {
-  --identity-auth-bg: #fff2ea;
-  background: linear-gradient(135deg, #fff2ea, #ffd9cd);
-}
-
 .identity-auth-page,
-.identity-auth-form-shell {
+.identity-auth-form-shell,
+.identity-auth-form-stack {
   box-sizing: border-box;
   width: min(100%, 26rem);
+}
+
+.identity-auth-form-stack {
+  display: grid;
+  gap: 1rem;
 }
 
 .identity-auth-content {
@@ -273,23 +309,21 @@ body {
   padding: 1.75rem;
 }
 
-.identity-auth-form-logo {
-  align-items: center;
-  display: inline-flex;
-  height: 2rem;
+.identity-auth-loading-shell {
+  min-height: 20rem;
   justify-content: center;
-  overflow: hidden;
-  border-radius: 9999px;
-  width: 2rem;
 }
 
-.identity-auth-form-logo img {
-  border-radius: inherit;
-  display: block;
-  height: 100%;
-  max-width: 100%;
-  object-fit: contain;
-  width: 100%;
+.identity-auth-return-state {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 20rem;
+  width: min(100%, 26rem);
+}
+
+.identity-auth-content:has(.identity-auth-return-state) > .identity-attribution {
+  display: none;
 }
 
 .identity-auth-form-header {
@@ -302,7 +336,7 @@ body {
 .identity-auth-form-header h1 {
   font-size: 1.25rem;
   font-weight: 700;
-  margin: 0.5rem 0 0;
+  margin: 0;
 }
 
 .identity-auth-form-header > p {
@@ -320,6 +354,15 @@ body {
   margin-top: 0.25rem;
 }
 
+.identity-auth-form-header .identity-auth-form-header-welcome {
+  color: var(--identity-auth-text);
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.5;
+  margin-top: 0.75rem;
+  max-width: 32rem;
+}
+
 .identity-auth-form-header .identity-auth-form-header-link {
   color: var(--identity-auth-muted);
   font-size: 0.9rem;
@@ -333,7 +376,7 @@ body {
   border: 1px solid var(--identity-auth-border);
   border-radius: 1rem;
   background: var(--identity-auth-card);
-  box-shadow: 0 1rem 3rem rgba(23, 32, 51, 0.08);
+  box-shadow: 0 1rem 3rem color-mix(in srgb, var(--identity-auth-text) 8%, transparent);
   padding: 2rem;
 }
 
@@ -474,11 +517,53 @@ body {
 }
 
 .identity-auth-links a {
-  color: #3157d5;
+  color: var(--identity-auth-accent);
   text-decoration: none;
 }
 
 .identity-auth-links a:hover {
   text-decoration: underline;
+}
+
+.identity-auth-background--slate .identity-auth-header {
+  background: color-mix(in srgb, var(--identity-auth-card) 72%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.identity-auth-background--slate .identity-auth-form-shell {
+  border-radius: 1.25rem;
+  box-shadow: 0 1.5rem 4rem color-mix(in srgb, var(--identity-auth-accent) 14%, transparent);
+}
+
+.identity-auth-background--slate .identity-auth-form-header h1 {
+  letter-spacing: -0.02em;
+}
+
+.identity-auth-background--indigo {
+  background:
+    radial-gradient(circle at 12% 14%, color-mix(in srgb, var(--identity-auth-accent) 12%, transparent), transparent 34%),
+    var(--identity-auth-bg);
+}
+
+.identity-auth-background--emerald {
+  background:
+    radial-gradient(circle at 88% 12%, color-mix(in srgb, var(--identity-auth-accent) 14%, transparent), transparent 32%),
+    var(--identity-auth-bg);
+}
+
+.identity-auth-background--sunset {
+  background:
+    radial-gradient(circle at 50% 0, color-mix(in srgb, var(--identity-auth-accent) 16%, transparent), transparent 38%),
+    var(--identity-auth-bg);
+}
+
+.dark .identity-auth-background--slate .identity-auth-header {
+  background: color-mix(in srgb, var(--identity-auth-bg) 78%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--identity-auth-border) 80%, transparent);
+}
+
+.dark .identity-auth-background--slate .identity-auth-form-shell {
+  border-color: color-mix(in srgb, var(--identity-auth-accent) 30%, transparent);
+  box-shadow: 0 1.5rem 4rem color-mix(in srgb, var(--identity-auth-accent) 16%, transparent);
 }
 </style>

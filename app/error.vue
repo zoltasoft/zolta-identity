@@ -18,7 +18,7 @@ const description = computed(() => isNotFound.value
   : t('error.genericDescription'))
 const recoveryPath = computed(() => session.loggedIn.value
   ? localePath('/dashboard')
-  : localePath('/saas'))
+  : localePath('/'))
 
 useHead({
   htmlAttrs: { lang: locale }

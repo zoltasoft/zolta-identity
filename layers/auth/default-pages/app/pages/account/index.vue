@@ -1,10 +1,16 @@
 <script setup lang="ts">
+import type { ComputedRef } from 'vue'
 import type { NavigationMenuItem } from '@nuxt/ui'
 import { useIdentityMutation } from '../../../../app/composables/useIdentityMutation'
 
 definePageMeta({
   layout: 'identity-account'
 })
+
+const brand = inject<ComputedRef<{ appearance: { logoUrl?: string | null } } | null>>(
+  'identity-account-brand',
+  computed(() => null)
+)
 
 type AccountContext = {
   application: { key: string, name: string, returnUrl: string }
@@ -71,7 +77,7 @@ const {
   pending: contextPending,
   refresh: refreshContext
 } = await useFetch<AccountContext>('/api/hosted-account/context', {
-  key: 'identity-hosted-account-context',
+  key: computed(() => `identity-hosted-account-context:${application.value}`),
   query: { application },
   server: false
 })
@@ -154,7 +160,7 @@ async function saveProfile() {
   errorMessage.value = ''
   successMessage.value = ''
   try {
-    await mutate('/api/hosted-account/profile', {
+    const updatedProfile = await mutate<AccountProfile>('/api/hosted-account/profile', {
       method: 'PATCH',
       body: {
         application: application.value,
@@ -163,8 +169,14 @@ async function saveProfile() {
         avatar_url: profile.avatarUrl || null
       }
     })
+    profile.username = updatedProfile.username ?? updatedProfile.name ?? profile.username
+    profile.email = updatedProfile.email ?? profile.email
+    profile.avatarUrl = updatedProfile.avatar_url ?? profile.avatarUrl
+    if (context.value?.user) {
+      context.value.user.username = profile.username
+      context.value.user.email = profile.email
+    }
     successMessage.value = 'Your profile was updated.'
-    await loadAccount()
   } catch (error) {
     errorMessage.value = message(error, 'We could not update your profile.')
   } finally {
@@ -254,33 +266,27 @@ async function deleteAccount() {
   <main class="flex-1">
     <UContainer class="w-full py-6 sm:py-8">
       <div class="mx-auto flex w-full max-w-5xl flex-col gap-6">
-        <template v-if="contextPending">
-          <div class="grid gap-6 lg:grid-cols-[12rem_minmax(0,1fr)]">
-            <div class="space-y-2 rounded-xl border border-default p-2">
-              <USkeleton class="h-10 w-full" />
-              <USkeleton class="h-10 w-full" />
-            </div>
-            <UPageCard variant="subtle">
-              <USkeleton class="h-6 w-40" />
-              <USkeleton class="h-4 w-72 max-w-full" />
-              <div class="mt-5 grid gap-5 md:grid-cols-2">
-                <USkeleton class="h-16 w-full" />
-                <USkeleton class="h-16 w-full" />
-                <USkeleton class="h-16 w-full md:col-span-2" />
-              </div>
-              <USkeleton class="mt-5 h-10 w-32 justify-self-end" />
-            </UPageCard>
-          </div>
-        </template>
-
         <UAlert
-          v-else-if="contextError"
+          v-if="contextError"
           color="error"
           variant="subtle"
           title="We could not load this account."
         />
 
-        <template v-else-if="context?.authenticated">
+        <div
+          v-else-if="contextPending || loadingAccount || !context"
+          class="identity-account-loading-state"
+          aria-busy="true"
+          aria-label="Loading account settings"
+        >
+          <IdentityAuthBrandMark
+            :logo-url="brand?.appearance.logoUrl"
+            size="form"
+            class="animate-pulse"
+          />
+        </div>
+
+        <template v-else-if="context.authenticated">
           <div class="grid gap-6 lg:grid-cols-[12rem_minmax(0,1fr)]">
             <IdentitySettingsNavigation
               :items="navigation"
@@ -301,21 +307,8 @@ async function deleteAccount() {
                 :title="successMessage"
               />
 
-              <template v-if="loadingAccount">
-                <UPageCard variant="subtle">
-                  <USkeleton class="h-6 w-40" />
-                  <USkeleton class="h-4 w-72 max-w-full" />
-                  <div class="mt-5 grid gap-5 md:grid-cols-2">
-                    <USkeleton class="h-16 w-full" />
-                    <USkeleton class="h-16 w-full" />
-                    <USkeleton class="h-16 w-full md:col-span-2" />
-                  </div>
-                  <USkeleton class="mt-5 h-10 w-32 justify-self-end" />
-                </UPageCard>
-              </template>
-
               <UPageCard
-                v-else-if="tab === 'profile'"
+                v-if="tab === 'profile'"
                 title="Profile details"
                 description="Keep your public account identity up to date."
                 variant="subtle"
@@ -517,24 +510,18 @@ async function deleteAccount() {
           </div>
         </template>
 
-        <UPageCard
+        <div
           v-else
-          variant="subtle"
-          class="mx-auto w-full max-w-md"
+          class="identity-account-loading-state"
+          aria-busy="true"
+          aria-label="Loading account settings"
         >
-          <div
-            class="flex flex-col items-center gap-3 py-6 text-center"
-            aria-live="polite"
-          >
-            <UIcon
-              name="i-lucide-loader-circle"
-              class="size-6 animate-spin text-primary"
-            />
-            <p class="m-0 text-sm text-muted">
-              Loading your account settings…
-            </p>
-          </div>
-        </UPageCard>
+          <IdentityAuthBrandMark
+            :logo-url="brand?.appearance.logoUrl"
+            size="form"
+            class="animate-pulse"
+          />
+        </div>
       </div>
     </UContainer>
   </main>

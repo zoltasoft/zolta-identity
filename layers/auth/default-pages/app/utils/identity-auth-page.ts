@@ -1,3 +1,4 @@
+import { inject, unref, type Ref } from 'vue'
 import { FetchError } from 'ofetch'
 
 export function identitySafeRedirect(
@@ -41,4 +42,28 @@ export function identityLoginErrorMessage(error: unknown): string {
     && (error.status === 401 || error.response?.status === 401)
     ? fallback
     : identityAuthErrorMessage(error, fallback)
+}
+
+export function identityAuthPageSet(value: unknown): string {
+  return typeof value === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)
+    ? value
+    : 'default'
+}
+
+export function identityAuthPagePath(
+  screen: string,
+  pageSet: unknown,
+  query: Record<string, unknown> = {}
+): { path: string, query: Record<string, unknown> } {
+  const inheritedPageSet = inject<string | Ref<string | null> | null>(
+    'identity-auth-page-set',
+    null
+  )
+  const resolvedPageSet = identityAuthPageSet(
+    pageSet ?? unref(inheritedPageSet)
+  )
+  return {
+    path: resolvedPageSet === 'default' ? `/auth/${screen}` : `/auth/${resolvedPageSet}/${screen}`,
+    query
+  }
 }
