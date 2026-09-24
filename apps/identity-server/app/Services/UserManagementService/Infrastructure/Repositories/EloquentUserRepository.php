@@ -8,6 +8,7 @@ use App\Services\UserManagementService\Domain\Aggregates\User as DomainUser;
 use App\Services\UserManagementService\Domain\Repositories\UserRepository;
 use App\Services\UserManagementService\Infrastructure\Mappers\UserMapper;
 use App\Services\UserManagementService\Infrastructure\Models\Eloquent\User as EloquentUser;
+use Illuminate\Support\Facades\DB;
 use Zolta\Cqrs\Laravel\Eloquent\Filters\DateRangeFilter;
 use Zolta\Cqrs\Laravel\Eloquent\Filters\SearchFilter;
 use Zolta\Cqrs\Repositories\BaseRepository;
@@ -174,10 +175,14 @@ class EloquentUserRepository extends BaseRepository implements UserRepository
      */
     public function updateUser(DomainUser $user): void
     {
-        $model = $this->show($user->getId()->get(), []);
-        if ($model) {
+        DB::transaction(function () use ($user): void {
+            $model = $this->show($user->getId()->get(), []);
+            if ($model === null) {
+                return;
+            }
+
             $this->update(UserMapper::toUpdatedEloquent($model, $user));
-        }
+        });
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Services\UserManagementService\Application\DTOs\External\AuthenticatedUs
 use App\Services\UserManagementService\Application\DTOs\Input\UpdateAccountProfileDTO;
 use App\Services\UserManagementService\Application\DTOs\Output\AccountProfileResponseDTO;
 use App\Services\UserManagementService\Application\Queries\Users\GetUserById\GetUserByIdQuery;
+use App\Services\UserManagementService\Domain\ValueObjects\IdentityProjectId;
 use RuntimeException;
 use Zolta\Cqrs\Services\Pipeline\ApplicationService;
 use Zolta\Domain\ValueObjects\Email;
@@ -25,6 +26,7 @@ final readonly class UpdateAccountProfileService
     {
         $this->applicationService->runAndCapture(UpdateAccountProfileCommand::class, [
             'userId' => new UserId($updateAccountProfileDTO->userId),
+            'projectId' => new IdentityProjectId($updateAccountProfileDTO->projectId),
             'username' => Username::resolve(['username' => $updateAccountProfileDTO->username]),
             'email' => Email::resolve(['address' => $updateAccountProfileDTO->email]),
             'profilePicture' => $updateAccountProfileDTO->avatarUrl,
@@ -37,7 +39,11 @@ final readonly class UpdateAccountProfileService
         $user = $userResult['user'];
 
         return new AccountProfileResponseDTO(
-            AuthenticatedUser::fromDomain($user),
+            AuthenticatedUser::fromDomainWithProjectProfile(
+                $user,
+                $updateAccountProfileDTO->username,
+                $updateAccountProfileDTO->avatarUrl,
+            ),
         );
     }
 }

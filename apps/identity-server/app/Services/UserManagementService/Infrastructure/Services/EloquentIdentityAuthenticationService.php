@@ -810,7 +810,14 @@ final readonly class EloquentIdentityAuthenticationService implements AcceptIden
             ['project_account_id' => $account->id],
             ['token_hash' => $this->secretHash($token), 'created_at' => now()],
         );
-        $user->notify(new ResetIdentityPassword($token, $clientId));
+        $authPageSet = IdentityHostedApplication::query()
+            ->where(function ($query) use ($clientId): void {
+                $query
+                    ->where('primary_client_id', $clientId)
+                    ->orWhere('sandbox_client_id', $clientId);
+            })
+            ->value('auth_page_set');
+        $user->notify(new ResetIdentityPassword($token, $clientId, $authPageSet));
 
         if ((bool) config('zolta.identity.expose_development_tokens', false)) {
             $result['development_token'] = $token;

@@ -30,4 +30,11 @@ trait ResolvesAuthenticatedIdentity
 
         return is_numeric($tokenId) ? (int) $tokenId : null;
     }
+
+    protected function authenticatedProjectId(): ?string
+    {
+        $projectId = $this->user()?->currentAccessToken()?->identity_project_id;
+
+        return is_string($projectId) && $projectId !== '' ? $projectId : null;
+    }
 }

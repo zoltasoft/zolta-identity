@@ -11,13 +11,14 @@ final class UpdateAccountProfileRequest extends BaseRequest
 
     public function authorize(): bool
     {
-        return $this->hasAuthenticatedIdentity();
+        return $this->hasAuthenticatedIdentity() && $this->authenticatedProjectId() !== null;
     }
 
     public function trustedData(): array
     {
         return [
             'user_id' => $this->authenticatedUserId(),
+            'project_id' => $this->authenticatedProjectId(),
         ];
     }
 

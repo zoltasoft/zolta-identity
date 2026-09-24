@@ -15,6 +15,7 @@ final class ResetIdentityPassword extends Notification
     public function __construct(
         private readonly string $token,
         private readonly ?string $clientId = null,
+        private readonly ?string $authPageSet = null,
     ) {}
 
     /** @return list<string> */
@@ -30,6 +31,7 @@ final class ResetIdentityPassword extends Notification
             ->line('A password reset was requested for your identity account.');
         $resetUrl = (string) config('zolta.identity.password_reset_url');
         if ($resetUrl !== '') {
+            $resetUrl = $this->withHostedAuthPageSet($resetUrl);
             $separator = str_contains($resetUrl, '?') ? '&' : '?';
             $mail->action('Reset password', $resetUrl.$separator.http_build_query(array_filter([
                 'email' => $notifiable->email,
@@ -42,5 +44,22 @@ final class ResetIdentityPassword extends Notification
         }
 
         return $mail->line('If you did not request this reset, ignore this message.');
+    }
+
+    private function withHostedAuthPageSet(string $resetUrl): string
+    {
+        if ($this->authPageSet === null
+            || $this->authPageSet === ''
+            || $this->authPageSet === 'default'
+            || preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $this->authPageSet) !== 1) {
+            return $resetUrl;
+        }
+
+        return (string) preg_replace(
+            '~\/auth\/reset-password(?=$|[?#])~',
+            '/auth/'.rawurlencode($this->authPageSet).'/reset-password',
+            $resetUrl,
+            1,
+        );
     }
 }

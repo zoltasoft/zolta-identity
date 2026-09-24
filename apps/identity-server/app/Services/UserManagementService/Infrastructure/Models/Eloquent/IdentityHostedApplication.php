@@ -22,6 +22,7 @@ final class IdentityHostedApplication extends Model
         'name',
         'application_url',
         'callback_url',
+        'auth_page_set',
         'appearance',
         'authentication',
         'logo_path',

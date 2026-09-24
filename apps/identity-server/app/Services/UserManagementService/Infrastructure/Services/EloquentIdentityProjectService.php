@@ -500,6 +500,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
                 'name' => $attributes['name'],
                 'application_url' => $attributes['application_url'],
                 'callback_url' => $attributes['callback_url'],
+                'auth_page_set' => $attributes['auth_page_set'] ?? 'default',
                 'appearance' => $this->hostedApplicationAppearance($attributes),
                 'authentication' => $this->hostedApplicationAuthentication($attributes),
                 'status' => 'active',
@@ -533,6 +534,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
             'sandbox_client_id' => $attributes['sandbox_client_id'] ?? null,
             'application_url' => $attributes['application_url'],
             'callback_url' => $attributes['callback_url'],
+            'auth_page_set' => $attributes['auth_page_set'] ?? 'default',
             'appearance' => $this->hostedApplicationAppearance($attributes),
             'authentication' => $this->hostedApplicationAuthentication($attributes),
             'status' => $attributes['status'],
@@ -1376,6 +1378,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
             'name' => $application->name,
             'application_url' => $application->application_url,
             'callback_url' => $application->callback_url,
+            'auth_page_set' => $application->auth_page_set ?: 'default',
             'appearance' => $this->payloads->hostedApplication($application)['appearance'],
             'authentication' => $this->payloads->hostedApplication($application)['authentication'],
             'primary' => [
@@ -1389,10 +1392,32 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
         ];
     }
 
-    /** @param array<string, mixed> $attributes @return array{welcome_text: string|null, accent_color: string|null, background_preset: string} */
+    /** @param array<string, mixed> $attributes @return array{welcome_text: string|null, accent_color: string|null, background_preset: string, design_tokens: array<string, string>} */
     private function hostedApplicationAppearance(array $attributes): array
     {
         $appearance = is_array($attributes['appearance'] ?? null) ? $attributes['appearance'] : [];
+        $designTokens = [];
+        $colorKeys = [
+            'accent',
+            'light_background', 'light_background_muted', 'light_card', 'light_text', 'light_muted', 'light_border', 'light_input_border', 'light_status',
+            'dark_background', 'dark_background_muted', 'dark_card', 'dark_text', 'dark_muted', 'dark_border', 'dark_input_border', 'dark_status',
+            'primary_50', 'primary_100', 'primary_200', 'primary_300', 'primary_400', 'primary_500', 'primary_600', 'primary_700', 'primary_800', 'primary_900', 'primary_950',
+        ];
+        foreach ((array) ($appearance['design_tokens'] ?? []) as $key => $value) {
+            if (! is_string($key) || ! is_string($value)) {
+                continue;
+            }
+            if ($key === 'font_family') {
+                if (preg_match('/^[A-Za-z0-9 ,._-]+$/', $value) === 1) {
+                    $designTokens[$key] = $value;
+                }
+
+                continue;
+            }
+            if (in_array($key, $colorKeys, true) && preg_match('/^#[0-9A-Fa-f]{6}$/', $value) === 1) {
+                $designTokens[$key] = $value;
+            }
+        }
 
         return [
             'welcome_text' => isset($appearance['welcome_text']) && $appearance['welcome_text'] !== ''
@@ -1402,6 +1427,7 @@ final readonly class EloquentIdentityProjectService implements ConfigureIdentity
                 ? (string) $appearance['accent_color']
                 : null,
             'background_preset' => (string) ($appearance['background_preset'] ?? 'identity'),
+            'design_tokens' => $designTokens,
         ];
     }
 

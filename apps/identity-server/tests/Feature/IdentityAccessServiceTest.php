@@ -1187,16 +1187,28 @@ final class IdentityAccessServiceTest extends TestCase
                 'primary_client_id' => $client->id,
                 'application_url' => 'https://job-tracker.example.test/dashboard',
                 'callback_url' => 'https://job-tracker.example.test/api/auth/callback',
+                'auth_page_set' => 'job-tracker',
                 'appearance' => [
                     'welcome_text' => 'Manage your next opportunity.',
                     'accent_color' => '#3157D5',
                     'background_preset' => 'indigo',
+                    'design_tokens' => [
+                        'font_family' => 'Public Sans',
+                        'primary_600' => '#3157D5',
+                        'light_background' => '#F7F7FF',
+                        'unsafe_token' => 'ignored',
+                    ],
                 ],
             ])
             ->assertCreated()
             ->assertJsonPath('data.key', 'job-tracker')
             ->assertJsonPath('data.status', 'active')
+            ->assertJsonPath('data.auth_page_set', 'job-tracker')
             ->assertJsonPath('data.appearance.background_preset', 'indigo')
+            ->assertJsonPath('data.appearance.design_tokens.font_family', 'Public Sans')
+            ->assertJsonPath('data.appearance.design_tokens.primary_600', '#3157D5')
+            ->assertJsonPath('data.appearance.design_tokens.light_background', '#F7F7FF')
+            ->assertJsonMissingPath('data.appearance.design_tokens.unsafe_token')
             ->json('data');
 
         $this->assertDatabaseHas('identity_hosted_applications', [

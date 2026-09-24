@@ -13,7 +13,7 @@ use Zolta\Http\Router\Attributes\Route;
 use Zolta\Http\Service\Attributes\Doc;
 use Zolta\Http\Service\Attributes\Service;
 
-#[Route(path: 'users/profile', methods: ['PUT'], middleware: ['api', 'auth:sanctum'], name: 'profile.update')]
+#[Route(path: 'users/profile', methods: ['PUT'], middleware: ['api', 'auth:sanctum', 'identity.token'], name: 'profile.update')]
 #[Request(UpdateAccountProfileRequest::class, UpdateAccountProfileDTO::class)]
 #[Service(UpdateAccountProfileService::class, 'Account profile updated.')]
 #[Response(AccountProfileResource::class)]
