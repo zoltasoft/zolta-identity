@@ -138,7 +138,7 @@ final class IdentityPayloadFactory
                 'id' => $user->id,
                 'email' => $user->email,
                 'username' => $account?->username ?? $user->username,
-                'avatar_url' => $user->avatar_url,
+                'avatar_url' => $account?->profile_picture ?? $user->avatar_url,
                 'email_verified' => ($account?->email_verified_at ?? $user->email_verified_at) !== null,
                 'is_system_admin' => $user->is_system_admin,
                 'is_temporary' => $user->is_temporary,
@@ -194,13 +194,14 @@ final class IdentityPayloadFactory
             'name' => $application->name,
             'application_url' => $application->application_url,
             'callback_url' => $application->callback_url,
+            'auth_page_set' => $application->auth_page_set ?: 'default',
             'appearance' => $this->hostedApplicationAppearance($application),
             'authentication' => $this->hostedApplicationAuthentication($application),
             'status' => $application->status,
         ];
     }
 
-    /** @return array{welcome_text: string|null, accent_color: string|null, background_preset: string, logo_url: string|null} */
+    /** @return array{welcome_text: string|null, accent_color: string|null, background_preset: string, logo_url: string|null, design_tokens: array<string, string>} */
     private function hostedApplicationAppearance(IdentityHostedApplication $application): array
     {
         $appearance = $application->appearance ?? [];
@@ -211,8 +212,42 @@ final class IdentityPayloadFactory
             'welcome_text' => $appearance['welcome_text'] ?? null,
             'accent_color' => $appearance['accent_color'] ?? null,
             'background_preset' => $appearance['background_preset'] ?? 'identity',
-            'logo_url' => $this->safeHostedApplicationLogoUrl($disk, $logoPath),
+            'logo_url' => $this->safeHostedApplicationLogoUrl(
+                $disk,
+                $logoPath,
+                is_string($appearance['logo_url'] ?? null) ? $appearance['logo_url'] : null,
+            ),
+            'design_tokens' => $this->safeHostedApplicationDesignTokens($appearance['design_tokens'] ?? null),
         ];
+    }
+
+    /** @param mixed $value @return array<string, string> */
+    private function safeHostedApplicationDesignTokens(mixed $value): array
+    {
+        $tokens = [];
+        $colorKeys = [
+            'accent',
+            'light_background', 'light_background_muted', 'light_card', 'light_text', 'light_muted', 'light_border', 'light_input_border', 'light_status',
+            'dark_background', 'dark_background_muted', 'dark_card', 'dark_text', 'dark_muted', 'dark_border', 'dark_input_border', 'dark_status',
+            'primary_50', 'primary_100', 'primary_200', 'primary_300', 'primary_400', 'primary_500', 'primary_600', 'primary_700', 'primary_800', 'primary_900', 'primary_950',
+        ];
+        foreach ((array) $value as $key => $token) {
+            if (! is_string($key) || ! is_string($token)) {
+                continue;
+            }
+            if ($key === 'font_family') {
+                if (preg_match('/^[A-Za-z0-9 ,._-]+$/', $token) === 1) {
+                    $tokens[$key] = $token;
+                }
+
+                continue;
+            }
+            if (in_array($key, $colorKeys, true) && preg_match('/^#[0-9A-Fa-f]{6}$/', $token) === 1) {
+                $tokens[$key] = $token;
+            }
+        }
+
+        return $tokens;
     }
 
     /** @return array{google_enabled: bool, terms_required: bool, terms_url: string|null, privacy_url: string|null} */
@@ -228,14 +263,25 @@ final class IdentityPayloadFactory
         ];
     }
 
-    private function safeHostedApplicationLogoUrl(string $disk, ?string $logoPath): ?string
+    private function safeHostedApplicationLogoUrl(string $disk, ?string $logoPath, ?string $configuredUrl = null): ?string
     {
-        if ($logoPath === null
-            || ! in_array(strtolower(pathinfo($logoPath, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'webp'], true)) {
+        if ($logoPath !== null
+            && in_array(strtolower(pathinfo($logoPath, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'webp'], true)) {
+            return Storage::disk($disk)->url($logoPath);
+        }
+
+        if ($configuredUrl === null || strlen($configuredUrl) > 2048) {
             return null;
         }
 
-        return Storage::disk($disk)->url($logoPath);
+        $parts = parse_url(trim($configuredUrl));
+        if (($parts['scheme'] ?? null) !== 'https'
+            || ! is_string($parts['host'] ?? null)
+            || isset($parts['user'], $parts['pass'], $parts['fragment'])) {
+            return null;
+        }
+
+        return trim($configuredUrl);
     }
 
     /** @return array<string, mixed> */

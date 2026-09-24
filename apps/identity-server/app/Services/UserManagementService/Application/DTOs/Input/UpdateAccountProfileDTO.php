@@ -12,6 +12,8 @@ final class UpdateAccountProfileDTO extends InputDTO
     public function __construct(
         #[FromRequest('user_id')]
         public readonly string $userId,
+        #[FromRequest('project_id')]
+        public readonly string $projectId,
         #[FromRequest('username')]
         public readonly string $username,
         #[FromRequest('email')]

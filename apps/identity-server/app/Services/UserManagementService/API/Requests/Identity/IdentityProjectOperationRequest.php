@@ -76,6 +76,7 @@ final class IdentityProjectOperationRequest extends IdentityOperationRequest
                 'sandbox_client_id' => ['nullable', 'uuid'],
                 'application_url' => ['required', 'url:http,https', 'max:2048'],
                 'callback_url' => ['required', 'url:http,https', 'max:2048'],
+                'auth_page_set' => ['sometimes', 'string', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/', 'max:100'],
                 ...$this->hostedApplicationAppearanceRules(),
                 ...$this->hostedApplicationAuthenticationRules(),
             ],
@@ -85,6 +86,7 @@ final class IdentityProjectOperationRequest extends IdentityOperationRequest
                 'sandbox_client_id' => ['nullable', 'uuid'],
                 'application_url' => ['required', 'url:http,https', 'max:2048'],
                 'callback_url' => ['required', 'url:http,https', 'max:2048'],
+                'auth_page_set' => ['sometimes', 'string', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/', 'max:100'],
                 'status' => ['required', Rule::in(['active', 'disabled'])],
                 ...$this->hostedApplicationAppearanceRules(),
                 ...$this->hostedApplicationAuthenticationRules(),
@@ -147,6 +149,8 @@ final class IdentityProjectOperationRequest extends IdentityOperationRequest
             'appearance.welcome_text' => ['nullable', 'string', 'max:280'],
             'appearance.accent_color' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'appearance.background_preset' => ['nullable', Rule::in(['identity', 'slate', 'indigo', 'emerald', 'sunset'])],
+            'appearance.design_tokens' => ['sometimes', 'array'],
+            'appearance.design_tokens.*' => ['string', 'max:200'],
         ];
     }
 

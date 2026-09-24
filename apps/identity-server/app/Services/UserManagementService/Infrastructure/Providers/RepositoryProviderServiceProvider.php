@@ -7,6 +7,7 @@ namespace App\Services\UserManagementService\Infrastructure\Providers;
 use App\Services\UserManagementService\Domain\Repositories\IdentityClientRepository;
 use App\Services\UserManagementService\Domain\Repositories\IdentityMembershipRepository;
 use App\Services\UserManagementService\Domain\Repositories\IdentityPermissionRepository;
+use App\Services\UserManagementService\Domain\Repositories\IdentityProjectAccountRepository;
 use App\Services\UserManagementService\Domain\Repositories\IdentityProjectRepository;
 use App\Services\UserManagementService\Domain\Repositories\IdentityRoleRepository;
 use App\Services\UserManagementService\Domain\Repositories\IdentityWebhookRepository;
@@ -14,6 +15,7 @@ use App\Services\UserManagementService\Domain\Repositories\OAuthProviderReposito
 use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityClientRepository;
 use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityMembershipRepository;
 use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityPermissionRepository;
+use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityProjectAccountRepository;
 use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityProjectRepository;
 use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityRoleRepository;
 use App\Services\UserManagementService\Infrastructure\Repositories\EloquentIdentityWebhookRepository;
@@ -25,6 +27,7 @@ class RepositoryProviderServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(IdentityClientRepository::class, EloquentIdentityClientRepository::class);
+        $this->app->bind(IdentityProjectAccountRepository::class, EloquentIdentityProjectAccountRepository::class);
         $this->app->bind(IdentityMembershipRepository::class, EloquentIdentityMembershipRepository::class);
         $this->app->bind(IdentityPermissionRepository::class, EloquentIdentityPermissionRepository::class);
         $this->app->bind(IdentityProjectRepository::class, EloquentIdentityProjectRepository::class);

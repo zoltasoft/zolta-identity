@@ -58,4 +58,25 @@ final readonly class AuthenticatedUser
             demoExpiresAt: $user->getDemoExpiresAt()?->format(DATE_ATOM),
         );
     }
+
+    public static function fromDomainWithProjectProfile(
+        User $user,
+        string $username,
+        ?string $profilePicture,
+    ): self {
+        return new self(
+            id: $user->getId()->get('value'),
+            email: $user->getEmail()->get('address'),
+            emailVerified: $user->getEmail()->isVerified(),
+            username: $username,
+            twoFactorEnabled: $user->isTwoFactorEnabled(),
+            loginAlertsEnabled: $user->hasLoginAlertsEnabled(),
+            backupEmail: $user->getBackupEmail()?->get('address'),
+            profilePicture: $profilePicture,
+            themePreference: $user->getThemePreference(),
+            languagePreference: $user->getLanguagePreference(),
+            isTemporary: $user->isTemporary(),
+            demoExpiresAt: $user->getDemoExpiresAt()?->format(DATE_ATOM),
+        );
+    }
 }
